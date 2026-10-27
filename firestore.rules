@@ -1,0 +1,109 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    // Tasks Collection Rules
+    match /tasks/{taskId} {
+      allow read, write: if true;
+    }
+
+    // Habits Collection Rules
+    match /habits/{habitId} {
+      allow read, write: if true;
+    }
+
+    // Projects Collection Rules
+    match /projects/{projectId} {
+      allow read, write: if true;
+    }
+
+    // Weekly Planner Collection Rules
+    match /planner/{planId} {
+      allow read, write: if true;
+    }
+
+    // Notes Collection Rules
+    match /notes/{noteId} {
+      allow read, write: if true;
+    }
+
+    // Checklists Collection Rules
+    match /checklists/{checklistId} {
+      allow read, write: if true;
+    }
+
+    // Goals Collection Rules
+    match /goals/{goalId} {
+      allow read, write: if true;
+    }
+
+    // Focus Sessions Collection Rules
+    match /focus_sessions/{sessionId} {
+      allow read, write: if true;
+    }
+
+    // Comments Collection Rules
+    match /comments/{commentId} {
+      allow read, write: if true;
+    }
+
+    // Workouts Collection Rules
+    match /workouts/{workoutId} {
+      allow read, write: if true;
+    }
+
+    // Sunday Resets Collection Rules
+    match /sunday_resets/{resetId} {
+      allow read, write: if true;
+    }
+
+    // Periodic Reviews Collection Rules
+    match /reviews/{reviewId} {
+      allow read, write: if true;
+    }
+
+    // Daily Blocks Collection Rules
+    match /daily_blocks/{blockId} {
+      allow read, write: if true;
+    }
+
+    // Module Lifecycle Collection Rules
+    match /module_lifecycle/{eventId} {
+      allow read, write: if true;
+    }
+
+    // Monthly Plans Collection Rules
+    match /monthly_plans/{planId} {
+      allow read, write: if true;
+    }
+
+    // Weekly Priority Goals Collection Rules
+    match /weekly_goals/{goalId} {
+      allow read, write: if true;
+    }
+
+    // Sleep Logs Collection Rules
+    match /sleep_logs/{logId} {
+      allow read, write: if true;
+    }
+
+    // Sleep Config Collection Rules
+    match /sleep_config/{configId} {
+      allow read, write: if true;
+    }
+
+    // Access Control Whitelist Collection Rules
+    match /access_control/{docId} {
+      allow read, write: if true;
+    }
+  }
+}
+
+
+
+

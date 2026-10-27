@@ -1,0 +1,331 @@
+{
+  "entities": {
+    "Task": {
+      "title": "Task",
+      "description": "A task with title, description, subtasks, completed status, priority, due date, category, and timestamps.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The title of the task", "maxLength": 200 },
+        "description": { "type": "string", "description": "Detailed task description/notes", "maxLength": 5000 },
+        "subtasks": { "type": "array", "description": "List of subtasks with id, title, completed" },
+        "completed": { "type": "boolean", "description": "Whether the task is completed" },
+        "priority": { "type": "string", "enum": ["High", "Med", "Low"], "description": "Priority tag" },
+        "dueDate": { "type": "string", "description": "Due date in YYYY-MM-DD" },
+        "category": { "type": "string", "description": "Task category tag", "maxLength": 50 },
+        "createdAt": { "type": "number", "description": "Timestamp created" },
+        "completedAt": { "type": "number", "description": "Timestamp completed" },
+        "focusedMinutes": { "type": "number", "description": "Accumulated focused minutes" }
+      },
+      "required": ["title", "completed", "priority", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A timestamped comment with cross-entity mentions (tasks, habits, notes, projects, goals).",
+      "type": "object",
+      "properties": {
+        "content": { "type": "string", "description": "Comment text content", "maxLength": 5000 },
+        "createdAt": { "type": "number", "description": "Timestamp created" },
+        "author": { "type": "string", "description": "Author name", "maxLength": 100 },
+        "mentions": { "type": "array", "description": "List of mentioned entity references (type, id, title)" },
+        "targetType": { "type": "string", "enum": ["task", "habit", "note", "project", "goal", "general"], "description": "Directly linked parent entity type" },
+        "targetId": { "type": "string", "description": "Document ID of parent entity" },
+        "targetTitle": { "type": "string", "description": "Title of parent entity" },
+        "pinned": { "type": "boolean", "description": "Whether comment is pinned to top" }
+      },
+      "required": ["content", "createdAt"]
+    },
+    "Habit": {
+      "title": "Habit",
+      "description": "A daily habit tracker item with history map and streak count.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Habit title", "maxLength": 100 },
+        "category": { "type": "string", "description": "Habit category", "maxLength": 50 },
+        "targetPerWeek": { "type": "number", "description": "Target days per week" },
+        "history": { "type": "object", "description": "Map of YYYY-MM-DD -> boolean" },
+        "freezes": { "type": "object", "description": "Map of YYYY-MM-DD -> boolean for streak freeze/pass days" },
+        "streak": { "type": "number", "description": "Current consecutive streak in days" },
+        "createdAt": { "type": "number", "description": "Timestamp created" }
+      },
+      "required": ["title", "category", "targetPerWeek", "streak", "createdAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "A project goal with nested subtasks checklist.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Project title", "maxLength": 150 },
+        "description": { "type": "string", "description": "Project description", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["In Progress", "Planning", "Completed", "On Hold"] },
+        "category": { "type": "string", "description": "Category" },
+        "color": { "type": "string", "description": "Color tag" },
+        "deadline": { "type": "string", "description": "Deadline YYYY-MM-DD" },
+        "subtasks": { "type": "array", "description": "Nested action checklist" },
+        "createdAt": { "type": "number", "description": "Timestamp created" }
+      },
+      "required": ["title", "status", "category", "createdAt"]
+    },
+    "WeeklyPlan": {
+      "title": "WeeklyPlan",
+      "description": "A scheduled weekly time block.",
+      "type": "object",
+      "properties": {
+        "dayIndex": { "type": "number", "description": "Day of the week (0 for Mon, 6 for Sun)" },
+        "title": { "type": "string", "description": "Block title", "maxLength": 150 },
+        "timeSlot": { "type": "string", "description": "Time slot string" },
+        "completed": { "type": "boolean", "description": "Whether completed" },
+        "type": { "type": "string", "enum": ["deep-work", "meeting", "workout", "personal", "general"] },
+        "weekId": { "type": "string", "description": "Specific week ID (e.g. 2026-W38)" },
+        "createdAt": { "type": "number", "description": "Timestamp created" }
+      },
+      "required": ["dayIndex", "title", "completed", "type", "createdAt"]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "A note or quick reminder.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Note title", "maxLength": 200 },
+        "content": { "type": "string", "description": "Note text content", "maxLength": 20000 },
+        "tags": { "type": "array", "description": "Tags list" },
+        "pinned": { "type": "boolean", "description": "Whether note is pinned" },
+        "category": { "type": "string", "enum": ["Brain Dump", "Business", "Life", "Meeting", "Quick Note"] },
+        "createdAt": { "type": "number", "description": "Timestamp created" },
+        "updatedAt": { "type": "number", "description": "Timestamp updated" }
+      },
+      "required": ["title", "content", "pinned", "category", "createdAt", "updatedAt"]
+    },
+    "Goal": {
+      "title": "Goal",
+      "description": "High-level goal with vision endpoint target, milestones, and metric progress.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Goal title", "maxLength": 200 },
+        "vision": { "type": "string", "description": "Why this matters / vision", "maxLength": 1000 },
+        "endpointTarget": { "type": "string", "description": "Measurable end-state target", "maxLength": 500 },
+        "category": { "type": "string", "description": "Category" },
+        "timeframe": { "type": "string", "description": "Timeframe" },
+        "status": { "type": "string", "description": "Goal status" },
+        "targetDate": { "type": "string", "description": "Target date YYYY-MM-DD" },
+        "currentMetric": { "type": "number", "description": "Current metric value" },
+        "targetMetric": { "type": "number", "description": "Target metric value" },
+        "metricUnit": { "type": "string", "description": "Metric unit" },
+        "milestones": { "type": "array", "description": "List of milestones" },
+        "createdAt": { "type": "number", "description": "Timestamp created" }
+      },
+      "required": ["title", "category", "timeframe", "status", "createdAt"]
+    },
+    "FocusSession": {
+      "title": "FocusSession",
+      "description": "A deep focus session entry with duration, association, notes, and timestamps.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "What you focused on or description", "maxLength": 300 },
+        "duration": { "type": "number", "description": "Length of focus session in minutes" },
+        "type": { "type": "string", "enum": ["focus", "short-break", "long-break"] },
+        "associatedType": { "type": "string", "enum": ["task", "habit", "project", "none"] },
+        "associatedId": { "type": "string", "description": "Document ID of the associated task/habit/project" },
+        "associatedTitle": { "type": "string", "description": "Title of the associated task/habit/project", "maxLength": 200 },
+        "notes": { "type": "string", "description": "Post-session reflections or notes", "maxLength": 2000 },
+        "createdAt": { "type": "number", "description": "Timestamp created" }
+      },
+      "required": ["title", "duration", "type", "associatedType", "createdAt"]
+    },
+    "Workout": {
+      "title": "Workout",
+      "description": "A calisthenics & training workout session with exercises, sets, reps, weight, and volume metrics.",
+      "type": "object",
+      "properties": {
+        "routineName": { "type": "string", "description": "Name of routine", "maxLength": 150 },
+        "routineCategory": { "type": "string", "description": "Category of routine (Push, Pull, Legs, Skills, Full Body, Custom)" },
+        "exercises": { "type": "array", "description": "List of exercises with sets, reps, weight, and completion flags" },
+        "durationMinutes": { "type": "number", "description": "Workout duration in minutes" },
+        "date": { "type": "string", "description": "Date of workout in YYYY-MM-DD" },
+        "createdAt": { "type": "number", "description": "Timestamp created" },
+        "notes": { "type": "string", "description": "Workout notes and reflections", "maxLength": 3000 },
+        "totalVolume": { "type": "number", "description": "Total volume or load calculated" },
+        "totalReps": { "type": "number", "description": "Total repetitions logged" },
+        "totalSets": { "type": "number", "description": "Total completed sets" }
+      },
+      "required": ["routineName", "exercises", "date", "createdAt"]
+    },
+    "SundayReset": {
+      "title": "SundayReset",
+      "description": "A weekly Sunday reset wizard entry detailing intentions and outcomes.",
+      "type": "object",
+      "properties": {
+        "weekId": { "type": "string", "description": "The specific week ID (e.g. 2026-W38)" },
+        "completedAt": { "type": "number", "description": "Timestamp completed" },
+        "habitScore": { "type": "number", "description": "Calculated habit consistency score for that week" },
+        "triageNotesCount": { "type": "number", "description": "Number of brain dumps triaged during this reset" },
+        "archivedTasksCount": { "type": "number", "description": "Number of completed tasks archived during this reset" },
+        "weeklyFocus": { "type": "string", "description": "Core theme or intention for the new week", "maxLength": 500 },
+        "weeklyGoal": { "type": "string", "description": "A primary measurable metric target or objective for the week", "maxLength": 500 }
+      },
+      "required": ["weekId", "completedAt", "weeklyFocus"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Weekly and monthly review and assessment journal entries.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["weekly", "monthly"] },
+        "periodKey": { "type": "string", "description": "Period identifier like 2026-W38 or 2026-10" },
+        "title": { "type": "string", "description": "Review title", "maxLength": 200 },
+        "rating": { "type": "number", "description": "Rating out of 5" },
+        "habitScore": { "type": "number" },
+        "completedTasksCount": { "type": "number" },
+        "focusMinutes": { "type": "number" },
+        "excusesCount": { "type": "number" },
+        "wins": { "type": "string", "maxLength": 5000 },
+        "challenges": { "type": "string", "maxLength": 5000 },
+        "lessons": { "type": "string", "maxLength": 5000 },
+        "nextFocus": { "type": "string", "maxLength": 5000 },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["type", "periodKey", "title", "createdAt"]
+    },
+    "DailyBlock": {
+      "title": "DailyBlock",
+      "description": "Daily structured macroscopic time blocks for effortless day flow",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "Date YYYY-MM-DD" },
+        "title": { "type": "string", "description": "Block title", "maxLength": 150 },
+        "subtitle": { "type": "string", "description": "Block description or focus theme", "maxLength": 500 },
+        "startTime": { "type": "string", "description": "Start time HH:mm" },
+        "endTime": { "type": "string", "description": "End time HH:mm" },
+        "blockType": { "type": "string", "enum": ["morning", "deep-work", "recharge", "execution", "fitness", "evening", "custom"] },
+        "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "skipped"] },
+        "order": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["date", "title", "startTime", "endTime", "blockType", "status", "createdAt"]
+    },
+    "ModuleLifecycleEvent": {
+      "title": "ModuleLifecycleEvent",
+      "description": "Audit and history of module activation and deactivation periods",
+      "type": "object",
+      "properties": {
+        "moduleId": { "type": "string" },
+        "moduleName": { "type": "string" },
+        "status": { "type": "string", "enum": ["enabled", "disabled"] },
+        "timestamp": { "type": "number" },
+        "dateStr": { "type": "string" }
+      },
+      "required": ["moduleId", "moduleName", "status", "timestamp", "dateStr"]
+    },
+    "SleepLog": {
+      "title": "SleepLog",
+      "description": "Daily wake up and bedtime tracking compared with target schedule",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "targetBedtime": { "type": "string" },
+        "targetWakeTime": { "type": "string" },
+        "actualBedtime": { "type": "string" },
+        "actualWakeTime": { "type": "string" },
+        "wokeOnTarget": { "type": "boolean" },
+        "sleptOnTarget": { "type": "boolean" },
+        "sleepDurationMinutes": { "type": "number" },
+        "quality": { "type": "string" },
+        "energyLevel": { "type": "number" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["date", "targetBedtime", "targetWakeTime", "actualBedtime", "actualWakeTime", "createdAt"]
+    },
+    "SleepConfig": {
+      "title": "SleepConfig",
+      "description": "User target sleep and wake schedule configuration",
+      "type": "object",
+      "properties": {
+        "targetBedtime": { "type": "string" },
+        "targetWakeTime": { "type": "string" },
+        "targetDurationHours": { "type": "number" },
+        "weeklyTargetHours": { "type": "number" },
+        "enabled": { "type": "boolean" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["targetBedtime", "targetWakeTime", "targetDurationHours"]
+    },
+    "AccessControl": {
+      "title": "AccessControl",
+      "description": "Whitelist of authorized workspace owner and collaborator emails",
+      "type": "object",
+      "properties": {
+        "ownerEmail": { "type": "string", "description": "Master owner email", "maxLength": 120 },
+        "allowedEmails": { "type": "array", "description": "List of authorized email strings" },
+        "updatedAt": { "type": "number", "description": "Timestamp updated" }
+      },
+      "required": ["ownerEmail", "allowedEmails"]
+    }
+  },
+  "firestore": {
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Tasks collection for life & business management"
+    },
+    "/habits/{habitId}": {
+      "schema": "Habit",
+      "description": "Habits collection with streak and daily checkoff history"
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Projects and nested action item checklists"
+    },
+    "/planner/{planId}": {
+      "schema": "WeeklyPlan",
+      "description": "Weekly 7-day scheduled time blocks"
+    },
+    "/notes/{noteId}": {
+      "schema": "Note",
+      "description": "Notes, reminders, and brain dumps"
+    },
+    "/goals/{goalId}": {
+      "schema": "Goal",
+      "description": "Goals and lifetime endpoint targets"
+    },
+    "/focus_sessions/{sessionId}": {
+      "schema": "FocusSession",
+      "description": "Chronological history of completed focus blocks and cognitive anchors"
+    },
+    "/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Timestamped cross-application comments and mention logs"
+    },
+    "/workouts/{workoutId}": {
+      "schema": "Workout",
+      "description": "Workouts and progressive overload calisthenics sessions"
+    },
+    "/sunday_resets/{resetId}": {
+      "schema": "SundayReset",
+      "description": "Sunday Reset protocols and weekly themes"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Periodic weekly and monthly reviews"
+    },
+    "/daily_blocks/{blockId}": {
+      "schema": "DailyBlock",
+      "description": "Daily structured macroscopic time blocks"
+    },
+    "/module_lifecycle/{eventId}": {
+      "schema": "ModuleLifecycleEvent",
+      "description": "Module lifecycle audit and feature preference tracking"
+    },
+    "/sleep_logs/{logId}": {
+      "schema": "SleepLog",
+      "description": "Daily wake up and bedtime tracking records"
+    },
+    "/sleep_config/{configId}": {
+      "schema": "SleepConfig",
+      "description": "User target sleep and wake schedule settings"
+    },
+    "/access_control/{docId}": {
+      "schema": "AccessControl",
+      "description": "Authorized workspace emails whitelist"
+    }
+  }
+}
+

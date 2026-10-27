@@ -1,0 +1,8 @@
+{
+  "name": "meCore",
+  "description": "Minimal executive life and business operating system with real-time Firebase sync, habits, tasks, timeblocks, telemetry, and goals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

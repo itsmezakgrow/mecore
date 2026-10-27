@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Core Executive OS</title>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Core OS" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="/pwa-192x192.png" />
+    <meta name="description" content="Minimal executive life and business operating system with real-time Firebase sync, habits, tasks, timeblocks, telemetry, and goals." />
+    <meta property="og:title" content="Core Executive OS" />
+    <meta property="og:description" content="Minimal executive life and business operating system with real-time Firebase sync, habits, tasks, timeblocks, telemetry, and goals." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="./assets/logo-full.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function() {
+        // 1. Ensure window.fetch is writable with getter & setter so browser extensions (Similarweb, etc.) can wrap it without throwing "Cannot set property fetch of #<Window> which has only a getter"
+        try {
+          var currentFetch = window.fetch;
+          Object.defineProperty(window, 'fetch', {
+            configurable: true,
+            enumerable: true,
+            get: function() {
+              return currentFetch;
+            },
+            set: function(fn) {
+              currentFetch = fn;
+            }
+          });
+        } catch (e) {}
+
+        // 2. Guard AbortController.prototype.abort against synchronous AbortErrors on cancelled streams
+        if (typeof AbortController !== 'undefined' && AbortController.prototype) {
+          var origAbort = AbortController.prototype.abort;
+          AbortController.prototype.abort = function() {
+            try {
+              return origAbort.apply(this, arguments);
+            } catch (err) {
+              // Silently absorb synchronous AbortErrors when tearing down ReadableStreams/fetches
+              return;
+            }
+          };
+        }
+
+        // 3. Early capturing error filters for network aborts, stream cancellations & browser extension issues
+        var isIgnoredError = function(err, source) {
+          if (!err && !source) return false;
+          var name = (err && (err.name || err.code || (err.constructor && err.constructor.name))) || '';
+          var msg = typeof err === 'string' ? err : ((err && err.message) || '');
+          var stack = (err && err.stack) || '';
+          var src = typeof source === 'string' ? source : '';
+          var str = '';
+          try { str = String(err); } catch (e) {}
+          var reasonStr = (err && err.reason && (err.reason.message || String(err.reason))) || '';
+
+          // Extension errors (e.g. Similarweb, Grammarly, etc. injected into iframe)
+          if (
+            src.includes('chrome-extension://') ||
+            src.includes('moz-extension://') ||
+            stack.includes('chrome-extension://') ||
+            stack.includes('moz-extension://') ||
+            stack.includes('frame_ant.js') ||
+            msg.includes('Cannot set property fetch') ||
+            msg.includes('which has only a getter') ||
+            str.includes('Cannot set property fetch')
+          ) {
+            return true;
+          }
+
+          // Abort & Stream Cancellation errors
+          return (
+            name === 'AbortError' ||
+            name === 'cancelled' ||
+            name === 'DOMException' ||
+            msg.includes('aborted') ||
+            msg.includes('AbortError') ||
+            msg.includes('The user aborted a request') ||
+            msg.includes('signal is aborted') ||
+            str.includes('aborted') ||
+            str.includes('AbortError') ||
+            str.includes('signal is aborted') ||
+            reasonStr.includes('aborted') ||
+            reasonStr.includes('signal is aborted')
+          );
+        };
+
+        window.addEventListener('unhandledrejection', function(event) {
+          if (isIgnoredError(event.reason)) {
+            event.preventDefault();
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          }
+        }, true);
+
+        window.addEventListener('error', function(event) {
+          if (isIgnoredError(event.error, event.filename) || isIgnoredError(event.message, event.filename)) {
+            event.preventDefault();
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          }
+        }, true);
+
+        var origOnError = window.onerror;
+        window.onerror = function(message, source, lineno, colno, error) {
+          if (isIgnoredError(error, source) || isIgnoredError(message, source)) {
+            return true;
+          }
+          if (origOnError) {
+            return origOnError.call(this, message, source, lineno, colno, error);
+          }
+          return false;
+        };
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-[#FBFBFA] text-[#2D3136] antialiased selection:bg-emerald-100">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
