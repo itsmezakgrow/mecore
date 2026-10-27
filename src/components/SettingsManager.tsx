@@ -60,7 +60,8 @@ import {
   LogOut,
   KeyRound,
   Users,
-  Mail
+  Mail,
+  Activity
 } from 'lucide-react';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { 
@@ -76,7 +77,6 @@ import {
   AppCategoryItem, 
   AppNavItemConfig, 
   ModuleType, 
-  LifePhase, 
   RewardItem,
   DashboardWidgetConfig,
   AccessControlData
@@ -96,7 +96,10 @@ import {
   ALL_CONTROLLABLE_MODULES,
   getDisabledModules,
   setModuleState,
-  getModuleLifecycleHistory
+  getModuleLifecycleHistory,
+  isSystemTrackingActive,
+  setSystemTrackingActive,
+  getSystemActivatedAt
 } from '../utils/moduleLifecycle';
 import { ModuleLifecycleEvent } from '../types';
 
@@ -121,14 +124,6 @@ interface SettingsManagerProps {
   onOpenExportModal: () => void;
   onOpenFirestoreGuide: () => void;
   // Feature Controls & Customizer Props
-  lifePhases?: LifePhase[];
-  activePhaseId?: string;
-  onSelectPhase?: (phaseId: string) => Promise<void>;
-  onCreatePhase?: (phase: Omit<LifePhase, 'id'>) => Promise<void>;
-  onUpdatePhase?: (phaseId: string, updated: Partial<LifePhase>) => Promise<void>;
-  onDeletePhase?: (phaseId: string) => Promise<void>;
-  onResetPhases?: () => void;
-  onClearAllPhases?: () => void;
   rewards?: RewardItem[];
   onAddReward?: (reward: Omit<RewardItem, 'id'>) => Promise<void>;
   onUpdateReward?: (rewardId: string, updated: Partial<RewardItem>) => Promise<void>;
@@ -166,14 +161,6 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
   isOnline,
   onOpenExportModal,
   onOpenFirestoreGuide,
-  lifePhases = [],
-  activePhaseId,
-  onSelectPhase,
-  onCreatePhase,
-  onUpdatePhase,
-  onDeletePhase,
-  onResetPhases,
-  onClearAllPhases,
   rewards = [],
   onAddReward,
   onUpdateReward,
@@ -261,8 +248,20 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
   const [customSuccessMessage, setCustomSuccessMessage] = useState<string | null>(null);
 
   // Edit states in settings
-  const [editingPhase, setEditingPhase] = useState<LifePhase | null>(null);
   const [editingReward, setEditingReward] = useState<RewardItem | null>(null);
+
+  // System Tracking State
+  const [systemTrackingActive, setSystemTrackingActiveState] = useState<boolean>(() => isSystemTrackingActive());
+  const [systemActivatedAt, setSystemActivatedAt] = useState<number>(() => getSystemActivatedAt());
+
+  useEffect(() => {
+    const handleTrackingSync = () => {
+      setSystemTrackingActiveState(isSystemTrackingActive());
+      setSystemActivatedAt(getSystemActivatedAt());
+    };
+    window.addEventListener('core_system_tracking_changed', handleTrackingSync);
+    return () => window.removeEventListener('core_system_tracking_changed', handleTrackingSync);
+  }, []);
 
   // Module Master Lifecycle State
   const [disabledModules, setDisabledModules] = useState<ModuleType[]>(() => getDisabledModules());
@@ -527,7 +526,6 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
         goals,
         comments,
         focusSessions,
-        lifePhases,
         rewards,
       },
     };
@@ -1311,124 +1309,83 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                 )}
               </div>
 
-              {/* 2. STRATEGIC LIFE FOCUS PHASES CONTROLS */}
-              <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-[#1E2025] border border-[#EAE9E6] dark:border-[#2A2C33] space-y-3">
+              {/* 2. MASTER SYSTEM TRACKING & CALCULATION CONTROLS */}
+              <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-[#1E2025] border border-[#EAE9E6] dark:border-[#2A2C33] space-y-4">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
-                      <Target size={16} />
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold ${
+                      systemTrackingActive
+                        ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400'
+                    }`}>
+                      <Activity size={16} />
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
-                        {isAr ? 'مراحل التركيز الاستراتيجي والوزن النسبي' : 'Strategic Life Focus Phases'}
+                        {isAr ? 'حالة تتبع وحساب النظام الشامل' : 'Master System Tracking & Calculation'}
                       </h4>
                       <p className="text-[10px] text-neutral-500">
-                        {isAr 
-                          ? `${lifePhases.length} مرحلة معرفة • المرحلة النشطة: ${lifePhases.find(p => p.id === activePhaseId || p.isActive)?.name || 'الوضع القياسي المتوازن'}` 
-                          : `${lifePhases.length} phases • Active: ${lifePhases.find(p => p.id === activePhaseId || p.isActive)?.name || 'Standard Balanced'}`}
+                        {systemTrackingActive
+                          ? (isAr
+                              ? `🟢 النظام نشط ويحسب كافة الأرقام • منذ: ${systemActivatedAt ? new Date(systemActivatedAt).toLocaleDateString(isAr ? 'ar-EG' : 'en-US') : 'الآن'}`
+                              : `🟢 System Active & Counting • Since: ${systemActivatedAt ? new Date(systemActivatedAt).toLocaleDateString() : 'Now'}`)
+                          : (isAr ? '⏸️ النظام متوقف حالياً ولن يقوم بحساب أي أرقام أو سلاسل' : '⏸️ Master System Deactivated — Number Counting Suspended')}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
-                    {onResetPhases && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onResetPhases();
-                          triggerCustomNotification(isAr ? 'تمت استعادة المراحل الافتراضية بنجاح!' : 'Default phases restored!');
-                        }}
-                        className="px-2.5 py-1 text-[11px] font-bold text-neutral-600 dark:text-neutral-400 hover:text-indigo-600 flex items-center gap-1 cursor-pointer bg-white dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700"
-                        title={isAr ? 'استعادة المراحل الافتراضية' : 'Reset default phases'}
-                      >
-                        <RotateCcw size={11} />
-                        <span>{isAr ? 'استعادة الافتراضي' : 'Reset'}</span>
-                      </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !systemTrackingActive;
+                      setSystemTrackingActive(next);
+                      setSystemTrackingActiveState(next);
+                      setSystemActivatedAt(Date.now());
+                      triggerCustomNotification(
+                        next
+                          ? (isAr ? '✓ تم تفعيل النظام بنجاح! يبدأ احتساب الأرقام والسلاسل من الآن.' : '✓ System tracking activated! Counting resumes freshly from this point.')
+                          : (isAr ? '✓ تم تعطيل النظام بالكامل. تم إيقاف احتساب وتراكم الأرقام.' : '✓ Master system deactivated. All number counting and telemetry suspended.')
+                      );
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs ${
+                      systemTrackingActive
+                        ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/40 hover:bg-rose-100'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    }`}
+                  >
+                    {systemTrackingActive ? (
+                      <>
+                        <Ban size={13} />
+                        <span>{isAr ? 'تعطيل النظام وإيقاف الحساب' : 'Deactivate System'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={13} />
+                        <span>{isAr ? 'تفعيل النظام وبدء الحساب' : 'Activate & Start Counting'}</span>
+                      </>
                     )}
-                    {onClearAllPhases && lifePhases.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(isAr ? 'هل تريد مسح جميع مراحل التركيز؟' : 'Clear all life phases?')) {
-                            onClearAllPhases();
-                            triggerCustomNotification(isAr ? 'تم مسح جميع المراحل.' : 'All phases cleared.');
-                          }
-                        }}
-                        className="px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer bg-white dark:bg-neutral-800 rounded-lg border border-rose-200 dark:border-rose-900"
-                        title={isAr ? 'مسح كافة المراحل' : 'Clear all phases'}
-                      >
-                        <Trash2 size={11} />
-                        <span>{isAr ? 'مسح الكل' : 'Clear All'}</span>
-                      </button>
-                    )}
-                  </div>
+                  </button>
                 </div>
 
-                {/* Phases Quick List */}
-                <div className="space-y-1.5 pt-1">
-                  {lifePhases.map((phase) => {
-                    const isActive = (phase.id && phase.id === activePhaseId) || phase.isActive;
-                    return (
-                      <div
-                        key={phase.id || phase.name}
-                        className="p-2.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-2 text-xs"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-neutral-900 dark:text-white truncate">{phase.name}</span>
-                            {isActive && (
-                              <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 px-1.5 py-0.2 rounded-md font-mono">
-                                {isAr ? 'النشطة' : 'Active'}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[10px] text-neutral-400 font-mono">
-                            {Object.entries(phase.categoryWeights || {}).filter(([_, w]) => Number(w) > 0).map(([k, v]) => `${k}: ${v}%`).join(', ')}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          {onSelectPhase && !isActive && phase.id && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onSelectPhase(phase.id!);
-                                triggerCustomNotification(isAr ? `تم تفعيل مرحلة "${phase.name}"` : `Activated "${phase.name}"`);
-                              }}
-                              className="px-2 py-1 rounded-lg text-[10px] font-bold bg-indigo-600 text-white cursor-pointer"
-                            >
-                              {isAr ? 'تفعيل' : 'Activate'}
-                            </button>
-                          )}
-                          {onSelectPhase && isActive && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onSelectPhase('');
-                                triggerCustomNotification(isAr ? 'تم تعطيل المرحلة والعودة للوزن القياسي' : 'Deactivated phase');
-                              }}
-                              className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 cursor-pointer"
-                            >
-                              {isAr ? 'تعطيل' : 'Deactivate'}
-                            </button>
-                          )}
-                          {onDeletePhase && phase.id && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onDeletePhase(phase.id!);
-                                triggerCustomNotification(isAr ? 'تم حذف المرحلة.' : 'Phase deleted.');
-                              }}
-                              className="p-1 rounded text-neutral-400 hover:text-rose-600 cursor-pointer"
-                              title={isAr ? 'حذف' : 'Delete'}
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className={`p-3 rounded-xl border text-xs leading-relaxed ${
+                  systemTrackingActive
+                    ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/30 text-emerald-900 dark:text-emerald-200'
+                    : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/30 text-rose-900 dark:text-rose-200'
+                }`}>
+                  <p className="font-bold text-[11px] mb-0.5">
+                    {systemTrackingActive
+                      ? (isAr ? 'النظام في وضع العمل التام' : 'System is Actively Counting')
+                      : (isAr ? 'النظام معطل (حالة السكون الكامل)' : 'System Deactivated (Zero Telemetry)')}
+                  </p>
+                  <p className="text-[10px] opacity-90">
+                    {systemTrackingActive
+                      ? (isAr
+                          ? 'يقوم النظام بحساب السلاسل (Streaks)، أوقات التركيز، إنجازات المهام، والتحليلات البيانية بشكل فوري وتراكمي.'
+                          : 'The system is tracking streaks, focus sessions, task completions, and analytics continuously.')
+                      : (isAr
+                          ? 'عند تعطيل النظام، يتوقف احتساب كافة الأرقام والسلاسل عبر كامل التطبيق. وعند إعادة تفعيله، يتم الحساب فعلياً من نقطة التفعيل الجديدة دون أي أخطاء أو تراكمات غير مرغوبة.'
+                          : 'When deactivated, all counting stops across the entire OS. Once reactivated, tracking starts freshly and counts forward from that exact activation moment.')}
+                  </p>
                 </div>
               </div>
 

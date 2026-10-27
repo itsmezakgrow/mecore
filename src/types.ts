@@ -240,7 +240,7 @@ export interface RewardItem {
 }
 
 export interface DashboardWidgetConfig {
-  id: 'urgent_tasks' | 'routines' | 'life_phase' | 'top_streaks' | 'level_loggers' | 'rewards' | 'daily_blocks' | 'sleep_rhythm' | 'reflections_highlight';
+  id: 'urgent_tasks' | 'routines' | 'top_streaks' | 'level_loggers' | 'rewards' | 'daily_blocks' | 'sleep_rhythm' | 'reflections_highlight';
   titleEn: string;
   titleAr: string;
   enabled: boolean;
@@ -408,7 +408,10 @@ export interface ProjectItem {
   status: 'In Progress' | 'Planning' | 'Completed' | 'On Hold';
   category: string;
   color: string;
-  deadline?: string;
+  startDate?: string; // YYYY-MM-DD
+  deadline?: string; // YYYY-MM-DD
+  linkedGoalId?: string; // High-level overarching Goal ID
+  linkedGoalTitle?: string;
   subtasks: ProjectSubtask[];
   dailyAllocationPercentage?: number; // Target daily allocation percentage (e.g. 40%)
   createdAt: number;
@@ -498,6 +501,9 @@ export interface DailyBlockArchetype {
   descriptionAr: string;
   icon: string;
   badge?: string;
+  targetDays?: string[]; // e.g. ['Mon', 'Tue', 'Wed'] or ['الإثنين', 'الثلاثاء']
+  isCustom?: boolean;
+  createdAt?: number;
   blocks: {
     title: string;
     subtitle?: string;
@@ -509,6 +515,8 @@ export interface DailyBlockArchetype {
     icon: string;
     targetFocusMinutes?: number;
     order: number;
+    linkedProjectId?: string;
+    linkedGoalId?: string;
   }[];
 }
 

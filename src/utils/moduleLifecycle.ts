@@ -191,3 +191,37 @@ export const setModuleState = (
 
   return event;
 };
+
+const SYSTEM_TRACKING_STATE_KEY = 'core_system_tracking_state_v1';
+const SYSTEM_ACTIVATED_AT_KEY = 'core_system_activated_at_v1';
+
+export const isSystemTrackingActive = (): boolean => {
+  try {
+    const raw = localStorage.getItem(SYSTEM_TRACKING_STATE_KEY);
+    if (raw !== null) {
+      return raw === 'true';
+    }
+  } catch (e) {}
+  return true; // Default active
+};
+
+export const getSystemActivatedAt = (): number => {
+  try {
+    const raw = localStorage.getItem(SYSTEM_ACTIVATED_AT_KEY);
+    if (raw) return parseInt(raw, 10);
+  } catch (e) {}
+  return 0;
+};
+
+export const setSystemTrackingActive = (active: boolean): void => {
+  try {
+    localStorage.setItem(SYSTEM_TRACKING_STATE_KEY, String(active));
+    if (active) {
+      localStorage.setItem(SYSTEM_ACTIVATED_AT_KEY, String(Date.now()));
+    }
+  } catch (e) {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('core_system_tracking_changed', { detail: { active, timestamp: Date.now() } }));
+  }
+};

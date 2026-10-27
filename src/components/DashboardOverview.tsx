@@ -51,7 +51,6 @@ import {
   ChecklistGroup, 
   ModuleType, 
   FocusSession,
-  LifePhase,
   RewardItem,
   TaskSkipReason,
   DailyBlockItem,
@@ -61,7 +60,6 @@ import {
 } from '../types';
 import { translations } from '../utils/translations';
 import { RewardStoreModal } from './RewardStoreModal';
-import { PhaseFocusManager } from './PhaseFocusManager';
 
 interface DashboardOverviewProps {
   tasks: TaskItem[];
@@ -73,8 +71,6 @@ interface DashboardOverviewProps {
   checklists?: ChecklistGroup[];
   focusSessions?: FocusSession[];
   rewards?: RewardItem[];
-  lifePhases?: LifePhase[];
-  activePhaseId?: string;
   sleepLogs?: DailySleepLog[];
   sleepConfig?: SleepScheduleConfig | null;
   reviews?: ReviewEntry[];
@@ -82,9 +78,6 @@ interface DashboardOverviewProps {
   onToggleTask?: (id: string, completed: boolean) => void;
   onToggleHabit?: (habit: HabitItem, dateKey: string) => void;
   onBatchCompleteHabits?: (habitIds: string[], dateKey: string) => void;
-  onSelectPhase?: (phaseId: string) => Promise<void>;
-  onCreatePhase?: (phase: Omit<LifePhase, 'id'>) => Promise<void>;
-  onDeletePhase?: (phaseId: string) => Promise<void>;
   onAddReward?: (reward: Omit<RewardItem, 'id'>) => Promise<void>;
   onClaimReward?: (rewardId: string) => Promise<void>;
   onDeleteReward?: (rewardId: string) => Promise<void>;
@@ -115,12 +108,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   dailyBlocks = [],
   focusSessions = [],
   rewards = [],
-  lifePhases = [],
-  activePhaseId,
   setActiveModule,
-  onSelectPhase,
-  onCreatePhase,
-  onDeletePhase,
   onClaimReward,
   lang = 'en',
 }) => {
@@ -133,7 +121,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const [metricDomain, setMetricDomain] = useState<MetricDomain>('all');
   const [chartType, setChartType] = useState<'area' | 'bar'>('area');
   const [showRewardModal, setShowRewardModal] = useState<boolean>(false);
-  const [showPhaseModal, setShowPhaseModal] = useState<boolean>(false);
 
   // -------------------------------------------------------------------------
   // Date Intelligence & Timestamps
@@ -681,21 +668,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </button>
           </div>
 
-          {/* Quick Life Phase Access if configured */}
-          {lifePhases.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowPhaseModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-300 text-xs font-bold cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-950/40 transition-colors"
-              title={isAr ? 'مرحلة التركيز الحالية' : 'Life Phase Focus'}
-            >
-              <Compass size={14} className="text-indigo-500" />
-              <span className="hidden sm:inline">
-                {lifePhases.find((p) => p.id === activePhaseId)?.title || (isAr ? 'مرحلة الحياة' : 'Life Phase')}
-              </span>
-            </button>
-          )}
-
           {/* Quick Rewards Store access */}
           {rewards.length > 0 && (
             <button
@@ -1241,17 +1213,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           onAddReward={async () => {}}
           onClaimReward={onClaimReward || (async () => {})}
           onDeleteReward={async () => {}}
-          lang={lang}
-        />
-      )}
-
-      {showPhaseModal && (
-        <PhaseFocusManager
-          phases={lifePhases}
-          activePhaseId={activePhaseId}
-          onSelectPhase={onSelectPhase || (async () => {})}
-          onCreatePhase={onCreatePhase || (async () => {})}
-          onDeletePhase={onDeletePhase || (async () => {})}
           lang={lang}
         />
       )}

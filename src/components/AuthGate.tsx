@@ -18,10 +18,16 @@ import {
   UserCheck,
   RefreshCw,
   Copy,
-  Check
+  Check,
+  Globe,
+  ExternalLink,
+  HelpCircle,
+  Compass
 } from 'lucide-react';
 import { 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
@@ -31,6 +37,7 @@ import {
 import { auth } from '../firebase';
 import { AccessControlData } from '../types';
 import { DEFAULT_OWNER_EMAIL } from '../services/firestoreService';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 interface AuthGateProps {
   user: User | null;
@@ -61,6 +68,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
   const [authMethod, setAuthMethod] = useState<'google' | 'password'>('google');
   const [operationNotAllowed, setOperationNotAllowed] = useState<boolean>(false);
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState<boolean>(false);
   
   // Form State
   const [email, setEmail] = useState<string>(DEFAULT_OWNER_EMAIL);
@@ -70,24 +79,84 @@ export const AuthGate: React.FC<AuthGateProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Google Sign In
+  // Check for any redirect auth result on mount (useful for mobile browsers or redirect logins)
+  React.useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          console.log('Redirect sign-in successful for:', result.user.email);
+        }
+      })
+      .catch((err: any) => {
+        if (err?.code === 'auth/unauthorized-domain') {
+          const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'Netlify domain';
+          setUnauthorizedDomain(currentHost);
+        } else if (err?.code) {
+          console.warn('Redirect sign-in notice:', err);
+        }
+      });
+  }, []);
+
+  const handleCopyCurrentDomain = (domainToCopy: string) => {
+    try {
+      navigator.clipboard.writeText(domainToCopy);
+      setCopiedDomain(true);
+      setTimeout(() => setCopiedDomain(false), 2500);
+    } catch (e) {
+      console.warn('Failed to copy to clipboard', e);
+    }
+  };
+
+  // Google Sign In via Popup
   const handleGoogleSignIn = async () => {
     try {
       setIsSubmitting(true);
       setErrorMessage(null);
+      setUnauthorizedDomain(null);
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, provider);
     } catch (err: any) {
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        // User closed the popup, do nothing
+        // User closed popup, do nothing
+      } else if (err.code === 'auth/unauthorized-domain') {
+        const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'Netlify domain';
+        setUnauthorizedDomain(currentHost);
+        console.error('Google Sign-in Unauthorized Domain:', currentHost, err);
+      } else if (err.code === 'auth/popup-blocked') {
+        setErrorMessage(
+          isAr
+            ? 'تم حظر النافذة المنبثقة من قبل متصفحك. يرجى السماح بالنوافذ المنبثقة (Popups) أو تجربة تسجيل الدخول عبر البريد وكلمة المرور.'
+            : 'Popup was blocked by your browser. Please allow popups for this site or use the redirect/password option.'
+        );
       } else {
         console.error('Google Sign-in Error:', err);
         setErrorMessage(
           isAr 
-            ? 'حدث خطأ أثناء تسجيل الدخول عبر Google. يرجى المحاولة مرة أخرى أو استخدام البريد وكلمة المرور.' 
-            : 'Google Sign-in failed. Please try again or use email & password.'
+            ? `فشل تسجيل الدخول عبر Google (${err?.code || 'خطأ'}). يرجى المحاولة مرة أخرى أو استخدام البريد وكلمة المرور.` 
+            : `Google Sign-in failed (${err?.code || 'error'}). Please try again or use email & password.`
         );
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Google Sign In via Redirect (fallback for mobile/strict cookie blockers)
+  const handleGoogleSignInRedirect = async () => {
+    try {
+      setIsSubmitting(true);
+      setErrorMessage(null);
+      setUnauthorizedDomain(null);
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithRedirect(auth, provider);
+    } catch (err: any) {
+      if (err.code === 'auth/unauthorized-domain') {
+        const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'Netlify domain';
+        setUnauthorizedDomain(currentHost);
+      } else {
+        setErrorMessage(err?.message || 'Redirect error');
       }
     } finally {
       setIsSubmitting(false);
@@ -324,8 +393,95 @@ export const AuthGate: React.FC<AuthGateProps> = ({
               </div>
             )}
 
+            {/* UNAUTHORIZED DOMAIN (Netlify / External Domain not in Firebase Authorized Domains) */}
+            {unauthorizedDomain && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-xs space-y-3 animate-fadeIn">
+                <div className="flex items-start gap-2.5">
+                  <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+                    <Globe size={18} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="font-bold text-neutral-900 dark:text-white text-sm">
+                      {isAr ? 'نطاق Netlify يتطلب الإضافة في Firebase' : 'Authorize Netlify Domain in Firebase'}
+                    </p>
+                    <p className="text-[11px] text-neutral-600 dark:text-neutral-300 leading-relaxed">
+                      {isAr
+                        ? 'أمان Firebase يمنع تسجيل الدخول عبر Google من النطاقات الجديدة تلقائياً حتى يتم السماح بها.'
+                        : 'Google Sign-in is restricted by Firebase until this hosting domain is added to your project authorized list.'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Domain Copy Box */}
+                <div className="p-2.5 rounded-xl bg-white dark:bg-neutral-900 border border-amber-300 dark:border-amber-700/50 flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider shrink-0">
+                      {isAr ? 'النطاق:' : 'Domain:'}
+                    </span>
+                    <span className="font-mono text-xs font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+                      {unauthorizedDomain}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCurrentDomain(unauthorizedDomain)}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0 transition-all"
+                  >
+                    {copiedDomain ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                    <span>{copiedDomain ? (isAr ? 'تم النسخ' : 'Copied!') : (isAr ? 'نسخ النطاق' : 'Copy')}</span>
+                  </button>
+                </div>
+
+                {/* 3 Step Instructions */}
+                <div className="space-y-1.5 pt-1 text-[11px] text-neutral-700 dark:text-neutral-300">
+                  <p className="font-bold text-[11px] text-neutral-900 dark:text-white">
+                    {isAr ? 'خطوات التفعيل (دقيقة واحدة):' : 'Quick 1-Minute Fix:'}
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1 text-[11px] leading-relaxed ps-1 text-neutral-600 dark:text-neutral-400">
+                    <li>
+                      {isAr
+                        ? 'انقر على زر "فتح إعدادات Firebase" بالأسفل.'
+                        : 'Click "Open Firebase Console Settings" below.'}
+                    </li>
+                    <li>
+                      {isAr
+                        ? 'انزل لقسم "Authorized domains" واضغط "Add domain".'
+                        : 'Scroll to "Authorized domains" and click "Add domain".'}
+                    </li>
+                    <li>
+                      {isAr
+                        ? `الصق النطاق (${unauthorizedDomain}) واضغط Add، ثم عُد واضغط تسجيل الدخول.`
+                        : `Paste "${unauthorizedDomain}", click Add, and refresh or click retry below.`}
+                    </li>
+                  </ol>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <a
+                    href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/settings`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all text-center"
+                  >
+                    <span>{isAr ? 'فتح إعدادات Firebase' : 'Open Firebase Console'}</span>
+                    <ExternalLink size={13} />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    disabled={isSubmitting}
+                    className="py-2.5 px-3 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw size={13} className={isSubmitting ? 'animate-spin' : ''} />
+                    <span>{isAr ? 'إعادة تجربة الدخول' : 'Retry Sign In'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* ERROR / SUCCESS ALERTS */}
-            {errorMessage && !operationNotAllowed && (
+            {errorMessage && !operationNotAllowed && !unauthorizedDomain && (
               <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2">
                 <AlertCircle size={15} className="shrink-0 mt-0.5 text-rose-500" />
                 <span className="leading-snug">{errorMessage}</span>
@@ -360,6 +516,19 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                       : (isAr ? 'المتابعة بحساب Google' : 'Continue with Google')}
                   </span>
                 </button>
+
+                {/* Mobile / Redirect Fallback Button */}
+                <div className="flex items-center justify-between text-[11px] px-1 text-neutral-500">
+                  <span>{isAr ? 'تفضّل وضع التحويل المباشر؟' : 'Having popup issues?'}</span>
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignInRedirect}
+                    disabled={isSubmitting}
+                    className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold cursor-pointer"
+                  >
+                    {isAr ? 'تسجيل الدخول بإعادة التوجيه' : 'Try Redirect Sign-in'}
+                  </button>
+                </div>
 
                 <div className="p-3.5 rounded-2xl bg-neutral-50 dark:bg-neutral-900/60 border border-neutral-200 dark:border-neutral-800 text-[11px] text-neutral-500 dark:text-neutral-400 space-y-1">
                   <p className="font-semibold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">

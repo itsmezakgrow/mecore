@@ -92,7 +92,6 @@ import {
   AppComment, 
   WorkoutSession, 
   SundayReset,
-  LifePhase,
   RewardItem,
   TaskSkipReason,
   ReviewEntry,
@@ -189,6 +188,7 @@ import { SleepWakeTracker } from './components/SleepWakeTracker';
 import { ReviewJournalModal } from './components/ReviewJournalModal';
 import { ReviewPromptBanner } from './components/ReviewPromptBanner';
 import { FocusTracker } from './components/FocusTracker';
+import { isSystemTrackingActive } from './utils/moduleLifecycle';
 import firebaseConfig from '../firebase-applet-config.json';
 import { RefreshCw, Wifi, WifiOff, Download, Monitor, Minimize2, Maximize2, Moon, Sun, Timer, MessageSquare, BarChart3, CheckSquare, Flame, CalendarDays, StickyNote, ChevronLeft, ChevronRight, RotateCcw, Archive, HelpCircle } from 'lucide-react';
 
@@ -538,22 +538,16 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
 
-  // Strategic Life Phases state
-  const [lifePhases, setLifePhases] = useState<LifePhase[]>(() => {
-    try {
-      const saved = localStorage.getItem('app_life_phases_v1');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return [];
-  });
+  // System Master Tracking State
+  const [systemTrackingActive, setSystemTrackingActive] = useState<boolean>(() => isSystemTrackingActive());
 
-  const [activePhaseId, setActivePhaseId] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('app_active_phase_id');
-      if (saved) return saved;
-    } catch {}
-    return '';
-  });
+  useEffect(() => {
+    const handleTrackingSync = () => {
+      setSystemTrackingActive(isSystemTrackingActive());
+    };
+    window.addEventListener('core_system_tracking_changed', handleTrackingSync);
+    return () => window.removeEventListener('core_system_tracking_changed', handleTrackingSync);
+  }, []);
 
   // Milestone Gamification Rewards state
   const [rewards, setRewards] = useState<RewardItem[]>(() => {
@@ -563,19 +557,6 @@ export default function App() {
     } catch {}
     return [];
   });
-
-  // Sync lifePhases and rewards to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('app_life_phases_v1', JSON.stringify(lifePhases));
-    } catch {}
-  }, [lifePhases]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('app_active_phase_id', activePhaseId);
-    } catch {}
-  }, [activePhaseId]);
 
   useEffect(() => {
     try {
@@ -1421,97 +1402,7 @@ export default function App() {
     );
   };
 
-  // Strategic Life Phases Handlers
-  const handleSelectPhase = async (phaseId: string) => {
-    setActivePhaseId(phaseId);
-    setLifePhases((prev) =>
-      prev.map((p) => ({ ...p, isActive: p.id === phaseId }))
-    );
-    const chosen = lifePhases.find((p) => p.id === phaseId);
-    addToast(
-      lang === 'ar'
-        ? `تم تفعيل مرحلة: ${chosen?.name || ''}`
-        : `Active focus phase set to: ${chosen?.name || ''}`,
-      'success'
-    );
-  };
 
-  const handleCreatePhase = async (phase: Omit<LifePhase, 'id'>) => {
-    const newId = `phase-${Date.now()}`;
-    const newPhase: LifePhase = { ...phase, id: newId, isActive: true };
-    setLifePhases((prev) => [newPhase, ...prev.map((p) => ({ ...p, isActive: false }))]);
-    setActivePhaseId(newId);
-    addToast(
-      lang === 'ar'
-        ? `تم إنشاء وتفعيل مرحلة: "${phase.name}"`
-        : `Created & activated phase: "${phase.name}"`,
-      'success'
-    );
-  };
-
-  const handleDeletePhase = async (phaseId: string) => {
-    setLifePhases((prev) => prev.filter((p) => p.id !== phaseId));
-    if (activePhaseId === phaseId) {
-      const remaining = lifePhases.filter((p) => p.id !== phaseId);
-      if (remaining.length > 0) {
-        setActivePhaseId(remaining[0].id || '');
-      } else {
-        setActivePhaseId('');
-      }
-    }
-    addToast(
-      lang === 'ar' ? 'تم حذف مرحلة التركيز' : 'Life phase deleted',
-      'delete'
-    );
-  };
-
-  const handleUpdatePhase = async (phaseId: string, updates: Partial<LifePhase>) => {
-    setLifePhases((prev) =>
-      prev.map((p) => (p.id === phaseId ? { ...p, ...updates } : p))
-    );
-    addToast(
-      lang === 'ar' ? 'تم تحديث مرحلة التركيز' : 'Life phase updated',
-      'success'
-    );
-  };
-
-  const handleResetPhases = () => {
-    const defaultPhases: LifePhase[] = [
-      {
-        id: 'phase-1-biz',
-        name: 'Business Growth & Scaling Sprint',
-        description: 'Heavy focus on project execution, client delivery, and revenue milestones.',
-        startDate: new Date().toISOString().split('T')[0],
-        isActive: true,
-        categoryWeights: { Business: 70, Personal: 30, Health: 0, Learning: 0, Finance: 0 },
-        createdAt: Date.now(),
-      },
-      {
-        id: 'phase-2-bal',
-        name: 'Harmonious Health & Lifestyle Reset',
-        description: 'Equal split between business maintenance and physical health/personal rejuvenation.',
-        startDate: new Date().toISOString().split('T')[0],
-        isActive: false,
-        categoryWeights: { Business: 50, Personal: 50, Health: 0, Learning: 0, Finance: 0 },
-        createdAt: Date.now() - 86400000,
-      }
-    ];
-    setLifePhases(defaultPhases);
-    setActivePhaseId('phase-1-biz');
-    addToast(
-      lang === 'ar' ? 'تمت استعادة المراحل الافتراضية' : 'Default life phases restored',
-      'info'
-    );
-  };
-
-  const handleClearAllPhases = () => {
-    setLifePhases([]);
-    setActivePhaseId('');
-    addToast(
-      lang === 'ar' ? 'تم مسح كافة المراحل' : 'All life phases cleared',
-      'info'
-    );
-  };
 
   // Milestone Rewards Handlers
   const handleAddReward = async (reward: Omit<RewardItem, 'id'>) => {
@@ -1610,8 +1501,6 @@ export default function App() {
   };
 
   const handleClearPresetSamples = () => {
-    setLifePhases([]);
-    setActivePhaseId('');
     setRewards([]);
     addToast(
       lang === 'ar' ? 'تم مسح النماذج والبيانات التوضيحية' : 'Demo presets purged',
@@ -1626,9 +1515,9 @@ export default function App() {
       localStorage.setItem('app_clean_start_date', today);
       localStorage.setItem('app_clean_start_timestamp', Date.now().toString());
       localStorage.setItem('app_start_date', freshStart);
-      localStorage.setItem('app_life_phases_v1', JSON.stringify([]));
+      localStorage.removeItem('app_life_phases_v1');
+      localStorage.removeItem('app_active_phase_id');
       localStorage.setItem('app_milestone_rewards_v1', JSON.stringify([]));
-      localStorage.setItem('app_active_phase_id', '');
       localStorage.removeItem('core_daily_focus_telemetry');
       localStorage.removeItem('core_atlas_chat_history');
       localStorage.removeItem('planner_monthly_themes_v1');
@@ -1653,9 +1542,7 @@ export default function App() {
     setReviews([]);
     setDailyBlocks([]);
     setSleepLogs([]);
-    setLifePhases([]);
     setRewards([]);
-    setActivePhaseId('');
     addToast(
       lang === 'ar'
         ? 'تم مسح وتفريغ مساحة العمل كلياً، التطبيق الآن صفحة بيضاء نظيفة تماماً للبدء من جديد!'
@@ -2331,6 +2218,29 @@ export default function App() {
             </div>
           ) : (
             <>
+              {/* SYSTEM TRACKING DEACTIVATED NOTICE */}
+              {!systemTrackingActive && (
+                <div className="mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 flex items-center justify-between gap-3 text-xs shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base shrink-0">⏸️</span>
+                    <div>
+                      <p className="font-bold">{lang === 'ar' ? 'تتبع النظام معطل حالياً (توقف الحساب التراكمي)' : 'Master System Tracking Suspended'}</p>
+                      <p className="text-[11px] opacity-85">
+                        {lang === 'ar'
+                          ? 'تم إيقاف احتساب وتراكم الأرقام والسلاسل عبر كامل التطبيق. عند إعادة التفعيل في الإعدادات سيتم استئناف الحساب بدءاً من تلك اللحظة.'
+                          : 'All number counting, streaks, and telemetry are paused across the OS. Reactivating in Settings will resume counting forward from that exact moment.'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => changeModule('settings')}
+                    className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-xs active:scale-95 transition-all"
+                  >
+                    {lang === 'ar' ? 'إدارة الإعدادات' : 'Go to Settings'}
+                  </button>
+                </div>
+              )}
+
               {(activeModule === 'dashboard' || activeModule === 'analytics') && (
                 <ReviewPromptBanner
                   reviews={reviews}
@@ -2353,15 +2263,10 @@ export default function App() {
                   dailyBlocks={dailyBlocks}
                   focusSessions={focusSessions}
                   rewards={rewards}
-                  lifePhases={lifePhases}
-                  activePhaseId={activePhaseId}
                   setActiveModule={(mod) => changeModule(mod)}
                   onToggleTask={(id, completed) => handleUpdateTask(id, { completed })}
                   onToggleHabit={toggleHabitDate}
                   onBatchCompleteHabits={handleBatchCompleteHabits}
-                  onSelectPhase={handleSelectPhase}
-                  onCreatePhase={handleCreatePhase}
-                  onDeletePhase={handleDeletePhase}
                   onAddReward={handleAddReward}
                   onClaimReward={handleClaimReward}
                   onDeleteReward={handleDeleteReward}
@@ -2598,14 +2503,6 @@ export default function App() {
                   isOnline={isOnline}
                   onOpenExportModal={() => setShowExportModal(true)}
                   onOpenFirestoreGuide={() => setShowSetupGuide(true)}
-                  lifePhases={lifePhases}
-                  activePhaseId={activePhaseId}
-                  onSelectPhase={handleSelectPhase}
-                  onCreatePhase={handleCreatePhase}
-                  onUpdatePhase={handleUpdatePhase}
-                  onDeletePhase={handleDeletePhase}
-                  onResetPhases={handleResetPhases}
-                  onClearAllPhases={handleClearAllPhases}
                   rewards={rewards}
                   onAddReward={handleAddReward}
                   onUpdateReward={handleUpdateReward}
@@ -2628,9 +2525,13 @@ export default function App() {
               {activeModule === 'projects' && (
                 <ProjectsManager
                   projects={projects.filter((p) => !p.archived)}
+                  goals={goals.filter((g) => !g.archived)}
                   onAddProject={handleAddProject}
                   onUpdateProject={handleUpdateProject}
                   onDeleteProject={handleDeleteProject}
+                  onAddGoal={handleAddGoal}
+                  onUpdateGoal={handleUpdateGoal}
+                  onDeleteGoal={handleDeleteGoal}
                   lang={lang}
                 />
               )}
