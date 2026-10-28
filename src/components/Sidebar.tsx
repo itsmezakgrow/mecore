@@ -112,7 +112,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       case 'focus': return lang === 'ar' ? 'محطة التركيز' : 'Focus Station';
       case 'training': return lang === 'ar' ? 'محرك التدريب' : 'Training Engine';
       case 'sunday-reset': return lang === 'ar' ? 'إعادة ضبط الأحد' : 'Sunday Reset';
-      case 'reflections': return lang === 'ar' ? 'التأملات والدروس' : 'Reflections & Journal';
+      case 'reflections': return lang === 'ar' ? 'العقلية والتأملات' : 'Mindset & Reflections';
       case 'archive': return lang === 'ar' ? 'الأرشيف والمحفوظات' : 'Archive Hub';
       default: return defaultLabel;
     }
@@ -428,11 +428,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </aside>
 
       {/* ========================================================
-          TRUE NATIVE MOBILE BOTTOM APP BAR (3 TABS + MORE)
+          TRUE NATIVE MOBILE TOP APP BAR (3 TABS + MORE)
           ======================================================== */}
       <nav
-        id="mobile-bottom-navbar"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#FFFFFF]/95 dark:bg-[#121316]/95 backdrop-blur-xl border-t border-[#EAE9E6] dark:border-[#2A2C33] px-2 pt-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.06)] flex items-center justify-around"
+        id="mobile-top-navbar"
+        className="md:hidden fixed top-[52px] left-0 right-0 z-40 bg-[#FFFFFF]/95 dark:bg-[#121316]/95 backdrop-blur-xl border-b border-[#EAE9E6] dark:border-[#2A2C33] px-2 py-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.06)] flex items-center justify-around"
       >
         {mobileCoreTabs.map((item) => {
           const Icon = item.icon;

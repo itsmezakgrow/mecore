@@ -1654,7 +1654,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 </div>
               </div>
 
-              {dayBlocks.map((block, index) => {
+                                            {dayBlocks.map((block, index) => {
                 const isCurrentlyActive = isViewingToday && block.startTime <= currentTimeStr && block.endTime >= currentTimeStr;
                 const isCompleted = block.status === 'completed';
                 const isSelected = !!block.id && selectedBlockIds.includes(block.id);
@@ -1707,27 +1707,24 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                           <Check size={15} className={isCompleted ? 'stroke-[3]' : ''} />
                         </button>
 
-                        <div>
+                        <div className="flex-1">
                           <div className="flex items-center gap-1.5 font-mono text-xs font-extrabold text-neutral-900 dark:text-white flex-wrap">
-                            <Clock size={13} className="text-neutral-400" />
+                            <Clock size={13} className="text-neutral-400 shrink-0" />
                             <span>{formatTimeDisplay(block.startTime)}</span>
                             <span className="text-neutral-400">→</span>
                             <span>{formatTimeDisplay(block.endTime, true, block.startTime)}</span>
-
-                            {/* 00:00 Fix Button if End Time ended up as 00:00 accidentally */}
+                            
+                            {/* 00:00 Fix Button - Reduced size for mobile */}
                             {block.endTime === '00:00' && block.id && (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onUpdateBlock(block.id!, { endTime: '12:00' });
-                                  setSyncStatusMessage(isAr ? '✓ تم تعديل وقت الانتهاء إلى 12:00 ظهراً!' : '✓ Updated end time to 12:00 PM!');
-                                  setTimeout(() => setSyncStatusMessage(null), 3000);
                                 }}
-                                className="text-[10px] font-sans font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 cursor-pointer transition-all"
-                                title={isAr ? 'انقر للتحويل إلى 12:00 ظهراً وإصلاح 00:00' : 'Click to fix 00:00 to 12:00 PM (Noon)'}
+                                className="text-[9px] font-sans font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 cursor-pointer shrink-0"
                               >
-                                {isAr ? '⚡ تعديل إلى 12:00 ظهراً' : '⚡ Fix to 12:00 PM'}
+                                {isAr ? '⚡ تعديل 12:00' : '⚡ Fix'}
                               </button>
                             )}
                           </div>
@@ -1740,10 +1737,8 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                         </div>
                       </div>
 
-                      {/* Middle: Block Title & Focus Objective */}
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-base">{block.icon || '📌'}</span>
+                      <div className="flex items-start gap-2 pt-1">
+                        <span className="text-base shrink-0">{block.icon || '📌'}</span>
                           <h4
                             className={`text-xs sm:text-sm font-bold truncate ${
                               isCompleted
@@ -1766,217 +1761,10 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                             <span>{energyBadge.label}</span>
                           </span>
                         </div>
-
-                        {block.subtitle && (
-                          <p className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2">
-                            {block.subtitle}
-                          </p>
-                        )}
-
-                        {/* Connected Project & Goal Badges */}
-                        {(block.linkedProjectId || block.linkedGoalId) && (
-                          <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
-                            {block.linkedProjectId && (() => {
-                              const p = projects.find((pr) => pr.id === block.linkedProjectId);
-                              return p ? (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
-                                  <span>📁</span>
-                                  <span className="truncate max-w-[120px]">{p.title}</span>
-                                </span>
-                              ) : null;
-                            })()}
-                            {block.linkedGoalId && (() => {
-                              const g = goals.find((gl) => gl.id === block.linkedGoalId);
-                              return g ? (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center gap-1">
-                                  <span>🎯</span>
-                                  <span className="truncate max-w-[120px]">{g.title}</span>
-                                </span>
-                              ) : null;
-                            })()}
-                          </div>
-                        )}
-
-                        {/* Interactive Linked Tasks */}
-                        {block.linkedTaskIds && block.linkedTaskIds.length > 0 && (
-                          <div className="flex items-center gap-1.5 pt-1 flex-wrap">
-                            <span className="text-[10px] text-neutral-400 font-bold uppercase">{isAr ? 'المهام:' : 'Tasks:'}</span>
-                            {block.linkedTaskIds.map((taskId) => {
-                              const t = tasks.find((tk) => tk.id === taskId);
-                              if (!t) return null;
-                              return (
-                                <div
-                                  key={taskId}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (onToggleTask) onToggleTask(t.id!, !t.completed);
-                                  }}
-                                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] cursor-pointer transition-all ${
-                                    t.completed
-                                      ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-400 border-neutral-200 dark:border-neutral-700 line-through'
-                                      : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-900/40 hover:border-indigo-400'
-                                  }`}
-                                  title={isAr ? 'تغيير حالة المهمة' : 'Toggle task status'}
-                                >
-                                  <span className={`w-2.5 h-2.5 rounded flex items-center justify-center border text-[7px] ${t.completed ? 'bg-emerald-500 text-white' : 'border-neutral-400'}`}>
-                                    {t.completed && '✓'}
-                                  </span>
-                                  <span className="truncate">{t.title}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Interactive Linked Habits for selectedDate */}
-                        {block.linkedHabitIds && block.linkedHabitIds.length > 0 && (
-                          <div className="flex items-center gap-1.5 pt-1 flex-wrap">
-                            <span className="text-[10px] text-neutral-400 font-bold uppercase">{isAr ? 'العادات:' : 'Habits:'}</span>
-                            {block.linkedHabitIds.map((habitId) => {
-                              const h = habits.find((hb) => hb.id === habitId);
-                              if (!h) return null;
-                              const isDone = h.completedDates?.includes(selectedDate);
-                              return (
-                                <div
-                                  key={habitId}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (onToggleHabit) onToggleHabit(h.id!, selectedDate);
-                                  }}
-                                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] cursor-pointer transition-all ${
-                                    isDone
-                                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300'
-                                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900/40 hover:border-amber-400'
-                                  }`}
-                                  title={isAr ? 'تسجيل عادة اليوم' : 'Toggle habit for today'}
-                                >
-                                  <span>{h.icon || '🔥'}</span>
-                                  <span className="truncate max-w-[100px]">{h.name}</span>
-                                  <span className={`font-bold ${isDone ? 'text-emerald-600' : 'text-neutral-400'}`}>
-                                    {isDone ? '✓' : '○'}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Interactive Nested Checklist (Sub-steps) */}
-                        {block.nestedChecklist && block.nestedChecklist.length > 0 && (
-                          <div className="space-y-1 pt-1.5 border-t border-neutral-100 dark:border-neutral-800/80">
-                            {block.nestedChecklist.map((item) => (
-                              <div
-                                key={item.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleNestedChecklistItem(block, item.id);
-                                }}
-                                className="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
-                              >
-                                <span className={`w-3 h-3 rounded flex items-center justify-center border text-[8px] ${item.completed ? 'bg-emerald-500 text-white border-emerald-600' : 'border-neutral-300 dark:border-neutral-600'}`}>
-                                  {item.completed && '✓'}
-                                </span>
-                                <span className={item.completed ? 'line-through text-neutral-400' : ''}>{item.text}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Right: Actions & Focus Integration */}
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {/* Start Pomodoro Focus Button */}
-                        <button
-                          type="button"
-                          onClick={() => onNavigateModule('focus')}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 text-xs font-bold cursor-pointer transition-colors"
-                          title={isAr ? 'فتح مؤقت التركيز لهذه الفترة' : 'Launch Pomodoro for this block'}
-                        >
-                          <Timer size={13} className="text-emerald-500" />
-                          <span className="hidden sm:inline">{isAr ? 'تركيز' : 'Focus'}</span>
-                        </button>
-
-                        {/* Save as Recurring Weekly Plan Template */}
-                        {onAddWeeklyPlanSlot && (
-                          <button
-                            type="button"
-                            onClick={() => handleSaveBlockAsWeeklyRecurring(block)}
-                            className="p-1.5 rounded-lg text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer transition-colors"
-                            title={isAr ? 'حفظ كقالب أسبوعي دائم في المخطط الأسبوعي' : 'Save as recurring template in Weekly Planner'}
-                          >
-                            <CalendarDays size={14} />
-                          </button>
-                        )}
-
-                        {/* Quick Duplicate Single Block */}
-                        <button
-                          type="button"
-                          onClick={() => handleDuplicateSingleBlock(block)}
-                          className="p-1.5 rounded-lg text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer transition-colors"
-                          title={isAr ? 'نسخ / تكرار هذه الفترة' : 'Duplicate block'}
-                        >
-                          <Copy size={14} />
-                        </button>
-
-                        {/* Edit Button */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingBlock(block);
-                            setNewTitle(block.title);
-                            setNewSubtitle(block.subtitle || '');
-                            setNewStartTime(block.startTime);
-                            setNewEndTime(block.endTime);
-                            setNewType(block.blockType);
-                            setNewEnergy(block.energyRequired || 'high');
-                            setNewColor(block.color || 'emerald');
-                            setNewTargetFocus(block.targetFocusMinutes || 60);
-                            setNewLinkedTasks(block.linkedTaskIds || []);
-                            setNewLinkedHabits(block.linkedHabitIds || []);
-                            setNewProjectId(block.linkedProjectId || '');
-                            setNewGoalId(block.linkedGoalId || '');
-                            setNewChecklist(block.nestedChecklist || []);
-                            setNewStepText('');
-                            setShowAddBlockModal(true);
-                          }}
-                          className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-900 dark:hover:text-white cursor-pointer transition-colors"
-                          title={isAr ? 'تعديل الفترة' : 'Edit block'}
-                        >
-                          <Edit3 size={14} />
-                        </button>
-
-                        {/* Archive Button */}
-                        {block.id && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onUpdateBlock(block.id!, { archived: true, archivedAt: Date.now() });
-                            }}
-                            className="p-1.5 rounded-lg text-neutral-400 hover:text-amber-600 dark:hover:text-amber-400 cursor-pointer transition-colors"
-                            title={isAr ? 'أرشفة الفترة' : 'Archive block'}
-                          >
-                            <Archive size={14} />
-                          </button>
-                        )}
-
-                        {/* Delete Button */}
-                        {block.id && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onDeleteBlock(block.id!);
-                            }}
-                            className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-600 cursor-pointer transition-colors"
-                            title={isAr ? 'حذف الفترة' : 'Delete block'}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
 
               {/* EXECUTIVE EVENING REVIEW & AUDIT CARD */}
               <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-purple-500/10 via-indigo-500/5 to-transparent dark:from-purple-950/30 dark:via-indigo-950/20 border border-purple-300/40 dark:border-purple-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2 animate-fadeIn">

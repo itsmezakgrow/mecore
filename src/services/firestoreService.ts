@@ -15,7 +15,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { TaskItem, HabitItem, ProjectItem, NoteItem, WeeklyPlanSlot, ChecklistGroup, GoalItem, FocusSession, AppComment, WorkoutSession, SundayReset, ReviewEntry, DailyBlockItem, ModuleLifecycleEvent, MonthlyPlanMeta, WeeklyPriorityGoal, DailySleepLog, SleepScheduleConfig, AccessControlData } from '../types';
+import { TaskItem, HabitItem, ProjectItem, NoteItem, WeeklyPlanSlot, ChecklistGroup, GoalItem, FocusSession, AppComment, WorkoutSession, SundayReset, ReviewEntry, DailyBlockItem, ModuleLifecycleEvent, MonthlyPlanMeta, WeeklyPriorityGoal, DailySleepLog, SleepScheduleConfig, AccessControlData, BodyMetricLog, BodyProfileConfig, ScheduledWorkoutItem, CognitiveReflection, VisualizationStory, Affirmation } from '../types';
 
 /**
  * Deeply sanitizes updates for Firestore updateDoc operations by replacing
@@ -69,6 +69,12 @@ const REVIEWS_COLL = 'reviews';
 const SLEEP_LOGS_COLL = 'sleep_logs';
 const SLEEP_CONFIG_COLL = 'sleep_config';
 const ACCESS_CONTROL_COLL = 'access_control';
+const BODY_METRICS_COLL = 'body_metrics';
+const BODY_PROFILE_COLL = 'body_profile';
+const SCHEDULED_WORKOUTS_COLL = 'scheduled_workouts';
+const REFLECTIONS_COLL = 'reflections';
+const VISIONS_COLL = 'visions';
+const AFFIRMATIONS_COLL = 'affirmations';
 
 // Safe AbortError Detection
 export function isAbortError(err: any): boolean {
@@ -547,6 +553,9 @@ export const ALL_WORKSPACE_COLLECTIONS = [
   COMMENTS_COLL,
   FOCUS_COLL,
   WORKOUTS_COLL,
+  SCHEDULED_WORKOUTS_COLL,
+  BODY_METRICS_COLL,
+  BODY_PROFILE_COLL,
   SUNDAY_RESETS_COLL,
   REVIEWS_COLL,
   'daily_blocks',
@@ -1156,6 +1165,63 @@ export const addWorkout = async (workout: Omit<WorkoutSession, 'id'>) => {
   return await addDoc(collection(db, WORKOUTS_COLL), sanitizeInsertData(workout));
 };
 
+/**
+ * Cross-collection Batch Write: Logs a workout session to `workouts` AND atomically
+ * checks off the linked Habit (Gym Habit or Cardio Habit) in the `habits` collection
+ * for the workout's date.
+ */
+export const addWorkoutWithHabitBatch = async (
+  workout: Omit<WorkoutSession, 'id'>,
+  linkedHabitId?: string | null,
+  secondaryHabitId?: string | null
+) => {
+  const batch = writeBatch(db);
+
+  // 1. Create new workout document ref
+  const workoutRef = doc(collection(db, WORKOUTS_COLL));
+  const sanitizedWorkout = sanitizeInsertData(workout);
+  batch.set(workoutRef, sanitizedWorkout);
+
+  // 2. If habit IDs are linked, update each habit's history map for this workout date
+  const habitIdsToUpdate = [linkedHabitId, secondaryHabitId].filter(Boolean) as string[];
+
+  for (const habitId of habitIdsToUpdate) {
+    try {
+      const habitRef = doc(db, HABITS_COLL, habitId);
+      const habitSnap = await getDoc(habitRef);
+      if (habitSnap.exists()) {
+        const habitData = habitSnap.data() as HabitItem;
+        const targetDate = workout.date || new Date().toISOString().split('T')[0];
+        
+        // Calculate updated streak
+        const updatedHistory = { ...(habitData.history || {}), [targetDate]: true };
+        let currentStreak = 0;
+        let cursorDate = new Date();
+        // Check backwards up to 365 days
+        for (let i = 0; i < 365; i++) {
+          const dStr = cursorDate.toISOString().split('T')[0];
+          if (updatedHistory[dStr] || (habitData.freezes && habitData.freezes[dStr])) {
+            currentStreak++;
+            cursorDate.setDate(cursorDate.getDate() - 1);
+          } else {
+            break;
+          }
+        }
+
+        batch.update(habitRef, {
+          [`history.${targetDate}`]: true,
+          streak: Math.max(currentStreak, habitData.streak || 0)
+        });
+      }
+    } catch (e) {
+      console.warn('Notice while updating linked habit in batch:', e);
+    }
+  }
+
+  await batch.commit();
+  return workoutRef.id;
+};
+
 export const updateWorkout = async (id: string, updates: Partial<WorkoutSession>) => {
   const ref = doc(db, WORKOUTS_COLL, id);
   return await updateDoc(ref, sanitizeUpdateData(updates));
@@ -1164,6 +1230,138 @@ export const updateWorkout = async (id: string, updates: Partial<WorkoutSession>
 export const deleteWorkout = async (id: string) => {
   const ref = doc(db, WORKOUTS_COLL, id);
   return await deleteDoc(ref);
+};
+
+// ----------------- Body Metrics & Weight Tracker -----------------
+
+export const subscribeToBodyMetrics = (
+  callback: (logs: BodyMetricLog[]) => void,
+  onError?: (err: any) => void
+) => {
+  const q = query(collection(db, BODY_METRICS_COLL), orderBy('date', 'desc'));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const logs: BodyMetricLog[] = [];
+      snapshot.forEach((d) => {
+        logs.push({ id: d.id, ...d.data() } as BodyMetricLog);
+      });
+      callback(logs);
+    },
+    (error) => handleSubscriptionError("body_metrics", error, onError)
+  );
+};
+
+export const addBodyMetricLog = async (log: Omit<BodyMetricLog, 'id'>) => {
+  return await addDoc(collection(db, BODY_METRICS_COLL), sanitizeInsertData(log));
+};
+
+export const deleteBodyMetricLog = async (id: string) => {
+  const ref = doc(db, BODY_METRICS_COLL, id);
+  return await deleteDoc(ref);
+};
+
+export const subscribeToBodyProfile = (
+  callback: (profile: BodyProfileConfig | null) => void,
+  onError?: (err: any) => void
+) => {
+  const ref = doc(db, BODY_PROFILE_COLL, 'user_profile');
+  return onSnapshot(
+    ref,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        callback(docSnap.data() as BodyProfileConfig);
+      } else {
+        callback(null);
+      }
+    },
+    (error) => handleSubscriptionError("body_profile", error, onError)
+  );
+};
+
+export const saveBodyProfile = async (profile: Partial<BodyProfileConfig>) => {
+  const ref = doc(db, BODY_PROFILE_COLL, 'user_profile');
+  return await setDoc(ref, sanitizeInsertData({ ...profile, updatedAt: Date.now() }), { merge: true });
+};
+
+// ----------------- Scheduled Workout Planner -----------------
+
+export const subscribeToScheduledWorkouts = (
+  callback: (items: ScheduledWorkoutItem[]) => void,
+  onError?: (err: any) => void
+) => {
+  const q = query(collection(db, SCHEDULED_WORKOUTS_COLL), orderBy('date', 'asc'));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items: ScheduledWorkoutItem[] = [];
+      snapshot.forEach((d) => {
+        items.push({ id: d.id, ...d.data() } as ScheduledWorkoutItem);
+      });
+      callback(items);
+    },
+    (error) => handleSubscriptionError("scheduled_workouts", error, onError)
+  );
+};
+
+export const addScheduledWorkout = async (item: Omit<ScheduledWorkoutItem, 'id'>) => {
+  return await addDoc(collection(db, SCHEDULED_WORKOUTS_COLL), sanitizeInsertData(item));
+};
+
+export const updateScheduledWorkout = async (id: string, updates: Partial<ScheduledWorkoutItem>) => {
+  const ref = doc(db, SCHEDULED_WORKOUTS_COLL, id);
+  return await updateDoc(ref, sanitizeUpdateData(updates));
+};
+
+export const deleteScheduledWorkout = async (id: string) => {
+  const ref = doc(db, SCHEDULED_WORKOUTS_COLL, id);
+  return await deleteDoc(ref);
+};
+
+export const toggleScheduledWorkoutWithHabit = async (
+  scheduledItem: ScheduledWorkoutItem,
+  linkedHabitId?: string | null
+) => {
+  const nextCompleted = !scheduledItem.completed;
+  const batch = writeBatch(db);
+
+  if (scheduledItem.id) {
+    const itemRef = doc(db, SCHEDULED_WORKOUTS_COLL, scheduledItem.id);
+    batch.update(itemRef, { completed: nextCompleted });
+  }
+
+  if (linkedHabitId) {
+    try {
+      const habitRef = doc(db, HABITS_COLL, linkedHabitId);
+      const habitSnap = await getDoc(habitRef);
+      if (habitSnap.exists()) {
+        const habitData = habitSnap.data() as HabitItem;
+        const targetDate = scheduledItem.date;
+        const updatedHistory = { ...(habitData.history || {}), [targetDate]: nextCompleted };
+        
+        let currentStreak = 0;
+        let cursorDate = new Date();
+        for (let i = 0; i < 365; i++) {
+          const dStr = cursorDate.toISOString().split('T')[0];
+          if (updatedHistory[dStr] || (habitData.freezes && habitData.freezes[dStr])) {
+            currentStreak++;
+            cursorDate.setDate(cursorDate.getDate() - 1);
+          } else {
+            break;
+          }
+        }
+
+        batch.update(habitRef, {
+          [`history.${targetDate}`]: nextCompleted,
+          streak: Math.max(0, currentStreak)
+        });
+      }
+    } catch (e) {
+      console.warn('Notice while updating linked habit in toggle:', e);
+    }
+  }
+
+  await batch.commit();
 };
 
 // ----------------- Sunday Resets -----------------
@@ -1485,6 +1683,105 @@ export const removeCollaboratorEmail = async (email: string) => {
     allowedEmails: filtered,
     updatedAt: Date.now()
   }, { merge: true });
+};
+
+// ----------------- Cognitive Reflections (Breakthroughs & Blocks) -----------------
+export const subscribeToReflections = (
+  callback: (reflections: CognitiveReflection[]) => void,
+  onError?: (err: any) => void
+) => {
+  const q = query(collection(db, REFLECTIONS_COLL), orderBy('createdAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items: CognitiveReflection[] = [];
+      snapshot.forEach((d) => {
+        items.push({ id: d.id, ...d.data() } as CognitiveReflection);
+      });
+      callback(items);
+    },
+    (error) => handleSubscriptionError("reflections", error, onError)
+  );
+};
+
+export const addReflection = async (reflection: Omit<CognitiveReflection, 'id'>) => {
+  return await addDoc(collection(db, REFLECTIONS_COLL), sanitizeInsertData(reflection));
+};
+
+export const updateReflection = async (id: string, updates: Partial<CognitiveReflection>) => {
+  const ref = doc(db, REFLECTIONS_COLL, id);
+  return await updateDoc(ref, sanitizeUpdateData(updates));
+};
+
+export const deleteReflection = async (id: string) => {
+  const ref = doc(db, REFLECTIONS_COLL, id);
+  return await deleteDoc(ref);
+};
+
+// ----------------- Visualization Stories -----------------
+export const subscribeToVisions = (
+  callback: (visions: VisualizationStory[]) => void,
+  onError?: (err: any) => void
+) => {
+  const q = query(collection(db, VISIONS_COLL), orderBy('createdAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items: VisualizationStory[] = [];
+      snapshot.forEach((d) => {
+        items.push({ id: d.id, ...d.data() } as VisualizationStory);
+      });
+      callback(items);
+    },
+    (error) => handleSubscriptionError("visions", error, onError)
+  );
+};
+
+export const addVision = async (vision: Omit<VisualizationStory, 'id'>) => {
+  return await addDoc(collection(db, VISIONS_COLL), sanitizeInsertData(vision));
+};
+
+export const updateVision = async (id: string, updates: Partial<VisualizationStory>) => {
+  const ref = doc(db, VISIONS_COLL, id);
+  return await updateDoc(ref, sanitizeUpdateData(updates));
+};
+
+export const deleteVision = async (id: string) => {
+  const ref = doc(db, VISIONS_COLL, id);
+  return await deleteDoc(ref);
+};
+
+// ----------------- Affirmations Deck -----------------
+export const subscribeToAffirmations = (
+  callback: (affirmations: Affirmation[]) => void,
+  onError?: (err: any) => void
+) => {
+  const q = query(collection(db, AFFIRMATIONS_COLL), orderBy('createdAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items: Affirmation[] = [];
+      snapshot.forEach((d) => {
+        items.push({ id: d.id, ...d.data() } as Affirmation);
+      });
+      callback(items);
+    },
+    (error) => handleSubscriptionError("affirmations", error, onError)
+  );
+};
+
+export const addAffirmation = async (affirmation: Omit<Affirmation, 'id'>) => {
+  return await addDoc(collection(db, AFFIRMATIONS_COLL), sanitizeInsertData(affirmation));
+};
+
+export const updateAffirmation = async (id: string, updates: Partial<Affirmation>) => {
+  const ref = doc(db, AFFIRMATIONS_COLL, id);
+  return await updateDoc(ref, sanitizeUpdateData(updates));
+};
+
+export const deleteAffirmation = async (id: string) => {
+  const ref = doc(db, AFFIRMATIONS_COLL, id);
+  return await deleteDoc(ref);
 };
 
 

@@ -25,7 +25,8 @@ import {
   SlidersHorizontal,
   Sun,
   ShieldCheck,
-  Check
+  Check,
+  Dumbbell
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -56,7 +57,8 @@ import {
   DailyBlockItem,
   DailySleepLog,
   SleepScheduleConfig,
-  ReviewEntry
+  ReviewEntry,
+  WorkoutSession
 } from '../types';
 import { translations } from '../utils/translations';
 import { RewardStoreModal } from './RewardStoreModal';
@@ -74,6 +76,7 @@ interface DashboardOverviewProps {
   sleepLogs?: DailySleepLog[];
   sleepConfig?: SleepScheduleConfig | null;
   reviews?: ReviewEntry[];
+  workouts?: WorkoutSession[];
   setActiveModule: (m: ModuleType) => void;
   onToggleTask?: (id: string, completed: boolean) => void;
   onToggleHabit?: (habit: HabitItem, dateKey: string) => void;
@@ -108,6 +111,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   dailyBlocks = [],
   focusSessions = [],
   rewards = [],
+  workouts = [],
   setActiveModule,
   onClaimReward,
   lang = 'en',
@@ -808,6 +812,36 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </span>
           </div>
         </div>
+
+        {/* KPI 5: The Iron Engine & Hypertrophy Progression */}
+        <div 
+          onClick={() => setActiveModule('training')}
+          className="col-span-2 lg:col-span-1 bg-white dark:bg-[#181A20] p-4 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs hover:border-emerald-500/50 transition-all cursor-pointer group"
+        >
+          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs font-bold">
+            <span className="flex items-center gap-1.5">
+              <Dumbbell size={14} className="text-emerald-500" />
+              <span>{isAr ? 'محرك التدريب (Iron Engine)' : 'Iron Engine Gym'}</span>
+            </span>
+            <ArrowUpRight size={14} className="group-hover:text-emerald-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          </div>
+
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl sm:text-3xl font-black font-mono text-emerald-600 dark:text-emerald-400">
+              {workouts.length}
+            </span>
+            <span className="text-xs font-bold text-neutral-500">
+              {isAr ? 'حصص مسجلة' : 'sessions'}
+            </span>
+          </div>
+
+          <div className="mt-2.5 pt-2 border-t border-neutral-100 dark:border-neutral-800/80 flex items-center justify-between text-[11px] font-mono">
+            <span className="text-neutral-500">{isAr ? 'آخر روتين:' : 'Latest:'}</span>
+            <span className="font-extrabold text-neutral-700 dark:text-neutral-300 truncate max-w-[100px]">
+              {workouts.length > 0 ? workouts[0].routineName : (isAr ? 'لم يبدأ بعد' : 'None yet')}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* ---------------------------------------------------------------------
@@ -1015,10 +1049,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               <div>
                 <h3 className="text-sm sm:text-base font-extrabold text-neutral-900 dark:text-white flex items-center gap-2">
                   <FolderKanban size={16} className="text-indigo-500" />
-                  <span>{isAr ? 'توزيع المشاريع والنسبة المستهدفة' : 'Projects Share & Target %'}</span>
+                  <span>{isAr ? 'نسبة إنجاز المشاريع والأهداف' : 'Projects Progress & Completion'}</span>
                 </h3>
                 <p className="text-[11px] text-neutral-500 mt-0.5">
-                  {isAr ? 'مقارنة النسبة الفعلية المبذولة باليوم مع النسبة المستهدفة' : 'Actual daily execution share vs target allocation %'}
+                  {isAr ? 'تتبع نسبة المهام المنجزة ومدى التقدم لكل مشروع بوضوح' : 'Track completed tasks and execution progress bars per active project'}
                 </p>
               </div>
 
@@ -1035,7 +1069,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             {/* Donut Chart Visual */}
             {projectIntelligence.items.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center py-2">
-                <div className="sm:col-span-6 h-40 flex items-center justify-center relative">
+                <div className="sm:col-span-5 h-36 flex items-center justify-center relative">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -1044,8 +1078,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        innerRadius={36}
-                        outerRadius={56}
+                        innerRadius={32}
+                        outerRadius={50}
                         paddingAngle={3}
                       >
                         {projectIntelligence.chartData.map((entry, index) => (
@@ -1074,28 +1108,28 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 </div>
 
                 {/* Highlights of Dominant & Best Performing */}
-                <div className="sm:col-span-6 space-y-2 text-xs">
+                <div className="sm:col-span-7 space-y-2 text-xs">
                   {projectIntelligence.dominantProject && (
                     <div className="p-2.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/40">
                       <div className="flex items-center gap-1.5 text-indigo-700 dark:text-indigo-400 font-bold text-[11px]">
                         <Flame size={12} className="text-amber-500" />
-                        <span>{isAr ? 'المشروع الغالب (الأكثر جهداً):' : 'Dominant Project:'}</span>
+                        <span>{isAr ? 'المشروع الرئيسي:' : 'Primary Active Focus:'}</span>
                       </div>
                       <p className="font-extrabold text-neutral-900 dark:text-white truncate mt-0.5">
                         {projectIntelligence.dominantProject.title}
                       </p>
                       <div className="flex items-center justify-between text-[10px] font-mono mt-1 text-neutral-600 dark:text-neutral-400">
-                        <span>{isAr ? 'الفعلي:' : 'Actual:'} {projectIntelligence.dominantProject.actualShare}%</span>
-                        <span>{isAr ? 'المستهدف:' : 'Target:'} {projectIntelligence.dominantProject.targetAllocation}%</span>
+                        <span>{projectIntelligence.dominantProject.tasksCompleted}/{projectIntelligence.dominantProject.tasksTotal} {isAr ? 'مهام منجزة' : 'tasks done'}</span>
+                        <span className="font-extrabold text-indigo-600 dark:text-indigo-400">{projectIntelligence.dominantProject.taskVelocity}% {isAr ? 'إنجاز' : 'done'}</span>
                       </div>
                     </div>
                   )}
 
-                  {projectIntelligence.topPerformingProject && (
+                  {projectIntelligence.topPerformingProject && projectIntelligence.topPerformingProject.id !== projectIntelligence.dominantProject?.id && (
                     <div className="p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40">
                       <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-bold text-[11px]">
                         <Zap size={12} className="text-emerald-500" />
-                        <span>{isAr ? 'الأعلى إنجازاً وسرعة:' : 'Top Performing:'}</span>
+                        <span>{isAr ? 'الأعلى إنجازاً:' : 'Highest Completion Rate:'}</span>
                       </div>
                       <p className="font-extrabold text-neutral-900 dark:text-white truncate mt-0.5">
                         {projectIntelligence.topPerformingProject.title}
@@ -1110,35 +1144,40 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </div>
             ) : (
               <div className="py-8 text-center text-xs text-neutral-500">
-                <p>{isAr ? 'لا توجد مشاريع مضافة حتى الآن. أنشئ مشروعاً لتتبع النسب والتركيز.' : 'No projects active. Create a project to track daily allocation.'}</p>
+                <p>{isAr ? 'لا توجد مشاريع مضافة حتى الآن. أنشئ مشروعاً لتتبع نسبة الإنجاز والتقدم.' : 'No projects active. Create a project to track task completion.'}</p>
               </div>
             )}
           </div>
 
-          {/* Detailed Project Allocation List (Compact, zero scroll) */}
+          {/* Detailed Clear Project Progress List */}
           <div className="space-y-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">
-            {projectIntelligence.items.slice(0, 3).map((item) => (
-              <div key={item.id} className="p-2 rounded-xl bg-neutral-50 dark:bg-[#20232B] border border-neutral-200/60 dark:border-neutral-700/60 flex items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2 min-w-0">
+            {projectIntelligence.items.slice(0, 4).map((item) => (
+              <div key={item.id} className="p-2.5 rounded-xl bg-neutral-50 dark:bg-[#20232B] border border-neutral-200/60 dark:border-neutral-700/60 flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                  <span className="font-bold text-neutral-800 dark:text-neutral-200 truncate max-w-[120px] sm:max-w-[150px]">
+                  <span className="font-bold text-neutral-800 dark:text-neutral-200 truncate">
                     {item.title}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0 font-mono text-[11px]">
-                  <span className="text-neutral-500" title={isAr ? 'النسبة المستهدفة' : 'Target %'}>
-                    🎯 {item.targetAllocation}%
+                  <span className="text-neutral-500 font-bold" title={isAr ? 'المهام المنجزة من الإجمالي' : 'Tasks Completed'}>
+                    {item.tasksCompleted}/{item.tasksTotal} {isAr ? 'مهام' : 'tasks'}
                   </span>
-                  <span className="font-extrabold text-neutral-900 dark:text-white" title={isAr ? 'النسبة الفعلية المبذولة' : 'Actual Share'}>
-                    ⚡ {item.actualShare}%
-                  </span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                    item.delta >= 0 
-                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' 
-                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                  }`}>
-                    {item.delta >= 0 ? `+${item.delta}%` : `${item.delta}%`}
+
+                  {/* Progress Bar Visual */}
+                  <div className="w-16 h-2 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden hidden sm:block">
+                    <div 
+                      className="h-full rounded-full transition-all duration-500" 
+                      style={{ 
+                        width: `${Math.min(100, Math.max(5, item.taskVelocity))}%`,
+                        backgroundColor: item.color 
+                      }} 
+                    />
+                  </div>
+
+                  <span className="font-black px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px]">
+                    {item.taskVelocity}%
                   </span>
                 </div>
               </div>

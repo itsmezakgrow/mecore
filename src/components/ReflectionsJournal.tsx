@@ -1,40 +1,50 @@
 import React, { useState, useMemo } from 'react';
 import {
+  Brain,
   BookOpen,
-  Calendar,
   Sparkles,
-  Star,
-  CheckCircle2,
-  AlertTriangle,
-  Lightbulb,
-  TrendingUp,
-  Clock,
+  Layers,
   Plus,
   Trash2,
   Edit3,
   Search,
-  Filter,
-  Layers,
+  CheckCircle2,
+  AlertTriangle,
+  Lightbulb,
+  Maximize2,
+  Play,
+  Share2,
+  Tag,
+  Calendar,
+  Save,
+  Check,
+  Zap,
+  Bookmark,
+  ChevronRight,
+  ChevronLeft,
   Flame,
   CheckSquare,
   Moon,
-  Sunrise,
-  Share2,
-  Bookmark,
-  ChevronLeft,
-  ChevronRight,
-  Smile,
-  Meh,
-  Frown,
-  Zap,
   Coffee,
-  Check,
-  Save,
-  Tag,
-  ArrowRight
+  Star,
+  TrendingUp,
+  ShieldAlert,
+  Shuffle
 } from 'lucide-react';
-import { HabitItem, TaskItem, FocusSession, ReviewEntry, DailySleepLog, WeeklyPriorityGoal } from '../types';
+import {
+  HabitItem,
+  TaskItem,
+  FocusSession,
+  ReviewEntry,
+  DailySleepLog,
+  WeeklyPriorityGoal,
+  CognitiveReflection,
+  VisualizationStory,
+  Affirmation
+} from '../types';
 import { soundManager } from '../utils/soundEffects';
+import { FullVisionReaderModal } from './FullVisionReaderModal';
+import { AffirmationsModalPopup } from './AffirmationsModalPopup';
 
 interface ReflectionsJournalProps {
   reviews: ReviewEntry[];
@@ -43,8 +53,19 @@ interface ReflectionsJournalProps {
   sleepLogs?: DailySleepLog[];
   focusSessions?: FocusSession[];
   weeklyGoals?: WeeklyPriorityGoal[];
+  reflections?: CognitiveReflection[];
+  visions?: VisualizationStory[];
+  affirmations?: Affirmation[];
   onSaveReview: (review: Omit<ReviewEntry, 'id'>) => Promise<void>;
   onDeleteReview?: (id: string) => Promise<void>;
+  onAddReflection?: (r: Omit<CognitiveReflection, 'id'>) => Promise<any>;
+  onUpdateReflection?: (id: string, updates: Partial<CognitiveReflection>) => Promise<any>;
+  onDeleteReflection?: (id: string) => Promise<any>;
+  onAddVision?: (v: Omit<VisualizationStory, 'id'>) => Promise<any>;
+  onUpdateVision?: (id: string, updates: Partial<VisualizationStory>) => Promise<any>;
+  onDeleteVision?: (id: string) => Promise<any>;
+  onAddAffirmation?: (a: Omit<Affirmation, 'id'>) => Promise<any>;
+  onDeleteAffirmation?: (id: string) => Promise<any>;
   lang?: 'en' | 'ar';
 }
 
@@ -55,949 +76,734 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
   sleepLogs = [],
   focusSessions = [],
   weeklyGoals = [],
+  reflections = [],
+  visions = [],
+  affirmations = [],
   onSaveReview,
   onDeleteReview,
+  onAddReflection,
+  onUpdateReflection,
+  onDeleteReflection,
+  onAddVision,
+  onUpdateVision,
+  onDeleteVision,
+  onAddAffirmation,
+  onDeleteAffirmation,
   lang = 'ar',
 }) => {
   const isAr = lang === 'ar';
 
-  const [activeTab, setActiveTab] = useState<'daily' | 'weekly' | 'archive'>('daily');
+  // Module Tabs: 'blocks' | 'visions' | 'affirmations' | 'journal'
+  const [mainTab, setMainTab] = useState<'blocks' | 'visions' | 'affirmations' | 'journal'>('blocks');
 
-  // Today ISO
+  // Modal State for Focus Mode Vision Reader
+  const [activeReaderStory, setActiveReaderStory] = useState<VisualizationStory | null>(null);
+
+  // Modal State for Daily Affirmations Flashcard Pop-up
+  const [isAffirmationPopupOpen, setIsAffirmationPopupOpen] = useState(false);
+
+  // ---------------- FEATURE 1: BREAKTHROUGHS & COGNITIVE BLOCKS ----------------
+  const [reflectionTitle, setReflectionTitle] = useState('');
+  const [reflectionDesc, setReflectionDesc] = useState('');
+  const [reflectionCategory, setReflectionCategory] = useState('Fear of Success');
+  const [reflectionType, setReflectionType] = useState<'cognitive_block' | 'aha_moment' | 'mindset_shift'>('cognitive_block');
+  const [isSavingReflection, setIsSavingReflection] = useState(false);
+  const [extractingForId, setExtractingForId] = useState<string | null>(null);
+  const [customAffirmationInput, setCustomAffirmationInput] = useState('');
+
+  const handleSaveReflection = async () => {
+    if (!reflectionTitle.trim() || !reflectionDesc.trim()) return;
+    setIsSavingReflection(true);
+    try {
+      if (onAddReflection) {
+        await onAddReflection({
+          title: reflectionTitle.trim(),
+          description: reflectionDesc.trim(),
+          category: reflectionCategory,
+          type: reflectionType,
+          extractedAffirmations: [],
+          createdAt: Date.now(),
+        });
+      }
+      setReflectionTitle('');
+      setReflectionDesc('');
+      soundManager.play('celebrate');
+    } catch (e) {
+      console.error('Failed to save reflection block:', e);
+    } finally {
+      setIsSavingReflection(false);
+    }
+  };
+
+  const handleGenerateAtlasAffirmation = async (refItem: CognitiveReflection) => {
+    if (!refItem.id || !onUpdateReflection) return;
+    setExtractingForId(refItem.id);
+
+    // AI-like transformation logic based on psychological reframing
+    const promptReframes: Record<string, string[]> = {
+      'Fear of Success': [
+        `I am fully worthy and equipped to handle the exponential growth and new opportunities coming my way.`,
+        `Success is a natural extension of my disciplined service and dedication.`
+      ],
+      'Imposter Syndrome': [
+        `My achievements are earned through my focus, relentless execution, and continuous learning.`,
+        `I belong in every room I enter, bringing unique value and clarity.`
+      ],
+      'Perfectionism': [
+        `Done and iterated is vastly superior to perfect and unreleased.`,
+        `I celebrate bold action and continuous refinement over stalling.`
+      ],
+    };
+
+    const generated = promptReframes[refItem.category || ''] || [
+      `I replace "${refItem.title}" with unwavering conviction and daily aligned action.`,
+      `My mind is my standard-bearer; I choose empowerment over hesitation.`
+    ];
+
+    const currentExtracted = refItem.extractedAffirmations || [];
+    const updatedExtracted = Array.from(new Set([...currentExtracted, ...generated]));
+
+    await onUpdateReflection(refItem.id, {
+      extractedAffirmations: updatedExtracted,
+      updatedAt: Date.now()
+    });
+
+    setExtractingForId(null);
+    soundManager.play('celebrate');
+  };
+
+  const handleAddManualAffirmationToBlock = async (refItem: CognitiveReflection) => {
+    if (!refItem.id || !customAffirmationInput.trim() || !onUpdateReflection) return;
+    const currentExtracted = refItem.extractedAffirmations || [];
+    const updated = [...currentExtracted, customAffirmationInput.trim()];
+    await onUpdateReflection(refItem.id, {
+      extractedAffirmations: updated,
+      updatedAt: Date.now()
+    });
+    setCustomAffirmationInput('');
+  };
+
+  const handlePromoteToDeck = async (statement: string, sourceTitle: string, sourceId?: string) => {
+    if (!onAddAffirmation) return;
+    await onAddAffirmation({
+      statement,
+      category: 'Mindset',
+      sourceBlockId: sourceId,
+      sourceBlockTitle: sourceTitle,
+      createdAt: Date.now()
+    });
+    soundManager.play('celebrate');
+  };
+
+  // ---------------- FEATURE 2: VISUALIZATION STORIES ----------------
+  const [visionTitle, setVisionTitle] = useState('');
+  const [visionStoryText, setVisionStoryText] = useState('');
+  const [visionTheme, setVisionTheme] = useState('1 Year Ideal Future');
+  const [isSavingVision, setIsSavingVision] = useState(false);
+
+  const handleSaveVision = async () => {
+    if (!visionTitle.trim() || !visionStoryText.trim()) return;
+    setIsSavingVision(true);
+    try {
+      const words = visionStoryText.trim().split(/\s+/).length;
+      const readingTimeMinutes = Math.max(1, Math.ceil(words / 200));
+
+      if (onAddVision) {
+        await onAddVision({
+          title: visionTitle.trim(),
+          storyContent: visionStoryText.trim(),
+          theme: visionTheme,
+          readingTimeMinutes,
+          createdAt: Date.now()
+        });
+      }
+      setVisionTitle('');
+      setVisionStoryText('');
+      soundManager.play('celebrate');
+    } catch (e) {
+      console.error('Failed to save vision story:', e);
+    } finally {
+      setIsSavingVision(false);
+    }
+  };
+
+  // ---------------- FEATURE 3: AFFIRMATIONS DECK MANAGEMENT ----------------
+  const [newAffirmationText, setNewAffirmationText] = useState('');
+  const [newAffirmationCategory, setNewAffirmationCategory] = useState('Mindset');
+
+  const handleAddDeckAffirmation = async () => {
+    if (!newAffirmationText.trim() || !onAddAffirmation) return;
+    await onAddAffirmation({
+      statement: newAffirmationText.trim(),
+      category: newAffirmationCategory,
+      createdAt: Date.now()
+    });
+    setNewAffirmationText('');
+    soundManager.play('celebrate');
+  };
+
+  // ---------------- FEATURE 4: JOURNAL & REFLECTIONS ----------------
   const todayIso = useMemo(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }, []);
 
-  // Current Week ID e.g. "2026-W42"
-  const currentWeekId = useMemo(() => {
-    const d = new Date();
-    const year = d.getFullYear();
-    const firstJan = new Date(year, 0, 1);
-    const dayNr = Math.ceil((d.getTime() - firstJan.getTime()) / 86400000);
-    const weekNr = Math.ceil((dayNr + firstJan.getDay()) / 7);
-    return `${year}-W${weekNr.toString().padStart(2, '0')}`;
-  }, []);
+  const [journalSelectedDate, setJournalSelectedDate] = useState<string>(todayIso);
+  const [journalMood, setJournalMood] = useState<'calm' | 'productive' | 'stressed' | 'neutral' | 'tired' | 'victorious'>('productive');
+  const [journalRating, setJournalRating] = useState<number>(8);
+  const [journalTitle, setJournalTitle] = useState('');
+  const [journalLessons, setJournalLessons] = useState('');
+  const [journalWins, setJournalWins] = useState('');
+  const [journalChallenges, setJournalChallenges] = useState('');
+  const [journalNotes, setJournalNotes] = useState('');
+  const [isSavingJournal, setIsSavingJournal] = useState(false);
 
-  // Selected date for Daily reflection
-  const [selectedDate, setSelectedDate] = useState<string>(todayIso);
-
-  // Selected week for Weekly reflection
-  const [selectedWeek, setSelectedWeek] = useState<string>(currentWeekId);
-
-  // Archive search and filter
-  const [archiveSearch, setArchiveSearch] = useState('');
-  const [archiveFilter, setArchiveFilter] = useState<'all' | 'daily' | 'weekly' | 'starred'>('all');
-
-  // Form states for Daily reflection
-  const existingDailyEntry = useMemo(() => {
-    return reviews.find(r => r.type === 'daily' && r.periodKey === selectedDate);
-  }, [reviews, selectedDate]);
-
-  const [dailyMood, setDailyMood] = useState<'calm' | 'productive' | 'stressed' | 'neutral' | 'tired' | 'victorious'>('productive');
-  const [dailyRating, setDailyRating] = useState<number>(8);
-  const [dailyTitle, setDailyTitle] = useState<string>('');
-  const [dailyLessons, setDailyLessons] = useState<string>('');
-  const [dailyWins, setDailyWins] = useState<string>('');
-  const [dailyChallenges, setDailyChallenges] = useState<string>('');
-  const [dailyNotes, setDailyNotes] = useState<string>('');
-  const [isSavingDaily, setIsSavingDaily] = useState(false);
-  const [dailySaveSuccess, setDailySaveSuccess] = useState(false);
-
-  // Sync daily form when date changes
-  React.useEffect(() => {
-    if (existingDailyEntry) {
-      setDailyTitle(existingDailyEntry.title || '');
-      setDailyMood(existingDailyEntry.dayMood || 'productive');
-      setDailyRating(existingDailyEntry.rating || 8);
-      setDailyLessons(existingDailyEntry.lessons || '');
-      setDailyWins(existingDailyEntry.wins || '');
-      setDailyChallenges(existingDailyEntry.challenges || '');
-      setDailyNotes(existingDailyEntry.notes || '');
-    } else {
-      setDailyTitle('');
-      setDailyMood('productive');
-      setDailyRating(8);
-      setDailyLessons('');
-      setDailyWins('');
-      setDailyChallenges('');
-      setDailyNotes('');
-    }
-    setDailySaveSuccess(false);
-  }, [existingDailyEntry, selectedDate]);
-
-  // Form states for Weekly reflection
-  const existingWeeklyEntry = useMemo(() => {
-    return reviews.find(r => r.type === 'weekly' && r.periodKey === selectedWeek);
-  }, [reviews, selectedWeek]);
-
-  const [weeklyTitle, setWeeklyTitle] = useState<string>('');
-  const [weeklyRating, setWeeklyRating] = useState<number>(8);
-  const [weeklyLessons, setWeeklyLessons] = useState<string>('');
-  const [weeklyWins, setWeeklyWins] = useState<string>('');
-  const [weeklyChallenges, setWeeklyChallenges] = useState<string>('');
-  const [weeklyNextFocus, setWeeklyNextFocus] = useState<string>('');
-  const [weeklyNotes, setWeeklyNotes] = useState<string>('');
-  const [isSavingWeekly, setIsSavingWeekly] = useState(false);
-  const [weeklySaveSuccess, setWeeklySaveSuccess] = useState(false);
-
-  // Sync weekly form when week changes
-  React.useEffect(() => {
-    if (existingWeeklyEntry) {
-      setWeeklyTitle(existingWeeklyEntry.title || '');
-      setWeeklyRating(existingWeeklyEntry.rating || 8);
-      setWeeklyLessons(existingWeeklyEntry.lessons || '');
-      setWeeklyWins(existingWeeklyEntry.wins || '');
-      setWeeklyChallenges(existingWeeklyEntry.challenges || '');
-      setWeeklyNextFocus(existingWeeklyEntry.nextFocus || '');
-      setWeeklyNotes(existingWeeklyEntry.notes || '');
-    } else {
-      setWeeklyTitle('');
-      setWeeklyRating(8);
-      setWeeklyLessons('');
-      setWeeklyWins('');
-      setWeeklyChallenges('');
-      setWeeklyNextFocus('');
-      setWeeklyNotes('');
-    }
-    setWeeklySaveSuccess(false);
-  }, [existingWeeklyEntry, selectedWeek]);
-
-  // Connected context for selected Date
-  const dateContext = useMemo(() => {
-    // Habits completed on this date
-    const habitsCompleted = habits.filter(h => Boolean(h.history?.[selectedDate] || h.completedDates?.includes(selectedDate)));
-    // Tasks completed on this date
-    const tasksCompleted = tasks.filter(t => {
-      if (!t.completed) return false;
-      if (t.completedAt) {
-        const tIso = new Date(t.completedAt).toISOString().split('T')[0];
-        return tIso === selectedDate;
-      }
-      return selectedDate === todayIso;
-    });
-    // Sleep log on this date
-    const sleepLog = sleepLogs.find(l => l.date === selectedDate);
-    // Focus sessions on this date
-    const focusTotalMins = focusSessions
-      .filter(f => f.date === selectedDate)
-      .reduce((sum, f) => sum + (f.duration || 0), 0);
-
-    return {
-      habitsCompleted,
-      tasksCompleted,
-      sleepLog,
-      focusTotalMins,
-    };
-  }, [selectedDate, habits, tasks, sleepLogs, focusSessions, todayIso]);
-
-  // Connected context for selected Week
-  const weekContext = useMemo(() => {
-    // Habits active in week
-    const habitsDoneCount = habits.filter(h => {
-      const hasHistory = h.history && Object.keys(h.history).some(k => h.history[k]);
-      const hasDates = (h.completedDates || []).length > 0;
-      return hasHistory || hasDates;
-    }).length;
-    // Tasks completed in week
-    const tasksDone = tasks.filter(t => t.completed);
-    const weekGoals = weeklyGoals.filter(g => g.weekId === selectedWeek);
-
-    return {
-      habitsDoneCount,
-      tasksDoneCount: tasksDone.length,
-      weekGoals,
-    };
-  }, [selectedWeek, habits, tasks, weeklyGoals]);
-
-  // Navigation helpers for dates
-  const handleShiftDate = (days: number) => {
-    const cur = new Date(selectedDate);
-    cur.setDate(cur.getDate() + days);
-    const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
-    setSelectedDate(iso);
-  };
-
-  // Quick preset vibes for Daily Reflection
-  const handleSelectQuickVibe = (vibe: 'calm' | 'productive' | 'stressed' | 'neutral' | 'tired' | 'victorious', defaultText: string) => {
-    setDailyMood(vibe);
-    if (!dailyNotes && !dailyLessons) {
-      setDailyNotes(defaultText);
-    }
-  };
-
-  // Save Daily Reflection
-  const handleSaveDaily = async () => {
-    setIsSavingDaily(true);
+  const handleSaveJournal = async () => {
+    setIsSavingJournal(true);
     try {
-      const title = dailyTitle.trim() || (isAr ? `تأمل يوم ${selectedDate}` : `Reflection for ${selectedDate}`);
+      const title = journalTitle.trim() || (isAr ? `تأمل يوم ${journalSelectedDate}` : `Reflection for ${journalSelectedDate}`);
       await onSaveReview({
         type: 'daily',
-        periodKey: selectedDate,
+        periodKey: journalSelectedDate,
         title,
-        dayMood: dailyMood,
-        rating: dailyRating,
-        lessons: dailyLessons.trim() || undefined,
-        wins: dailyWins.trim() || undefined,
-        challenges: dailyChallenges.trim() || undefined,
-        notes: dailyNotes.trim() || undefined,
-        habitScore: habits.length > 0 ? Math.round((dateContext.habitsCompleted.length / habits.length) * 100) : undefined,
-        completedTasksCount: dateContext.tasksCompleted.length,
-        focusMinutes: dateContext.focusTotalMins || undefined,
-        sleepActualHours: dateContext.sleepLog ? Number((dateContext.sleepLog.sleepDurationMinutes / 60).toFixed(1)) : undefined,
-        wokeOnTarget: dateContext.sleepLog?.wokeOnTarget,
-        createdAt: existingDailyEntry ? existingDailyEntry.createdAt : Date.now(),
-        updatedAt: Date.now(),
+        dayMood: journalMood,
+        rating: journalRating,
+        lessons: journalLessons.trim() || undefined,
+        wins: journalWins.trim() || undefined,
+        challenges: journalChallenges.trim() || undefined,
+        notes: journalNotes.trim() || undefined,
+        createdAt: Date.now(),
       });
       soundManager.play('celebrate');
-      setDailySaveSuccess(true);
-      setTimeout(() => setDailySaveSuccess(false), 3000);
-    } catch (err) {
-      console.error('Failed to save daily reflection:', err);
+    } catch (e) {
+      console.error('Failed to save journal entry:', e);
     } finally {
-      setIsSavingDaily(false);
+      setIsSavingJournal(false);
     }
   };
-
-  // Save Weekly Reflection
-  const handleSaveWeekly = async () => {
-    setIsSavingWeekly(true);
-    try {
-      const title = weeklyTitle.trim() || (isAr ? `مراجعة وتأمل ${selectedWeek}` : `Weekly Reflection ${selectedWeek}`);
-      await onSaveReview({
-        type: 'weekly',
-        periodKey: selectedWeek,
-        title,
-        rating: weeklyRating,
-        lessons: weeklyLessons.trim() || undefined,
-        wins: weeklyWins.trim() || undefined,
-        challenges: weeklyChallenges.trim() || undefined,
-        nextFocus: weeklyNextFocus.trim() || undefined,
-        notes: weeklyNotes.trim() || undefined,
-        createdAt: existingWeeklyEntry ? existingWeeklyEntry.createdAt : Date.now(),
-        updatedAt: Date.now(),
-      });
-      soundManager.play('celebrate');
-      setWeeklySaveSuccess(true);
-      setTimeout(() => setWeeklySaveSuccess(false), 3000);
-    } catch (err) {
-      console.error('Failed to save weekly reflection:', err);
-    } finally {
-      setIsSavingWeekly(false);
-    }
-  };
-
-  // Filtered Archive
-  const filteredArchive = useMemo(() => {
-    return reviews.filter(r => {
-      if (archiveFilter === 'daily' && r.type !== 'daily') return false;
-      if (archiveFilter === 'weekly' && r.type !== 'weekly') return false;
-      if (archiveFilter === 'starred' && !r.isStarred) return false;
-
-      if (!archiveSearch) return true;
-      const s = archiveSearch.toLowerCase();
-      return (
-        r.title?.toLowerCase().includes(s) ||
-        r.lessons?.toLowerCase().includes(s) ||
-        r.wins?.toLowerCase().includes(s) ||
-        r.challenges?.toLowerCase().includes(s) ||
-        r.notes?.toLowerCase().includes(s) ||
-        r.periodKey?.toLowerCase().includes(s)
-      );
-    });
-  }, [reviews, archiveFilter, archiveSearch]);
 
   return (
-    <div className="space-y-5 max-w-5xl mx-auto pb-12">
-      {/* HEADER SECTION */}
-      <div className="bg-white dark:bg-[#18191D] border border-[#EAE9E6] dark:border-[#2A2C33] rounded-2xl p-5 shadow-xs relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-36 bg-amber-500/5 dark:bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="space-y-6 max-w-6xl mx-auto pb-16">
+      {/* MODULE HEADER BAR */}
+      <div className="bg-[#18191D] border border-neutral-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-40 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-[#EAE9E6] dark:border-[#2A2C33]">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 shadow-xs border border-amber-200/50 dark:border-amber-800/30">
-              <BookOpen size={22} />
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 pb-6 border-b border-neutral-800">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0 shadow-inner">
+              <Brain size={24} className="animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-[#2F3437] dark:text-white">
-                  {isAr ? 'سجل التأملات والدروس المستفادة' : 'Reflections & Lessons Journal'}
+                <h2 className="text-xl font-extrabold text-white">
+                  {isAr ? 'العقلية وإعادة البرمجة (Mindset & Reflections)' : 'Mindset & Reflections Engine'}
                 </h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40">
-                  {isAr ? 'يومي وأسبوعي مترابط' : 'Daily & Weekly Synced'}
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  Atlas Cognitive OS
                 </span>
               </div>
-              <p className="text-xs text-[#787774] dark:text-neutral-400 mt-0.5">
+              <p className="text-xs text-neutral-400 mt-1">
                 {isAr
-                  ? 'مساحتك الخاصة لتدوين الدروس، ما سار بشكل رائع، أين ضاع الوقت، وخلاصات الأداء المربوطة بعاداتك ومهامك ونومك.'
-                  : 'Your space to capture daily lessons, weekly audits, wins, time leaks, and interconnected telemetry.'}
+                  ? 'سجل التحديات النفسية والتحولات الذهنية، قمم التجسيد البصري، وتوكيدات إعادة البرمجة اليومية.'
+                  : 'Log cognitive blocks, anchor vivid visualization stories, and practice daily identity reframing.'}
               </p>
             </div>
           </div>
 
-          {/* TAB BUTTONS */}
-          <div className="flex items-center gap-1.5 p-1 bg-neutral-100 dark:bg-[#202228] rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] w-full sm:w-auto">
+          {/* MAIN MODULE TABS */}
+          <div className="flex items-center gap-1.5 p-1 bg-neutral-900 rounded-2xl border border-neutral-800 w-full lg:w-auto overflow-x-auto">
             <button
-              onClick={() => setActiveTab('daily')}
-              className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'daily'
-                  ? 'bg-white dark:bg-[#282C34] text-[#2F3437] dark:text-white shadow-xs'
-                  : 'text-[#787774] dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+              onClick={() => setMainTab('blocks')}
+              className={`flex-1 lg:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
+                mainTab === 'blocks'
+                  ? 'bg-emerald-500 text-neutral-950 font-bold shadow-lg shadow-emerald-500/20'
+                  : 'text-neutral-400 hover:text-white'
               }`}
             >
-              <Calendar size={13} className={activeTab === 'daily' ? 'text-amber-500' : ''} />
-              <span>{isAr ? 'التأمل اليومي' : 'Daily Reflection'}</span>
+              <Brain size={15} />
+              <span>{isAr ? 'العوائق والتحولات' : 'Blocks & Breakthroughs'}</span>
             </button>
 
             <button
-              onClick={() => setActiveTab('weekly')}
-              className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'weekly'
-                  ? 'bg-white dark:bg-[#282C34] text-[#2F3437] dark:text-white shadow-xs'
-                  : 'text-[#787774] dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+              onClick={() => setMainTab('visions')}
+              className={`flex-1 lg:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
+                mainTab === 'visions'
+                  ? 'bg-emerald-500 text-neutral-950 font-bold shadow-lg shadow-emerald-500/20'
+                  : 'text-neutral-400 hover:text-white'
               }`}
             >
-              <Sparkles size={13} className={activeTab === 'weekly' ? 'text-indigo-500' : ''} />
-              <span>{isAr ? 'المراجعة الأسبوعية' : 'Weekly Review'}</span>
+              <Sparkles size={15} />
+              <span>{isAr ? 'قصص التجسيد' : 'Visualization Stories'}</span>
             </button>
 
             <button
-              onClick={() => setActiveTab('archive')}
-              className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'archive'
-                  ? 'bg-white dark:bg-[#282C34] text-[#2F3437] dark:text-white shadow-xs'
-                  : 'text-[#787774] dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+              onClick={() => setMainTab('affirmations')}
+              className={`flex-1 lg:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
+                mainTab === 'affirmations'
+                  ? 'bg-emerald-500 text-neutral-950 font-bold shadow-lg shadow-emerald-500/20'
+                  : 'text-neutral-400 hover:text-white'
               }`}
             >
-              <Bookmark size={13} className={activeTab === 'archive' ? 'text-emerald-500' : ''} />
-              <span>{isAr ? 'أرشيف الدروس' : 'Lessons Archive'}</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300">
-                {reviews.length}
-              </span>
+              <Layers size={15} />
+              <span>{isAr ? 'سطح التوكيدات' : 'Affirmations Deck'}</span>
+            </button>
+
+            <button
+              onClick={() => setMainTab('journal')}
+              className={`flex-1 lg:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
+                mainTab === 'journal'
+                  ? 'bg-emerald-500 text-neutral-950 font-bold shadow-lg shadow-emerald-500/20'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              <BookOpen size={15} />
+              <span>{isAr ? 'سجل الدروس اليومي' : 'Daily Journal'}</span>
             </button>
           </div>
         </div>
 
-        {/* TAB 1: DAILY REFLECTION */}
-        {activeTab === 'daily' && (
-          <div className="pt-4 space-y-5">
-            {/* DATE NAVIGATOR & CONNECTED CHIPS */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-neutral-50 dark:bg-[#202228] p-3 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33]">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleShiftDate(-1)}
-                  className="p-1.5 rounded-lg bg-white dark:bg-[#18191D] border border-[#EAE9E6] dark:border-[#2A2C33] hover:bg-neutral-100 text-neutral-600 dark:text-neutral-300 cursor-pointer"
-                  title={isAr ? 'اليوم السابق' : 'Previous Day'}
-                >
-                  {isAr ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-                </button>
-                <div className="flex items-center gap-2">
+        {/* SUB-SECTION 1: BREAKTHROUGHS & COGNITIVE BLOCKS */}
+        {mainTab === 'blocks' && (
+          <div className="pt-6 space-y-8">
+            {/* Create Block Form */}
+            <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-5 space-y-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                {isAr ? 'تسجيل عائق نفسي أو لحظة إدراك (Log Breakthrough or Block)' : 'Log Psychological Barrier or Aha! Moment'}
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-2 space-y-1">
+                  <label className="text-xs text-neutral-400 font-medium">
+                    {isAr ? 'العنوان الرئيسي للتحدي الذهني' : 'Barrier / Breakthrough Title'}
+                  </label>
                   <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    className="px-3 py-1 rounded-lg border border-[#EAE9E6] dark:border-[#2A2C33] bg-white dark:bg-[#18191D] text-xs font-mono font-bold text-[#2F3437] dark:text-white"
-                  />
-                  {selectedDate === todayIso && (
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500 text-white">
-                      {isAr ? 'اليوم' : 'Today'}
-                    </span>
-                  )}
-                </div>
-                <button
-                  onClick={() => handleShiftDate(1)}
-                  className="p-1.5 rounded-lg bg-white dark:bg-[#18191D] border border-[#EAE9E6] dark:border-[#2A2C33] hover:bg-neutral-100 text-neutral-600 dark:text-neutral-300 cursor-pointer"
-                  title={isAr ? 'اليوم التالي' : 'Next Day'}
-                >
-                  {isAr ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
-                </button>
-              </div>
-
-              {/* CONNECTED CONTEXT BADGES FOR THIS DATE */}
-              <div className="flex items-center flex-wrap gap-2 text-[11px]">
-                <span className="px-2 py-1 rounded-lg bg-white dark:bg-[#18191D] border border-[#EAE9E6] dark:border-[#2A2C33] flex items-center gap-1 font-mono text-neutral-700 dark:text-neutral-300">
-                  <Flame size={12} className="text-amber-500" />
-                  <span>{dateContext.habitsCompleted.length} {isAr ? 'عادات منجزة' : 'habits done'}</span>
-                </span>
-                <span className="px-2 py-1 rounded-lg bg-white dark:bg-[#18191D] border border-[#EAE9E6] dark:border-[#2A2C33] flex items-center gap-1 font-mono text-neutral-700 dark:text-neutral-300">
-                  <CheckSquare size={12} className="text-blue-500" />
-                  <span>{dateContext.tasksCompleted.length} {isAr ? 'مهام منجزة' : 'tasks done'}</span>
-                </span>
-                {dateContext.sleepLog && (
-                  <span className="px-2 py-1 rounded-lg bg-white dark:bg-[#18191D] border border-[#EAE9E6] dark:border-[#2A2C33] flex items-center gap-1 font-mono text-neutral-700 dark:text-neutral-300">
-                    <Moon size={12} className="text-indigo-500" />
-                    <span>{(dateContext.sleepLog.sleepDurationMinutes / 60).toFixed(1)}h {isAr ? 'نوم' : 'sleep'}</span>
-                    {dateContext.sleepLog.wokeOnTarget && <span className="text-emerald-500 font-bold">✓</span>}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* QUICK VIBE SELECTOR (e.g. "ما كاين والو" / ضغط / ممتاز) */}
-            <div>
-              <span className="text-[11px] font-bold text-[#787774] dark:text-neutral-400 block mb-2 uppercase tracking-wider">
-                {isAr ? 'حالة اليوم وطبيعة الضغط (Quick Vibe)' : 'Day Atmosphere & Load'}
-              </span>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                {[
-                  {
-                    id: 'calm',
-                    labelAr: 'هادئ / ما كاين والو',
-                    labelEn: 'Calm / Nothing Big',
-                    icon: Coffee,
-                    color: 'text-sky-500',
-                    presetNote: isAr ? 'يوم هادئ وعادي، لا يوجد ضغط خاص أو أحداث استثنائية.' : 'Calm, peaceful day with no intense pressure.'
-                  },
-                  {
-                    id: 'productive',
-                    labelAr: 'إنتاجي وإنجازات',
-                    labelEn: 'Productive & Focused',
-                    icon: Zap,
-                    color: 'text-amber-500',
-                    presetNote: isAr ? 'يوم ممتاز مليء بالتركيز وإنجاز الأولويات بسلاسة.' : 'Highly focused and productive execution day.'
-                  },
-                  {
-                    id: 'stressed',
-                    labelAr: 'ضغط وتحديات',
-                    labelEn: 'High Stress & Load',
-                    icon: AlertTriangle,
-                    color: 'text-rose-500',
-                    presetNote: isAr ? 'يوم مليء بالتحديات وضغط المهام وتشتت الوقت.' : 'Faced high pressure and competing urgent demands.'
-                  },
-                  {
-                    id: 'tired',
-                    labelAr: 'راحة واسترجاع طاقة',
-                    labelEn: 'Rest & Recovery',
-                    icon: Moon,
-                    color: 'text-indigo-500',
-                    presetNote: isAr ? 'يوم مخصص للراحة والتعافي البدني والذهني.' : 'Restorative day prioritizing mental and physical recovery.'
-                  },
-                  {
-                    id: 'victorious',
-                    labelAr: 'انتصار وفوز كبير',
-                    labelEn: 'Major Breakthrough',
-                    icon: Star,
-                    color: 'text-emerald-500',
-                    presetNote: isAr ? 'تحقيق خطوة استراتيجية كبيرة وكسر حاجز مهم.' : 'Major breakthrough in goals or mindset today.'
-                  },
-                ].map((item) => {
-                  const Icon = item.icon;
-                  const isSelected = dailyMood === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleSelectQuickVibe(item.id as any, item.presetNote)}
-                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all text-left flex items-center gap-2 cursor-pointer ${
-                        isSelected
-                          ? 'border-amber-400 dark:border-amber-600 bg-amber-50/50 dark:bg-amber-950/20 text-[#2F3437] dark:text-white shadow-xs'
-                          : 'border-[#EAE9E6] dark:border-[#2A2C33] bg-white dark:bg-[#18191D] text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50'
-                      }`}
-                    >
-                      <Icon size={14} className={item.color} />
-                      <span className="truncate">{isAr ? item.labelAr : item.labelEn}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* RATING & TITLE ROW */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="sm:col-span-2">
-                <label className="text-[11px] font-bold text-[#2F3437] dark:text-white mb-1 block">
-                  {isAr ? 'عنوان أو فكرة اليوم الرئيسية (اختياري)' : 'Headline / Main Theme'}
-                </label>
-                <input
-                  type="text"
-                  value={dailyTitle}
-                  onChange={(e) => setDailyTitle(e.target.value)}
-                  placeholder={isAr ? 'مثلا: بداية قوية في المشروع، أو تدوير للأولويات...' : 'e.g. Strong push on project, or reset priorities...'}
-                  className="w-full px-3 py-2 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-[#2F3437] dark:text-white mb-1 flex items-center justify-between">
-                  <span>{isAr ? 'تقييم اليوم الإجمالي' : 'Day Score'}</span>
-                  <span className="text-amber-600 font-mono font-bold">{dailyRating}/10</span>
-                </label>
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    value={dailyRating}
-                    onChange={(e) => setDailyRating(Number(e.target.value))}
-                    className="w-full accent-amber-500 cursor-pointer"
+                    type="text"
+                    value={reflectionTitle}
+                    onChange={(e) => setReflectionTitle(e.target.value)}
+                    placeholder={isAr ? 'مثال: الخوف من النجاح، متلازمة المحتال، الخوف من النقد...' : 'e.g. Fear of Success, Imposter Syndrome, Perfectionism...'}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
-              </div>
-            </div>
 
-            {/* CORE QUESTIONS GRID */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Question 1: Lessons Learned */}
-              <div className="p-4 rounded-xl bg-amber-50/30 dark:bg-amber-950/10 border border-amber-200/50 dark:border-amber-900/30 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Lightbulb size={16} className="text-amber-500" />
-                  <h4 className="text-xs font-bold text-[#2F3437] dark:text-white">
-                    {isAr ? 'الدروس المستفادة اليوم (Lessons Learned)' : 'Lessons Learned Today'}
-                  </h4>
-                </div>
-                <p className="text-[11px] text-[#787774] dark:text-neutral-400">
-                  {isAr
-                    ? 'ماذا تعلمت اليوم عن نفسي، عن نمط عملي، أو قرار اتخذته؟'
-                    : 'What did I learn about myself, my workflows, or a decision made?'}
-                </p>
-                <textarea
-                  value={dailyLessons}
-                  onChange={(e) => setDailyLessons(e.target.value)}
-                  placeholder={isAr ? 'مثلا: تأخير المهمة الصعبة للظهيرة يستهلك طاقتي، أو تقسيم العمل إلى 25 دقيقة يجعلني أكثر هدوءاً...' : 'e.g. Starting hard tasks early saves energy...'}
-                  rows={3}
-                  className="w-full p-2.5 rounded-xl border border-amber-200/70 dark:border-amber-800/40 bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              {/* Question 2: Time Leaks & Challenges */}
-              <div className="p-4 rounded-xl bg-rose-50/30 dark:bg-rose-950/10 border border-rose-200/50 dark:border-rose-900/30 space-y-2">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle size={16} className="text-rose-500" />
-                  <h4 className="text-xs font-bold text-[#2F3437] dark:text-white">
-                    {isAr ? 'أين ضاع الوقت؟ وما هي التحديات؟' : 'Time Leaks & Challenges'}
-                  </h4>
-                </div>
-                <p className="text-[11px] text-[#787774] dark:text-neutral-400">
-                  {isAr
-                    ? 'أين تشتت انتباهي؟ ما الذي سرق ساعاتي دون أن أشعر؟'
-                    : 'Where did my focus slip? What stole hours without noticing?'}
-                </p>
-                <textarea
-                  value={dailyChallenges}
-                  onChange={(e) => setDailyChallenges(e.target.value)}
-                  placeholder={isAr ? 'مثلا: فتحت الهاتف بعد الغداء وضاعت ساعة، أو بدأت مهمة دون تحديد نهايتها...' : 'e.g. Scrolled phone after lunch, or lacked clear stopping rule...'}
-                  rows={3}
-                  className="w-full p-2.5 rounded-xl border border-rose-200/70 dark:border-rose-800/40 bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white focus:outline-none focus:border-rose-500"
-                />
-              </div>
-
-              {/* Question 3: Wins & Accomplishments */}
-              <div className="p-4 rounded-xl bg-emerald-50/30 dark:bg-emerald-950/10 border border-emerald-200/50 dark:border-emerald-900/30 space-y-2">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 size={16} className="text-emerald-500" />
-                  <h4 className="text-xs font-bold text-[#2F3437] dark:text-white">
-                    {isAr ? 'ما سار بشكل رائع وانتصارات اليوم' : 'Daily Wins & Progress'}
-                  </h4>
-                </div>
-                <p className="text-[11px] text-[#787774] dark:text-neutral-400">
-                  {isAr
-                    ? 'ما الذي قمت به اليوم واستحق التقدير والفخر؟'
-                    : 'What went genuinely well today that deserves acknowledgment?'}
-                </p>
-                <textarea
-                  value={dailyWins}
-                  onChange={(e) => setDailyWins(e.target.value)}
-                  placeholder={isAr ? 'مثلا: التزمت بالنوم في الموعد، أو أغلقت 3 مهام كانت مؤجلة...' : 'e.g. Stuck to sleep target, cleared 3 overdue tasks...'}
-                  rows={3}
-                  className="w-full p-2.5 rounded-xl border border-emerald-200/70 dark:border-emerald-800/40 bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              {/* Question 4: Free-form Notes & Thoughts */}
-              <div className="p-4 rounded-xl bg-neutral-50 dark:bg-[#202228] border border-[#EAE9E6] dark:border-[#2A2C33] space-y-2">
-                <div className="flex items-center gap-2">
-                  <Edit3 size={16} className="text-indigo-500" />
-                  <h4 className="text-xs font-bold text-[#2F3437] dark:text-white">
-                    {isAr ? 'ملاحظات وأفكار حرة (Free-form Notes)' : 'Free-form Notes & Thoughts'}
-                  </h4>
-                </div>
-                <p className="text-[11px] text-[#787774] dark:text-neutral-400">
-                  {isAr
-                    ? 'أي فكرة طارئة، مشاعر، أو تدوينات عفوية تود حفظها.'
-                    : 'Any passing thoughts, feelings, or quick capture to keep safe.'}
-                </p>
-                <textarea
-                  value={dailyNotes}
-                  onChange={(e) => setDailyNotes(e.target.value)}
-                  placeholder={isAr ? 'اكتب بحرية ما يجول في خاطرك...' : 'Write freely whatever is on your mind...'}
-                  rows={3}
-                  className="w-full p-2.5 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-            </div>
-
-            {/* SAVE BUTTON & NOTIFICATION */}
-            <div className="flex items-center justify-between pt-2">
-              <div>
-                {dailySaveSuccess && (
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 animate-in fade-in">
-                    <Check size={14} />
-                    {isAr ? '✓ تم حفظ تأمل اليوم بنجاح في السجل!' : '✓ Today\'s reflection saved successfully!'}
-                  </span>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={handleSaveDaily}
-                disabled={isSavingDaily}
-                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50 active:scale-98"
-              >
-                <Save size={14} />
-                <span>{isSavingDaily ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ تأمل اليوم' : 'Save Reflection')}</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: WEEKLY REVIEW */}
-        {activeTab === 'weekly' && (
-          <div className="pt-4 space-y-5">
-            {/* WEEK SELECTOR & CONNECTED SUMMARY */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-neutral-50 dark:bg-[#202228] p-3 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33]">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-[#2F3437] dark:text-white flex items-center gap-1.5">
-                  <Calendar size={14} className="text-indigo-500" />
-                  <span>{isAr ? 'الأسبوع المحدد:' : 'Selected Week:'}</span>
-                </span>
-                <input
-                  type="text"
-                  value={selectedWeek}
-                  onChange={(e) => setSelectedWeek(e.target.value)}
-                  placeholder="2026-W42"
-                  className="px-3 py-1 rounded-lg border border-[#EAE9E6] dark:border-[#2A2C33] bg-white dark:bg-[#18191D] text-xs font-mono font-bold text-[#2F3437] dark:text-white w-28"
-                />
-                {selectedWeek === currentWeekId && (
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-600 text-white">
-                    {isAr ? 'الأسبوع الحالي' : 'Current Week'}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 text-[11px]">
-                <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-[#18191D] border border-[#EAE9E6] dark:border-[#2A2C33] font-mono text-neutral-700 dark:text-neutral-300">
-                  {weekContext.weekGoals.length} {isAr ? 'أهداف أسبوعية أساسية' : 'weekly priority goals'}
-                </span>
-                <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-[#18191D] border border-[#EAE9E6] dark:border-[#2A2C33] font-mono text-neutral-700 dark:text-neutral-300">
-                  {weekContext.tasksDoneCount} {isAr ? 'مهام منجزة' : 'tasks finished'}
-                </span>
-              </div>
-            </div>
-
-            {/* TITLE & SCORE ROW */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="sm:col-span-2">
-                <label className="text-[11px] font-bold text-[#2F3437] dark:text-white mb-1 block">
-                  {isAr ? 'شعار أو عنوان الأسبوع (Weekly Focus / Theme)' : 'Week Headline / Theme'}
-                </label>
-                <input
-                  type="text"
-                  value={weeklyTitle}
-                  onChange={(e) => setWeeklyTitle(e.target.value)}
-                  placeholder={isAr ? 'مثلا: أسبوع الانضباط والاستيقاظ الباكر، أو إطلاق النسخة الأولى...' : 'e.g. Discipline & early rise week...'}
-                  className="w-full px-3 py-2 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-[#2F3437] dark:text-white mb-1 flex items-center justify-between">
-                  <span>{isAr ? 'تقييم رضاك عن الأسبوع' : 'Week Score'}</span>
-                  <span className="text-indigo-600 font-mono font-bold">{weeklyRating}/10</span>
-                </label>
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    value={weeklyRating}
-                    onChange={(e) => setWeeklyRating(Number(e.target.value))}
-                    className="w-full accent-indigo-500 cursor-pointer"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* WEEKLY QUESTIONS GRID */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Question 1: Key Lessons Learned */}
-              <div className="p-4 rounded-xl bg-indigo-50/30 dark:bg-indigo-950/10 border border-indigo-200/50 dark:border-indigo-900/30 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Lightbulb size={16} className="text-indigo-500" />
-                  <h4 className="text-xs font-bold text-[#2F3437] dark:text-white">
-                    {isAr ? 'أهم دروس وخلاصات الأسبوع (Key Weekly Lessons)' : 'Key Weekly Lessons'}
-                  </h4>
-                </div>
-                <p className="text-[11px] text-[#787774] dark:text-neutral-400">
-                  {isAr
-                    ? 'ما هو الدرس الاستراتيجي الذي خرجت به من هذا الأسبوع؟'
-                    : 'What strategic rule or truth became clear this week?'}
-                </p>
-                <textarea
-                  value={weeklyLessons}
-                  onChange={(e) => setWeeklyLessons(e.target.value)}
-                  placeholder={isAr ? 'اكتب الدروس والقواعد التي ستعتمدها مستقبلاً...' : 'Key takeaways and golden rules...'}
-                  rows={4}
-                  className="w-full p-2.5 rounded-xl border border-indigo-200/70 dark:border-indigo-800/40 bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              {/* Question 2: Where Time Was Wasted */}
-              <div className="p-4 rounded-xl bg-rose-50/30 dark:bg-rose-950/10 border border-rose-200/50 dark:border-rose-900/30 space-y-2">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle size={16} className="text-rose-500" />
-                  <h4 className="text-xs font-bold text-[#2F3437] dark:text-white">
-                    {isAr ? 'أين ضاع الوقت وأين خربقت؟ (Time Leaks & Missteps)' : 'Time Leaks & Missteps'}
-                  </h4>
-                </div>
-                <p className="text-[11px] text-[#787774] dark:text-neutral-400">
-                  {isAr
-                    ? 'أين تشتت الانتباه وما هي الأنماط السلبية التي تكررت؟'
-                    : 'Where did friction happen and which patterns broke the flow?'}
-                </p>
-                <textarea
-                  value={weeklyChallenges}
-                  onChange={(e) => setWeeklyChallenges(e.target.value)}
-                  placeholder={isAr ? 'مثلا: السهر أثر على استيقاظ الصباح، أو العمل بدون قائمة محددة...' : 'e.g. Late nights compromised mornings...'}
-                  rows={4}
-                  className="w-full p-2.5 rounded-xl border border-rose-200/70 dark:border-rose-800/40 bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white focus:outline-none focus:border-rose-500"
-                />
-              </div>
-
-              {/* Question 3: Top Wins */}
-              <div className="p-4 rounded-xl bg-emerald-50/30 dark:bg-emerald-950/10 border border-emerald-200/50 dark:border-emerald-900/30 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Star size={16} className="text-emerald-500" />
-                  <h4 className="text-xs font-bold text-[#2F3437] dark:text-white">
-                    {isAr ? 'أهم 3 انتصارات وإنجازات الأسبوع' : 'Top 3 Weekly Wins'}
-                  </h4>
-                </div>
-                <p className="text-[11px] text-[#787774] dark:text-neutral-400">
-                  {isAr ? 'ما هي اللحظات التي شعرت فيها بالإنجاز والرضا؟' : 'Which moments felt deeply satisfying?'}
-                </p>
-                <textarea
-                  value={weeklyWins}
-                  onChange={(e) => setWeeklyWins(e.target.value)}
-                  placeholder={isAr ? '1. إكمال المشروع...\n2. الحفاظ على التمرين...\n3. قراءة كتاب...' : '1. Shipped project...\n2. Consistent training...'}
-                  rows={4}
-                  className="w-full p-2.5 rounded-xl border border-emerald-200/70 dark:border-emerald-800/40 bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              {/* Question 4: Next Week Priorities */}
-              <div className="p-4 rounded-xl bg-neutral-50 dark:bg-[#202228] border border-[#EAE9E6] dark:border-[#2A2C33] space-y-2">
-                <div className="flex items-center gap-2">
-                  <TrendingUp size={16} className="text-amber-500" />
-                  <h4 className="text-xs font-bold text-[#2F3437] dark:text-white">
-                    {isAr ? 'أولويات ونوايا الأسبوع القادم' : 'Priorities for Next Week'}
-                  </h4>
-                </div>
-                <p className="text-[11px] text-[#787774] dark:text-neutral-400">
-                  {isAr ? 'ما هو الشيء الواحد الذي إذا أنجزته سيكون الأسبوع القادم ناجحاً؟' : 'What single outcome defines success next week?'}
-                </p>
-                <textarea
-                  value={weeklyNextFocus}
-                  onChange={(e) => setWeeklyNextFocus(e.target.value)}
-                  placeholder={isAr ? 'اكتب أولوياتك الرئيسية للأسبوع القادم...' : 'Core priorities and strategic intent...'}
-                  rows={4}
-                  className="w-full p-2.5 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-            </div>
-
-            {/* SAVE BUTTON & NOTIFICATION */}
-            <div className="flex items-center justify-between pt-2">
-              <div>
-                {weeklySaveSuccess && (
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 animate-in fade-in">
-                    <Check size={14} />
-                    {isAr ? '✓ تم حفظ المراجعة الأسبوعية بنجاح في السجل!' : '✓ Weekly review saved successfully!'}
-                  </span>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={handleSaveWeekly}
-                disabled={isSavingWeekly}
-                className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50 active:scale-98"
-              >
-                <Save size={14} />
-                <span>{isSavingWeekly ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ المراجعة الأسبوعية' : 'Save Weekly Review')}</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: LESSONS & REFLECTIONS ARCHIVE */}
-        {activeTab === 'archive' && (
-          <div className="pt-4 space-y-4">
-            {/* SEARCH & FILTER BAR */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-neutral-50 dark:bg-[#202228] p-3 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33]">
-              <div className="relative flex-1">
-                <Search size={14} className="absolute left-3 top-2.5 text-neutral-400" />
-                <input
-                  type="text"
-                  value={archiveSearch}
-                  onChange={(e) => setArchiveSearch(e.target.value)}
-                  placeholder={isAr ? 'ابحث في الدروس المستفادة، الانتصارات، والملاحظات...' : 'Search lessons, wins, or notes...'}
-                  className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-[#EAE9E6] dark:border-[#2A2C33] bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                {(['all', 'daily', 'weekly'] as const).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setArchiveFilter(f)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      archiveFilter === f
-                        ? 'bg-amber-600 text-white shadow-xs'
-                        : 'bg-white dark:bg-[#18191D] border border-[#EAE9E6] dark:border-[#2A2C33] text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100'
-                    }`}
+                <div className="space-y-1">
+                  <label className="text-xs text-neutral-400 font-medium">
+                    {isAr ? 'الفئة النفسية' : 'Psychological Category'}
+                  </label>
+                  <select
+                    value={reflectionCategory}
+                    onChange={(e) => setReflectionCategory(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
                   >
-                    {f === 'all' && (isAr ? 'الكل' : 'All')}
-                    {f === 'daily' && (isAr ? 'يومي' : 'Daily')}
-                    {f === 'weekly' && (isAr ? 'أسبوعي' : 'Weekly')}
-                  </button>
-                ))}
+                    <option value="Fear of Success">Fear of Success</option>
+                    <option value="Imposter Syndrome">Imposter Syndrome</option>
+                    <option value="Perfectionism">Perfectionism Stalling</option>
+                    <option value="Fear of Failure">Fear of Failure</option>
+                    <option value="Abundance vs Scarcity">Abundance vs Scarcity</option>
+                    <option value="General Mindset">General Mindset Shift</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-neutral-400 font-medium">
+                  {isAr ? 'الوصف التفصيلي وحقيقة الشعور' : 'Deep Description & Root Cause Analysis'}
+                </label>
+                <textarea
+                  value={reflectionDesc}
+                  onChange={(e) => setReflectionDesc(e.target.value)}
+                  rows={3}
+                  placeholder={isAr ? 'اشرح بالتفصيل كيف يظهر هذا العائق في يومك وما هي جذوره...' : 'Explain how this friction surfaces in your decisions and daily work...'}
+                  className="w-full p-3 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  onClick={handleSaveReflection}
+                  disabled={isSavingReflection || !reflectionTitle.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-neutral-950 font-bold text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-500/10"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{isAr ? 'حفظ العائق في السجل' : 'Save Barrier Entry'}</span>
+                </button>
               </div>
             </div>
 
-            {/* LIST OF REFLECTIONS */}
-            {filteredArchive.length === 0 ? (
-              <div className="text-center py-12 border-2 border-dashed border-[#EAE9E6] dark:border-[#2A2C33] rounded-2xl p-6">
-                <Lightbulb size={28} className="mx-auto text-amber-400 mb-2 opacity-60" />
-                <p className="text-xs font-bold text-[#2F3437] dark:text-white">
-                  {isAr ? 'لا توجد تأملات أو دروس مطابقة حتى الآن' : 'No reflections or lessons found yet'}
-                </p>
-                <p className="text-[11px] text-[#787774] dark:text-neutral-400 mt-1">
-                  {isAr ? 'سجل تأملك اليومي أو مراجعتك الأسبوعية لحفظ خبراتك وتجاربك هنا.' : 'Log your daily reflection or weekly audit to build your knowledge repository.'}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {filteredArchive.map((entry) => {
-                  const isDaily = entry.type === 'daily';
-                  return (
+            {/* Saved Reflections List */}
+            <div className="space-y-4">
+              <h3 className="text-xs uppercase tracking-wider font-bold text-neutral-400">
+                {isAr ? 'سجل التحديات والأفكار المسجلة' : 'Recorded Breakthroughs & Cognitive Barriers'} ({reflections.length})
+              </h3>
+
+              {reflections.length === 0 ? (
+                <div className="text-center py-12 border border-dashed border-neutral-800 rounded-2xl p-6">
+                  <Brain className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
+                  <p className="text-xs text-neutral-400">
+                    {isAr ? 'لم تقم بتسجيل أي عائق أو فكرة ذهنية بعد. استخدم النموذج أعلاه للبدء!' : 'No cognitive reflections logged yet. Record your first breakthrough above!'}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {reflections.map((ref) => (
                     <div
-                      key={entry.id || entry.periodKey}
-                      className="p-4 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] bg-white dark:bg-[#18191D] hover:border-neutral-300 dark:hover:border-neutral-600 transition-all flex flex-col justify-between space-y-3"
+                      key={ref.id}
+                      className="bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700/80 rounded-2xl p-5 space-y-4 transition-all"
                     >
-                      {/* Entry Header */}
-                      <div className="flex items-start justify-between gap-2 border-b border-neutral-100 dark:border-neutral-800 pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                            isDaily
-                              ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                              : 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
-                          }`}>
-                            {isDaily ? (isAr ? 'تأمل يومي' : 'Daily') : (isAr ? 'مراجعة أسبوعية' : 'Weekly')}
-                          </span>
-                          <span className="text-xs font-mono font-bold text-neutral-500">
-                            {entry.periodKey}
-                          </span>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                              {ref.category || 'Mindset'}
+                            </span>
+                            <span className="text-[10px] text-neutral-500">
+                              {new Date(ref.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <h4 className="text-base font-bold text-white">{ref.title}</h4>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
-                          {entry.rating && (
-                            <span className="text-xs font-mono font-bold text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
-                              <Star size={11} className="fill-amber-500" />
-                              {entry.rating}/10
-                            </span>
-                          )}
-                          {onDeleteReview && entry.id && (
+                        {onDeleteReflection && ref.id && (
+                          <button
+                            onClick={() => onDeleteReflection(ref.id!)}
+                            className="p-1.5 rounded-lg bg-neutral-800/80 hover:bg-rose-500/20 text-neutral-400 hover:text-rose-400 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-neutral-300 whitespace-pre-wrap leading-relaxed bg-[#18191D] p-3 rounded-xl border border-neutral-800/80">
+                        {ref.description}
+                      </p>
+
+                      {/* Extracted Affirmations Display & Controls */}
+                      <div className="pt-2 border-t border-neutral-800 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            {isAr ? 'التوكيدات المعاكسة المستخرجة:' : 'Counter Affirmations:'}
+                          </span>
+
+                          <button
+                            onClick={() => handleGenerateAtlasAffirmation(ref)}
+                            disabled={extractingForId === ref.id}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>{isAr ? 'توليد توكيدات ذكية (Atlas AI)' : 'Extract Affirmations (AI)'}</span>
+                          </button>
+                        </div>
+
+                        {/* List of Affirmations */}
+                        {ref.extractedAffirmations && ref.extractedAffirmations.length > 0 && (
+                          <div className="space-y-2">
+                            {ref.extractedAffirmations.map((aff, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-neutral-200"
+                              >
+                                <span className="font-medium italic">"{aff}"</span>
+                                <button
+                                  onClick={() => handlePromoteToDeck(aff, ref.title, ref.id)}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-[10px] whitespace-nowrap transition-colors"
+                                >
+                                  {isAr ? '+ إضافة لسطح التوكيدات' : '+ Add to Deck'}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SUB-SECTION 2: VISUALIZATION STORIES */}
+        {mainTab === 'visions' && (
+          <div className="pt-6 space-y-8">
+            {/* Create Story Form */}
+            <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-5 space-y-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-400" />
+                {isAr ? 'صياغة قصة تجسيد جديدة (Write Visualization Story)' : 'Write New Visualization Story'}
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-2 space-y-1">
+                  <label className="text-xs text-neutral-400 font-medium">
+                    {isAr ? 'عنوان القصة والرؤية' : 'Story Title'}
+                  </label>
+                  <input
+                    type="text"
+                    value={visionTitle}
+                    onChange={(e) => setVisionTitle(e.target.value)}
+                    placeholder={isAr ? 'مثال: يوم في حياتي بعد سنة من الآن، إطلاق المنصة بنجاح...' : 'e.g. A day in my life 1 year from now, Scaling to $10k/mo...'}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs text-neutral-400 font-medium">
+                    {isAr ? 'موضوع التجسيد' : 'Visualization Theme'}
+                  </label>
+                  <input
+                    type="text"
+                    value={visionTheme}
+                    onChange={(e) => setVisionTheme(e.target.value)}
+                    placeholder="e.g. 1 Year Ideal Future"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-neutral-400 font-medium">
+                  {isAr ? 'نص التجسيد العميق (Rich Story Content)' : 'Rich Story Content (First Person Present Tense)'}
+                </label>
+                <textarea
+                  value={visionStoryText}
+                  onChange={(e) => setVisionStoryText(e.target.value)}
+                  rows={6}
+                  placeholder={isAr ? 'اكتب بصيغة الحاضر والتفاصيل الحسية كاملة...' : 'Write in present tense describing sight, feel, energy and outcomes...'}
+                  className="w-full p-3 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500 font-serif leading-relaxed"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  onClick={handleSaveVision}
+                  disabled={isSavingVision || !visionTitle.trim() || !visionStoryText.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-neutral-950 font-bold text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-500/10"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{isAr ? 'حفظ قصة التجسيد' : 'Save Story'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* List of Saved Visions */}
+            <div className="space-y-4">
+              <h3 className="text-xs uppercase tracking-wider font-bold text-neutral-400">
+                {isAr ? 'قصص التجسيد المحفوظة' : 'Saved Visualization Scripts'} ({visions.length})
+              </h3>
+
+              {visions.length === 0 ? (
+                <div className="text-center py-12 border border-dashed border-neutral-800 rounded-2xl p-6">
+                  <Sparkles className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
+                  <p className="text-xs text-neutral-400">
+                    {isAr ? 'لا توجد قصص تجسيد بعد. اكتب قصتك الأولى وأطلق طاقة التركيز!' : 'No visualization stories written yet. Create your first script above!'}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {visions.map((vis) => (
+                    <div
+                      key={vis.id}
+                      className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-5 flex flex-col justify-between space-y-4 hover:border-emerald-500/30 transition-all"
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            {vis.theme || 'Future Vision'}
+                          </span>
+                          {onDeleteVision && vis.id && (
                             <button
-                              onClick={() => onDeleteReview(entry.id!)}
-                              className="p-1 rounded-md text-neutral-400 hover:text-rose-500 transition-colors cursor-pointer"
-                              title={isAr ? 'حذف' : 'Delete'}
+                              onClick={() => onDeleteVision(vis.id!)}
+                              className="p-1 rounded-lg hover:bg-rose-500/20 text-neutral-500 hover:text-rose-400"
                             >
-                              <Trash2 size={12} />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>
+
+                        <h4 className="text-base font-bold text-white">{vis.title}</h4>
+                        <p className="text-xs text-neutral-400 line-clamp-3 font-serif">
+                          {vis.storyContent}
+                        </p>
                       </div>
 
-                      {/* Title */}
-                      <h4 className="text-xs font-bold text-[#2F3437] dark:text-white">
-                        {entry.title}
-                      </h4>
+                      <div className="pt-3 border-t border-neutral-800/80 flex items-center justify-between">
+                        <span className="text-[10px] text-neutral-500">
+                          {vis.readingTimeMinutes || 2} {isAr ? 'دقائق قراءة' : 'min read'}
+                        </span>
 
-                      {/* Content Blocks */}
-                      <div className="space-y-2 text-xs">
-                        {entry.lessons && (
-                          <div className="p-2.5 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30">
-                            <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1 mb-0.5">
-                              <Lightbulb size={11} /> {isAr ? 'الدروس المستفادة:' : 'Lessons Learned:'}
-                            </span>
-                            <p className="text-[11px] text-[#2F3437] dark:text-neutral-200 leading-relaxed whitespace-pre-wrap">
-                              {entry.lessons}
-                            </p>
-                          </div>
-                        )}
-
-                        {entry.wins && (
-                          <div className="p-2.5 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
-                            <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1 mb-0.5">
-                              <CheckCircle2 size={11} /> {isAr ? 'الانتصارات:' : 'Wins:'}
-                            </span>
-                            <p className="text-[11px] text-[#2F3437] dark:text-neutral-200 leading-relaxed whitespace-pre-wrap">
-                              {entry.wins}
-                            </p>
-                          </div>
-                        )}
-
-                        {entry.challenges && (
-                          <div className="p-2.5 rounded-lg bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-900/30">
-                            <span className="text-[10px] font-bold text-rose-800 dark:text-rose-300 flex items-center gap-1 mb-0.5">
-                              <AlertTriangle size={11} /> {isAr ? 'أين ضاع الوقت والتحديات:' : 'Time Leaks & Challenges:'}
-                            </span>
-                            <p className="text-[11px] text-[#2F3437] dark:text-neutral-200 leading-relaxed whitespace-pre-wrap">
-                              {entry.challenges}
-                            </p>
-                          </div>
-                        )}
-
-                        {entry.notes && !entry.lessons && !entry.wins && (
-                          <p className="text-[11px] text-neutral-600 dark:text-neutral-300 whitespace-pre-wrap italic">
-                            "{entry.notes}"
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Footer telemetry preview */}
-                      <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-[10px] text-neutral-400 font-mono">
-                        <div className="flex items-center gap-2">
-                          {entry.completedTasksCount !== undefined && (
-                            <span>{entry.completedTasksCount} {isAr ? 'مهام' : 'tasks'}</span>
-                          )}
-                          {entry.sleepActualHours !== undefined && (
-                            <span>{entry.sleepActualHours}h {isAr ? 'نوم' : 'sleep'}</span>
-                          )}
-                        </div>
                         <button
-                          onClick={() => {
-                            if (isDaily) {
-                              setSelectedDate(entry.periodKey);
-                              setActiveTab('daily');
-                            } else {
-                              setSelectedWeek(entry.periodKey);
-                              setActiveTab('weekly');
-                            }
-                          }}
-                          className="text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-0.5 font-bold cursor-pointer"
+                          onClick={() => setActiveReaderStory(vis)}
+                          className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20"
                         >
-                          <span>{isAr ? 'تعديل أو مراجعة' : 'Inspect'}</span>
-                          <ArrowRight size={10} />
+                          <Maximize2 className="w-3.5 h-3.5" />
+                          <span>{isAr ? 'نموذج التركيز (Focus Reader)' : 'Focus Reader Mode'}</span>
                         </button>
                       </div>
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SUB-SECTION 3: AFFIRMATIONS DECK */}
+        {mainTab === 'affirmations' && (
+          <div className="pt-6 space-y-8">
+            {/* Top Deck Banner & Trigger Flashcard Modal */}
+            <div className="p-6 bg-gradient-to-r from-emerald-950/40 to-neutral-900 border border-emerald-500/30 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="space-y-1 text-center md:text-left">
+                <h3 className="text-base font-extrabold text-white flex items-center gap-2 justify-center md:justify-start">
+                  <Layers className="w-5 h-5 text-emerald-400" />
+                  {isAr ? 'سطح البرمجة التلقائية والتوكيدات' : 'Daily Identity Reprogramming Deck'}
+                </h3>
+                <p className="text-xs text-neutral-400">
+                  {isAr ? 'انقر للبدء في تصفح بطاقات البرمجة الذهنية في تجربة تفاعلية مليئة بالتركيز.' : 'Start the immersive flashcard experience with timer or manual step.'}
+                </p>
               </div>
-            )}
+
+              <button
+                onClick={() => setIsAffirmationPopupOpen(true)}
+                className="px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-extrabold text-xs flex items-center gap-2 transition-all shadow-xl shadow-emerald-500/20 shrink-0"
+              >
+                <Play className="w-4 h-4 fill-neutral-950" />
+                <span>{isAr ? 'تشغيل بطاقات التوكيدات اليومية' : 'Open Affirmations Popup'}</span>
+              </button>
+            </div>
+
+            {/* Quick Add Affirmation Form */}
+            <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-3">
+              <input
+                type="text"
+                value={newAffirmationText}
+                onChange={(e) => setNewAffirmationText(e.target.value)}
+                placeholder={isAr ? 'اكتب توكيداً جديداً وتثبيتاً لمعتقد إيجابي...' : 'Type a new empowering statement...'}
+                className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500 w-full"
+              />
+
+              <select
+                value={newAffirmationCategory}
+                onChange={(e) => setNewAffirmationCategory(e.target.value)}
+                className="px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500 w-full sm:w-auto"
+              >
+                <option value="Mindset">Mindset</option>
+                <option value="Focus">Focus</option>
+                <option value="Confidence">Confidence</option>
+                <option value="Abundance">Abundance</option>
+                <option value="Resilience">Resilience</option>
+                <option value="Health">Health</option>
+              </select>
+
+              <button
+                onClick={handleAddDeckAffirmation}
+                disabled={!newAffirmationText.trim()}
+                className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-neutral-950 font-bold text-xs whitespace-nowrap w-full sm:w-auto"
+              >
+                + {isAr ? 'إضافة' : 'Add Card'}
+              </button>
+            </div>
+
+            {/* List of Deck Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {affirmations.map((aff) => (
+                <div
+                  key={aff.id}
+                  className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-4 flex flex-col justify-between space-y-3 relative group"
+                >
+                  <div className="space-y-2">
+                    <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      {aff.category || 'Mindset'}
+                    </span>
+                    <p className="text-xs font-bold text-white italic leading-relaxed">
+                      "{aff.statement}"
+                    </p>
+                  </div>
+
+                  {onDeleteAffirmation && aff.id && (
+                    <div className="flex justify-end pt-2 border-t border-neutral-800/60">
+                      <button
+                        onClick={() => onDeleteAffirmation(aff.id!)}
+                        className="p-1 rounded hover:bg-rose-500/20 text-neutral-500 hover:text-rose-400 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* SUB-SECTION 4: DAILY JOURNAL */}
+        {mainTab === 'journal' && (
+          <div className="pt-6 space-y-6">
+            <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-emerald-400" />
+                  {isAr ? 'تأمل اليوم والدروس المستفادة' : 'Daily Reflection Log'}
+                </h3>
+                <input
+                  type="date"
+                  value={journalSelectedDate}
+                  onChange={(e) => setJournalSelectedDate(e.target.value)}
+                  className="px-3 py-1 rounded-lg border border-neutral-800 bg-[#18191D] text-xs text-white font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs text-neutral-400">{isAr ? 'الدروس المستفادة' : 'Lessons Learned'}</label>
+                  <textarea
+                    value={journalLessons}
+                    onChange={(e) => setJournalLessons(e.target.value)}
+                    rows={3}
+                    className="w-full p-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs text-neutral-400">{isAr ? 'أين ضاع الوقت؟' : 'Time Leaks / Friction'}</label>
+                  <textarea
+                    value={journalChallenges}
+                    onChange={(e) => setJournalChallenges(e.target.value)}
+                    rows={3}
+                    className="w-full p-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  onClick={handleSaveJournal}
+                  disabled={isSavingJournal}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-500/10"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isSavingJournal ? '...' : (isAr ? 'حفظ اليوم' : 'Save Entry')}</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
+
+      {/* FOCUS MODE FULL SCREEN READER MODAL */}
+      <FullVisionReaderModal
+        story={activeReaderStory}
+        onClose={() => setActiveReaderStory(null)}
+        lang={lang}
+      />
+
+      {/* DAILY AFFIRMATIONS FLASHCARD POPUP MODAL */}
+      <AffirmationsModalPopup
+        isOpen={isAffirmationPopupOpen}
+        onClose={() => setIsAffirmationPopupOpen(false)}
+        affirmations={affirmations}
+        lang={lang}
+      />
     </div>
   );
 };

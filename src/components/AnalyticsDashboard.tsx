@@ -152,7 +152,8 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
 }) => {
   const isAr = lang === 'ar';
   const [timeframe, setTimeframe] = useState<'7d' | '30d' | 'all'>('30d');
-  const [activeTab, setActiveTab] = useState<'overview' | 'habits' | 'tasks' | 'focus' | 'sleep' | 'blocks' | 'reviews' | 'goals'>(initialTab as any);
+  const [activeTab, setActiveTab] = useState<'overview' | 'habits' | 'tasks' | 'focus' | 'sleep' | 'blocks' | 'reviews' | 'goals' | 'iron'>(initialTab as any);
+  const [selectedIronExercise, setSelectedIronExercise] = useState<string>('Flat Dumbbell Bench Press');
   const [focusStatsPeriod, setFocusStatsPeriod] = useState<'day' | 'week' | 'month' | 'year'>('week');
 
   // Executive Multi-Trend Scope & Timeframe controls
@@ -972,6 +973,105 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
     }
   }, [focusSessions, focusStatsPeriod, isAr]);
 
+  // Body & Iron Telemetry Calculations
+  const ironAnalyticsData = useMemo(() => {
+    if (!workouts || workouts.length === 0) {
+      return {
+        volumeChart: [],
+        exerciseNames: [],
+        exerciseTrajectory: [],
+        totalVolume: 0,
+        totalWorkouts: 0,
+        peakVolume: 0
+      };
+    }
+
+    // Sort workouts chronologically
+    const sorted = [...workouts].sort((a, b) => a.date.localeCompare(b.date));
+    
+    // Volume Over Time Data
+    let grandVolume = 0;
+    let maxSessionVol = 0;
+    const volumeChart = sorted.map((w) => {
+      const vol = w.totalVolume || 0;
+      grandVolume += vol;
+      if (vol > maxSessionVol) maxSessionVol = vol;
+
+      const parts = w.date.split('-');
+      const dObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      const formattedDate = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' });
+
+      return {
+        date: formattedDate,
+        rawDate: w.date,
+        volume: vol,
+        routine: w.routineName,
+        sets: w.totalSets || 0,
+        reps: w.totalReps || 0
+      };
+    });
+
+    // Unique exercise names list
+    const exSet = new Set<string>();
+    workouts.forEach((w) => {
+      w.exercises?.forEach((ex) => {
+        if (ex.name) exSet.add(ex.name.trim());
+      });
+    });
+    const exerciseNames = Array.from(exSet).sort();
+
+    // Selected Exercise Progressive Overload Trajectory
+    const targetExName = (selectedIronExercise || exerciseNames[0] || '').trim().toLowerCase();
+    const exerciseTrajectory: { date: string; maxWeight: number; totalReps: number; volume: number }[] = [];
+
+    sorted.forEach((w) => {
+      let maxWeightInSession = 0;
+      let totalRepsInSession = 0;
+      let exVolInSession = 0;
+
+      w.exercises?.forEach((ex) => {
+        if (ex.name.trim().toLowerCase() === targetExName) {
+          ex.sets?.forEach((s) => {
+            const reps = Number(s.reps) || 0;
+            totalRepsInSession += reps;
+
+            let wVal = 0;
+            if (typeof s.weight === 'number') wVal = s.weight;
+            else if (typeof s.weight === 'string') {
+              const num = parseFloat(s.weight.replace(/[^0-9.]/g, ''));
+              if (!isNaN(num)) wVal = num;
+            }
+
+            if (wVal > maxWeightInSession) maxWeightInSession = wVal;
+            exVolInSession += reps * (wVal > 0 ? wVal : 1);
+          });
+        }
+      });
+
+      if (totalRepsInSession > 0) {
+        const parts = w.date.split('-');
+        const dObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        const formattedDate = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' });
+
+        exerciseTrajectory.push({
+          date: formattedDate,
+          maxWeight: maxWeightInSession,
+          totalReps: totalRepsInSession,
+          volume: Math.round(exVolInSession)
+        });
+      }
+    });
+
+    return {
+      volumeChart,
+      exerciseNames,
+      exerciseTrajectory,
+      totalVolume: grandVolume,
+      totalWorkouts: workouts.length,
+      peakVolume: maxSessionVol
+    };
+  }, [workouts, selectedIronExercise, isAr]);
+
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
       {/* Mobile Priority Notice Banner (Explaining PC vs Phone optimization) */}
@@ -1120,6 +1220,19 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
             }`}
           >
             <Target size={13} className="text-indigo-600" />
+            <span>{isAr ? 'الأهداف' : 'Goals'}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('iron')}
+            className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'iron'
+                ? 'bg-white dark:bg-[#282C34] text-[#2F3437] dark:text-white shadow-xs'
+                : 'text-[#787774] dark:text-neutral-400 hover:text-[#2F3437] dark:hover:text-white'
+            }`}
+          >
+            <Dumbbell size={13} className="text-emerald-500" />
+            <span>{isAr ? 'الحديد والتمارين' : 'Body & Iron'}</span>
           </button>
         </div>
       </div>
@@ -2839,6 +2952,166 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          TAB 8: BODY & IRON TELEMETRY
+          ======================================================== */}
+      {activeTab === 'iron' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header Card */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-bold">
+                <Dumbbell size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold text-neutral-900 dark:text-white">
+                  {isAr ? 'تحليلات أداء محرك الحديد (The Iron Engine)' : 'Body & Iron Progression Telemetry'}
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  {isAr ? 'تتبع إجمالي الحجم التدريبي والمسار الزمني للحمل التدريجي لكل تمرين.' : 'Track total weight volume over time and single exercise overload trajectory.'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigateModule('training')}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-2xs self-start sm:self-auto"
+            >
+              <Dumbbell size={14} />
+              <span>{isAr ? 'فتح محرك التمارين' : 'Open Active Logger'}</span>
+            </button>
+          </div>
+
+          {/* Metric Cards Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase">{isAr ? 'إجمالي الجلسات' : 'Total Sessions'}</span>
+              <p className="text-xl font-black font-mono text-neutral-900 dark:text-white">{ironAnalyticsData.totalWorkouts}</p>
+              <span className="text-[10px] text-neutral-500 font-mono">{isAr ? 'تمارين مسجلة' : 'workouts logged'}</span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase">{isAr ? 'إجمالي الحجم التدريبي' : 'Cumulative Volume'}</span>
+              <p className="text-xl font-black font-mono text-emerald-600 dark:text-emerald-400">{ironAnalyticsData.totalVolume.toLocaleString()} kg</p>
+              <span className="text-[10px] text-neutral-500 font-mono">{isAr ? 'كجم مرفوعة' : 'total kg lifted'}</span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase">{isAr ? 'أعلى حجم بجلسة' : 'Peak Session Vol'}</span>
+              <p className="text-xl font-black font-mono text-indigo-600 dark:text-indigo-400">{ironAnalyticsData.peakVolume.toLocaleString()} kg</p>
+              <span className="text-[10px] text-neutral-500 font-mono">{isAr ? 'سجل تمرين واحد' : 'single workout max'}</span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase">{isAr ? 'ربط العادة' : 'Habit Integration'}</span>
+              <p className="text-sm font-black font-mono text-emerald-500 mt-1">
+                {typeof window !== 'undefined' && localStorage.getItem('iron_engine_gym_habit') ? (isAr ? 'مربوطة تلقائياً ✓' : 'Linked ✓') : (isAr ? 'غير مربوطة' : 'Not Linked')}
+              </p>
+              <span className="text-[10px] text-neutral-500 font-mono">{isAr ? 'إعدادات الوحدة' : 'Module Settings'}</span>
+            </div>
+          </div>
+
+          {/* Graph 1: Volume Over Time */}
+          <div className="p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                  <TrendingUp size={16} className="text-emerald-500" />
+                  <span>{isAr ? 'الحجم التدريبي الإجمالي عبر الزمن (Volume Over Time)' : 'Volume Over Time (Total kg Lifted / Session)'}</span>
+                </h4>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {isAr ? 'مجموع الحجم الكلي (التكرارات × الوزن) لكل جلسة تمرين' : 'Sum of (reps × weight) across all sets per session'}
+                </p>
+              </div>
+            </div>
+
+            {ironAnalyticsData.volumeChart.length === 0 ? (
+              <div className="p-12 text-center border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-2xl text-xs text-neutral-400 space-y-2">
+                <Dumbbell size={32} className="mx-auto text-neutral-300 dark:text-neutral-700" />
+                <p>{isAr ? 'لا توجد بيانات تمارين كافية لرسم منحنى الحجم التدريبي بعد.' : 'No workout data recorded yet to render volume trajectory.'}</p>
+              </div>
+            ) : (
+              <div className="h-64 sm:h-72 w-full pt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={ironAnalyticsData.volumeChart}>
+                    <defs>
+                      <linearGradient id="ironVolumeGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10B981" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#18191D', borderColor: '#333', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                      formatter={(val: any) => [`${val} kg`, isAr ? 'الحجم' : 'Volume']}
+                    />
+                    <Area type="monotone" dataKey="volume" stroke="#10B981" strokeWidth={3} fillOpacity={1} fill="url(#ironVolumeGrad)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {/* Graph 2: Progressive Overload Tracker */}
+          <div className="p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                  <Zap size={16} className="text-amber-500" />
+                  <span>{isAr ? 'متابع الحمل التدريجي للتمرين (Progressive Overload Tracker)' : 'Progressive Overload Trajectory'}</span>
+                </h4>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {isAr ? 'اختر تمرينك لمشاهدة تطور أقصى وزن وتكراراتك عبر آخر 30 يوماً' : 'Select an exercise to track weight & reps progression'}
+                </p>
+              </div>
+
+              {ironAnalyticsData.exerciseNames.length > 0 && (
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <span className="text-xs font-bold text-neutral-400">{isAr ? 'التمرين:' : 'Exercise:'}</span>
+                  <select
+                    value={selectedIronExercise}
+                    onChange={(e) => setSelectedIronExercise(e.target.value)}
+                    className="text-xs font-bold px-3 py-2 rounded-xl bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    {ironAnalyticsData.exerciseNames.map((ex) => (
+                      <option key={ex} value={ex}>{ex}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {ironAnalyticsData.exerciseTrajectory.length === 0 ? (
+              <div className="p-12 text-center border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-2xl text-xs text-neutral-400 space-y-2">
+                <Dumbbell size={32} className="mx-auto text-neutral-300 dark:text-neutral-700" />
+                <p>{isAr ? 'لا توجد سجلات سابقة لهذا التمرين بعد.' : 'No recorded sessions for this specific exercise yet.'}</p>
+              </div>
+            ) : (
+              <div className="h-64 sm:h-72 w-full pt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={ironAnalyticsData.exerciseTrajectory}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#18191D', borderColor: '#333', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                      formatter={(val: any, name: any) => [
+                        `${val} ${name === 'maxWeight' ? 'kg' : 'reps'}`,
+                        name === 'maxWeight' ? (isAr ? 'أقصى وزن' : 'Peak Weight') : (isAr ? 'التكرارات' : 'Total Reps')
+                      ]}
+                    />
+                    <Line type="monotone" dataKey="maxWeight" stroke="#F59E0B" strokeWidth={3} dot={{ r: 5 }} />
+                    <Line type="monotone" dataKey="totalReps" stroke="#3B82F6" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
         </div>
       )}

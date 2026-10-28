@@ -259,6 +259,92 @@
         "updatedAt": { "type": "number", "description": "Timestamp updated" }
       },
       "required": ["ownerEmail", "allowedEmails"]
+    },
+    "BodyMetric": {
+      "title": "BodyMetric",
+      "description": "Daily body weight and physical metric log",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "Date YYYY-MM-DD" },
+        "weightKg": { "type": "number", "description": "Weight in kilograms" },
+        "bodyFatPct": { "type": "number", "description": "Optional body fat percentage" },
+        "notes": { "type": "string", "description": "Notes", "maxLength": 500 },
+        "createdAt": { "type": "number", "description": "Timestamp created" }
+      },
+      "required": ["date", "weightKg", "createdAt"]
+    },
+    "BodyProfile": {
+      "title": "BodyProfile",
+      "description": "User body profile configuration including height and daily meal count",
+      "type": "object",
+      "properties": {
+        "heightCm": { "type": "number", "description": "Height in centimeters" },
+        "currentWeightKg": { "type": "number", "description": "Current body weight in kilograms" },
+        "numberOfMeals": { "type": "number", "description": "Target meals per day (default 2)" },
+        "goal": { "type": "string", "enum": ["lean_bulk", "maintain", "cut"] },
+        "targetCalories": { "type": "number" },
+        "targetProteinG": { "type": "number" },
+        "targetCarbsG": { "type": "number" },
+        "targetFatG": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["heightCm", "currentWeightKg", "numberOfMeals"]
+    },
+    "ScheduledWorkout": {
+      "title": "ScheduledWorkout",
+      "description": "Weekly scheduled routine or workout on the 7-day Notion board",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "Date YYYY-MM-DD" },
+        "time": { "type": "string", "description": "Time string e.g. 09:00 AM" },
+        "routineId": { "type": "string" },
+        "routineName": { "type": "string", "maxLength": 100 },
+        "completed": { "type": "boolean" },
+        "linkedHabitId": { "type": "string" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["date", "routineName", "completed", "createdAt"]
+    },
+    "CognitiveReflection": {
+      "title": "CognitiveReflection",
+      "description": "Breakthroughs and cognitive blocks journal entries",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 10000 },
+        "type": { "type": "string", "enum": ["cognitive_block", "aha_moment", "mindset_shift"] },
+        "category": { "type": "string" },
+        "extractedAffirmations": { "type": "array" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["title", "description", "type", "createdAt"]
+    },
+    "VisualizationStory": {
+      "title": "VisualizationStory",
+      "description": "Rich visualization stories for Focus Mode reader",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "storyContent": { "type": "string", "maxLength": 20000 },
+        "theme": { "type": "string" },
+        "readingTimeMinutes": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["title", "storyContent", "createdAt"]
+    },
+    "Affirmation": {
+      "title": "Affirmation",
+      "description": "Positive counter-affirmations deck for daily reprogram popup",
+      "type": "object",
+      "properties": {
+        "statement": { "type": "string", "maxLength": 1000 },
+        "category": { "type": "string" },
+        "sourceBlockId": { "type": "string" },
+        "sourceBlockTitle": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["statement", "createdAt"]
     }
   },
   "firestore": {
@@ -325,6 +411,30 @@
     "/access_control/{docId}": {
       "schema": "AccessControl",
       "description": "Authorized workspace emails whitelist"
+    },
+    "/body_metrics/{metricId}": {
+      "schema": "BodyMetric",
+      "description": "Daily body weight logs and progress metrics"
+    },
+    "/body_profile/{profileId}": {
+      "schema": "BodyProfile",
+      "description": "User physical profile, height, and meal structure configuration"
+    },
+    "/scheduled_workouts/{workoutId}": {
+      "schema": "ScheduledWorkout",
+      "description": "Notion-style weekly workout schedule items"
+    },
+    "/reflections/{reflectionId}": {
+      "schema": "CognitiveReflection",
+      "description": "Breakthroughs and cognitive blocks journal entries"
+    },
+    "/visions/{visionId}": {
+      "schema": "VisualizationStory",
+      "description": "Rich visualization stories for Focus Mode reader"
+    },
+    "/affirmations/{affirmationId}": {
+      "schema": "Affirmation",
+      "description": "Positive counter-affirmations deck for daily reprogram popup"
     }
   }
 }

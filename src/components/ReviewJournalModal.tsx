@@ -20,9 +20,10 @@ import {
   Timer, 
   Clock,
   Award,
-  HelpCircle
+  HelpCircle,
+  Dumbbell
 } from 'lucide-react';
-import { HabitItem, TaskItem, FocusSession, ReviewEntry } from '../types';
+import { HabitItem, TaskItem, FocusSession, ReviewEntry, WorkoutSession } from '../types';
 import { soundManager } from '../utils/soundEffects';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
@@ -32,6 +33,7 @@ interface ReviewJournalModalProps {
   habits: HabitItem[];
   tasks: TaskItem[];
   focusSessions?: FocusSession[];
+  workouts?: WorkoutSession[];
   reviews: ReviewEntry[];
   onSaveReview: (review: Omit<ReviewEntry, 'id'>) => Promise<void>;
   onDeleteReview?: (id: string) => Promise<void>;
@@ -45,6 +47,7 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
   habits,
   tasks,
   focusSessions = [],
+  workouts = [],
   reviews = [],
   onSaveReview,
   onDeleteReview,
@@ -135,17 +138,44 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
       .filter((s) => s.createdAt >= startTs)
       .reduce((acc, s) => acc + (s.duration || 0), 0);
 
+    // Workouts logged in past 7 days
+    const periodWorkouts = workouts.filter((w) => {
+      if (!w.date) return false;
+      return w.date >= startIso && w.date <= endIso;
+    });
+
+    const completedWorkoutsCount = periodWorkouts.length;
+    let totalLiftedVolume = 0;
+    periodWorkouts.forEach((w) => {
+      if (w.totalVolume) {
+        totalLiftedVolume += w.totalVolume;
+      } else if (w.exercises) {
+        w.exercises.forEach((ex) => {
+          if (ex.sets) {
+            ex.sets.forEach((s) => {
+              if (s.completed && s.reps) {
+                const wKg = parseFloat(String(s.weight).replace(/[^0-9.]/g, '')) || 0;
+                totalLiftedVolume += wKg * Number(s.reps);
+              }
+            });
+          }
+        });
+      }
+    });
+
     return {
       habitScore,
       completedCount,
       totalOpportunities,
       completedTasksCount: completedTasks.length,
+      completedWorkoutsCount,
+      totalLiftedVolume: Math.round(totalLiftedVolume),
       focusMinutes: focusMins,
       excusesList,
       startIso,
       endIso,
     };
-  }, [habits, tasks, focusSessions]);
+  }, [habits, tasks, focusSessions, workouts]);
 
   // Computed metrics for Monthly Review
   const monthlyStats = useMemo(() => {
@@ -196,17 +226,44 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
       .filter((s) => s.createdAt >= startTs && s.createdAt <= endTs)
       .reduce((acc, s) => acc + (s.duration || 0), 0);
 
+    // Workouts logged during this month
+    const periodWorkouts = workouts.filter((w) => {
+      if (!w.date) return false;
+      return w.date >= startIso && w.date <= endIso;
+    });
+
+    const completedWorkoutsCount = periodWorkouts.length;
+    let totalLiftedVolume = 0;
+    periodWorkouts.forEach((w) => {
+      if (w.totalVolume) {
+        totalLiftedVolume += w.totalVolume;
+      } else if (w.exercises) {
+        w.exercises.forEach((ex) => {
+          if (ex.sets) {
+            ex.sets.forEach((s) => {
+              if (s.completed && s.reps) {
+                const wKg = parseFloat(String(s.weight).replace(/[^0-9.]/g, '')) || 0;
+                totalLiftedVolume += wKg * Number(s.reps);
+              }
+            });
+          }
+        });
+      }
+    });
+
     return {
       habitScore,
       completedCount,
       totalOpportunities,
       completedTasksCount: completedTasks.length,
+      completedWorkoutsCount,
+      totalLiftedVolume: Math.round(totalLiftedVolume),
       focusMinutes: focusMins,
       excusesList,
       startIso,
       endIso,
     };
-  }, [habits, tasks, focusSessions, selectedMonthKey]);
+  }, [habits, tasks, focusSessions, workouts, selectedMonthKey]);
 
   // Find all weekly reviews belonging to current selected month for Monthly Review Synthesizer
   const relevantWeeklyReviews = useMemo(() => {
@@ -233,6 +290,8 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
         rating,
         habitScore: stats.habitScore,
         completedTasksCount: stats.completedTasksCount,
+        completedWorkoutsCount: stats.completedWorkoutsCount,
+        totalLiftedVolume: stats.totalLiftedVolume,
         focusMinutes: stats.focusMinutes,
         excusesCount: stats.excusesList.length,
         wins: wins.trim(),
@@ -262,7 +321,7 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 md:p-6 overflow-y-auto animate-fadeIn">
-      <div className="relative w-full max-w-4xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-4xl bg-white dark:bg-[#18191D] border border-slate-200/80 dark:border-neutral-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Modal Header */}
         <div className="flex items-center justify-between p-4 md:p-6 border-b border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/50 dark:bg-neutral-900/50">
           <div className="flex items-center gap-3">
@@ -277,13 +336,13 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
                 </span>
               </h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                {isAr ? 'وثّق إنجازاتك، حلل الأسباب والأعذار، واحتفظ بالرؤية الشاملة لأشهر السنة' : 'Analyze performance metrics, review logged context excuses, and archive insights.'}
+                {isAr ? 'وثّق إنجازاتك، أدائك الرياضي، والأعذار الموثقة لأشهر السنة' : 'Analyze habits, workout sessions, focus metrics, and archive periodic insights.'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-neutral-400 hover:text-neutral-700 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition"
+            className="p-2 rounded-xl text-neutral-400 hover:text-neutral-700 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -293,7 +352,7 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
         <div className="flex items-center gap-2 px-6 pt-4 border-b border-neutral-100 dark:border-neutral-800/80 bg-neutral-50/30 dark:bg-neutral-900/30">
           <button
             onClick={() => setActiveTab('weekly')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition border-b-2 ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition border-b-2 cursor-pointer ${
               activeTab === 'weekly'
                 ? 'border-amber-500 text-amber-600 dark:text-amber-400 bg-white dark:bg-neutral-800/80'
                 : 'border-transparent text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
@@ -305,7 +364,7 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
 
           <button
             onClick={() => setActiveTab('monthly')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition border-b-2 ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition border-b-2 cursor-pointer ${
               activeTab === 'monthly'
                 ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-white dark:bg-neutral-800/80'
                 : 'border-transparent text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
@@ -317,7 +376,7 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
 
           <button
             onClick={() => setActiveTab('archive')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition border-b-2 ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition border-b-2 cursor-pointer ${
               activeTab === 'archive'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-neutral-800/80'
                 : 'border-transparent text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
@@ -334,7 +393,7 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
           {(activeTab === 'weekly' || activeTab === 'monthly') && (
             <div className="space-y-6">
               {/* Period Selector & Quick Live Stats Bar */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-neutral-50 dark:bg-neutral-800/40 p-4 rounded-2xl border border-neutral-200/80 dark:border-neutral-800">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50 dark:bg-neutral-900/60 p-4 rounded-2xl border border-slate-200 dark:border-neutral-800">
                 <div className="md:col-span-1 space-y-1">
                   <label className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400 uppercase">
                     {activeTab === 'weekly' ? (isAr ? 'رمز الأسبوع' : 'Week Period') : (isAr ? 'الشهر المستهدف' : 'Target Month')}
@@ -344,20 +403,20 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
                       type="text"
                       value={selectedWeekKey}
                       onChange={(e) => setSelectedWeekKey(e.target.value)}
-                      className="w-full px-3 py-1.5 text-xs font-bold rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white"
+                      className="w-full px-3 py-1.5 text-xs font-bold rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white font-mono"
                     />
                   ) : (
                     <input
                       type="month"
                       value={selectedMonthKey}
                       onChange={(e) => setSelectedMonthKey(e.target.value)}
-                      className="w-full px-3 py-1.5 text-xs font-bold rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white"
+                      className="w-full px-3 py-1.5 text-xs font-bold rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white font-mono"
                     />
                   )}
                 </div>
 
-                {/* Auto computed stats badges */}
-                <div className="md:col-span-3 grid grid-cols-3 gap-2">
+                {/* Auto computed stats badges across Habits, Tasks, Gym Workouts, and Focus */}
+                <div className="md:col-span-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-center">
                     <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold block">
                       {isAr ? 'التزام العادات' : 'Habit Adherence'}
@@ -373,6 +432,17 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
                     </span>
                     <span className="text-base font-black text-blue-800 dark:text-blue-200">
                       {(activeTab === 'weekly' ? weeklyStats : monthlyStats).completedTasksCount}
+                    </span>
+                  </div>
+
+                  {/* Gym & Workout Sessions Badge */}
+                  <div className="p-2.5 rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 text-center">
+                    <span className="text-[10px] text-teal-700 dark:text-teal-300 font-bold flex items-center justify-center gap-1">
+                      <Dumbbell size={11} />
+                      {isAr ? 'حصص الجيم' : 'Gym Workouts'}
+                    </span>
+                    <span className="text-base font-black text-teal-800 dark:text-teal-200">
+                      {(activeTab === 'weekly' ? weeklyStats : monthlyStats).completedWorkoutsCount} {isAr ? 'حصة' : 'sessions'}
                     </span>
                   </div>
 
@@ -495,9 +565,9 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
                         key={num}
                         type="button"
                         onClick={() => setRating(num)}
-                        className={`w-7 h-7 rounded-lg text-xs font-black transition ${
+                        className={`w-7 h-7 rounded-lg text-xs font-black transition cursor-pointer ${
                           rating >= num
-                            ? 'bg-amber-500 text-white shadow-sm'
+                            ? 'bg-amber-500 text-white shadow-xs'
                             : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400'
                         }`}
                       >
@@ -517,8 +587,8 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
                     rows={2}
                     value={wins}
                     onChange={(e) => setWins(e.target.value)}
-                    placeholder={isAr ? 'مثال: إكمال قراءة كتاب التخطيط، إنجاز 15 بومودورو بدون تشتت، الحفاظ على عادة الرياضة...' : 'List key accomplishments, completed milestones, and highlights...'}
-                    className="w-full p-3 text-xs rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                    placeholder={isAr ? 'مثال: إكمال 3 حصص جيم بهدف الزيادة التدريجية، الالتزام بنظام الـ 4 وجبات، إنهاء التخطيط...' : 'List key accomplishments, completed workouts, and highlights...'}
+                    className="w-full p-3 text-xs rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-hidden"
                   />
                 </div>
 
@@ -532,8 +602,8 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
                     rows={2}
                     value={challenges}
                     onChange={(e) => setChallenges(e.target.value)}
-                    placeholder={isAr ? 'مثال: السهر يوم الأربعاء أدى لتأخر روتين الصباح، بعض التسويف في المهمة المعقدة...' : 'Detail obstacles, friction points, or habits missed with context...'}
-                    className="w-full p-3 text-xs rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                    placeholder={isAr ? 'مثال: التأخر في وجبة العشاء، عدم الوصول للتكرار المستهدف في تمرين البنش...' : 'Detail obstacles, friction points, or habits missed with context...'}
+                    className="w-full p-3 text-xs rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-hidden"
                   />
                 </div>
 
@@ -548,8 +618,8 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
                       rows={2}
                       value={lessons}
                       onChange={(e) => setLessons(e.target.value)}
-                      placeholder={isAr ? 'مثال: تفكيك المهمة الكبيرة إلى 3 خطوات يجعل البداية أسهل بكثير...' : 'Key insights, mindshifts, and behavioral tweaks...'}
-                      className="w-full p-3 text-xs rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                      placeholder={isAr ? 'مثال: أكل وجبة سريعة من التمر والزبادي قبل المغرب يرفع طاقة التمرين بشكل ملحوظ...' : 'Key insights, mindshifts, and behavioral tweaks...'}
+                      className="w-full p-3 text-xs rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-hidden"
                     />
                   </div>
 
@@ -562,8 +632,8 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
                       rows={2}
                       value={nextFocus}
                       onChange={(e) => setNextFocus(e.target.value)}
-                      placeholder={isAr ? 'مثال: أسبوع التنفيذ الصارم بدون المشتتات، التركيز على إنهاء مسودة المشروع...' : 'Set theme and priority target for the upcoming period...'}
-                      className="w-full p-3 text-xs rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                      placeholder={isAr ? 'مثال: رفع وزن Dumbbell Bench Press إلى 22.5kg، والالتزام الصارم بـ 4 وجبات...' : 'Set theme and priority target for the upcoming period...'}
+                      className="w-full p-3 text-xs rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-hidden"
                     />
                   </div>
                 </div>
@@ -575,7 +645,7 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
                   type="button"
                   onClick={handleSaveCurrentReview}
                   disabled={isSubmitting}
-                  className="w-full py-3.5 px-6 rounded-2xl text-xs font-black bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50"
+                  className="w-full py-3.5 px-6 rounded-2xl text-xs font-black bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer"
                 >
                   <Sparkles className="w-4 h-4" />
                   {isSubmitting
@@ -645,13 +715,19 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 flex-wrap">
                             <span className="text-xs font-black text-amber-600 dark:text-amber-400 flex items-center gap-1">
                               ⭐ {r.rating || 8}/10
                             </span>
                             <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
                               {r.habitScore || 100}% {isAr ? 'التزام' : 'habits'}
                             </span>
+                            {r.completedWorkoutsCount !== undefined && (
+                              <span className="text-xs font-bold text-teal-600 dark:text-teal-400 flex items-center gap-1">
+                                <Dumbbell size={11} />
+                                {r.completedWorkoutsCount} {isAr ? 'تمارين' : 'workouts'}
+                              </span>
+                            )}
                             {onDeleteReview && r.id && (
                               <button
                                 type="button"
@@ -661,7 +737,7 @@ export const ReviewJournalModal: React.FC<ReviewJournalModalProps> = ({
                                     onDeleteReview(r.id!);
                                   }
                                 }}
-                                className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950 transition"
+                                className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950 transition cursor-pointer"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>

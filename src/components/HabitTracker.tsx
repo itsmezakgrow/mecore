@@ -38,9 +38,11 @@ import {
   VolumeX,
   Shield,
   Moon,
-  Archive
+  Archive,
+  Dumbbell,
+  ArrowRight
 } from 'lucide-react';
-import { HabitItem, HabitRoutineTime, RewardItem, DailySleepLog, SleepScheduleConfig } from '../types';
+import { HabitItem, HabitRoutineTime, RewardItem, DailySleepLog, SleepScheduleConfig, WorkoutSession } from '../types';
 import { SleepWakeTracker } from './SleepWakeTracker';
 import { HabitDetailModal } from './HabitDetailModal';
 import { ConfirmModal } from './ConfirmModal';
@@ -50,7 +52,6 @@ import { QuickLevelLoggerModal } from './QuickLevelLoggerModal';
 import { StreakFreezeModal } from './StreakFreezeModal';
 import { RewardStoreModal } from './RewardStoreModal';
 import { EmojiPicker } from './EmojiPicker';
-import { HabitSnailVisualizer } from './HabitSnailVisualizer';
 import { BulkExcuseLoggerModal } from './BulkExcuseLoggerModal';
 import { calculateHabitStats, calculateHabitScoreHistory } from '../utils/habitAnalytics';
 import { soundManager } from '../utils/soundEffects';
@@ -61,6 +62,8 @@ interface HabitTrackerProps {
   rewards?: RewardItem[];
   sleepLogs?: DailySleepLog[];
   sleepConfig?: SleepScheduleConfig | null;
+  workouts?: WorkoutSession[];
+  onNavigateModule?: (module: string) => void;
   onAddHabit: (habit: Omit<HabitItem, 'id'>) => Promise<any>;
   onToggleHabit: (habit: HabitItem, dateKey: string) => Promise<any>;
   onUpdateHabit: (id: string, updates: Partial<HabitItem>) => Promise<any>;
@@ -721,6 +724,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   onSaveSleepLog,
   onSaveSleepConfig,
   onDeleteSleepLog,
+  workouts = [],
+  onNavigateModule,
   lang = 'en',
 }) => {
   const isAr = lang === 'ar';
@@ -729,6 +734,9 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedHabitForDetail, setSelectedHabitForDetail] = useState<HabitItem | null>(null);
   const [habitToDelete, setHabitToDelete] = useState<HabitItem | null>(null);
+
+  // Prompt modal to log workout session in Iron Engine when gym habit is checked
+  const [promptWorkoutModal, setPromptWorkoutModal] = useState<{ habit: HabitItem; date: string } | null>(null);
 
   // Level logger state
   const [levelLoggingHabit, setLevelLoggingHabit] = useState<{ habit: HabitItem; dateKey: string } | null>(null);
@@ -751,7 +759,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   const [soundEnabled, setSoundEnabled] = useState(() => soundManager.isEnabled());
 
   // View states (default to cards on mobile for zero-horizontal-scroll experience)
-  const [viewMode, setViewMode] = useState<'matrix' | 'cards' | 'snail'>(() => {
+  const [viewMode, setViewMode] = useState<'matrix' | 'cards'>(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       return 'cards';
     }
@@ -907,6 +915,27 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
         origin: { y: 0.75 },
         colors: ['#F59E0B', '#10B981', '#3B82F6', '#8B5CF6']
       });
+
+      // User request: when checking off a gym/workout habit, prompt them with a popup
+      // to easily navigate to The Iron Engine to log session details if not already logged today!
+      try {
+        const linkedGymId = localStorage.getItem('iron_engine_gym_habit');
+        const titleLower = (habit.title || '').toLowerCase();
+        const isGymHabit = (linkedGymId && habit.id === linkedGymId) ||
+          titleLower.includes('gym') ||
+          titleLower.includes('workout') ||
+          titleLower.includes('training') ||
+          titleLower.includes('fitness') ||
+          titleLower.includes('جيم') ||
+          titleLower.includes('تمرين') ||
+          titleLower.includes('صالة') ||
+          titleLower.includes('حديد');
+
+        const hasWorkoutLogged = (workouts || []).some(w => w.date === isoDate);
+        if (isGymHabit && !hasWorkoutLogged && onNavigateModule) {
+          setPromptWorkoutModal({ habit, date: isoDate });
+        }
+      } catch {}
     }
   };
 
@@ -1230,32 +1259,16 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
             <button
               onClick={() => {
                 setActiveTab('tracker');
-                if (viewMode === 'snail') setViewMode('matrix');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'tracker' && viewMode !== 'snail'
+                activeTab === 'tracker'
                   ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-xs'
                   : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
               }`}
             >
-              <CheckCircle2 size={13} className={activeTab === 'tracker' && viewMode !== 'snail' ? 'text-amber-500' : ''} />
+              <CheckCircle2 size={13} className={activeTab === 'tracker' ? 'text-amber-500' : ''} />
               <span>{isAr ? 'المصفوفة' : 'Matrix'}</span>
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('tracker');
-                setViewMode('snail');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'tracker' && viewMode === 'snail'
-                  ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              <span className="text-sm">🐌</span>
-              <span>{isAr ? 'الحلزون' : 'Snail'}</span>
             </button>
             <button
               onClick={() => {
@@ -1684,17 +1697,6 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                 >
                   <Grid size={14} />
                 </button>
-                <button
-                  onClick={() => setViewMode('snail')}
-                  className={`p-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
-                    viewMode === 'snail'
-                      ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-xs'
-                      : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900'
-                  }`}
-                  title={isAr ? "حلزون العادات (l'Escargot des Habitudes)" : "Habit Snail Visualizer"}
-                >
-                  <span className="text-xs">🐌</span>
-                </button>
               </div>
             </div>
           </div>
@@ -1708,14 +1710,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
             <span>{isAr ? `${filteredHabits.length} عادة نشطة` : `${filteredHabits.length} active habits`}</span>
           </div>
 
-          {/* Habit Content: Snail Visualizer, Desktop Matrix Table or Mobile Cards */}
-          {viewMode === 'snail' ? (
-            <HabitSnailVisualizer
-              habits={filteredHabits}
-              onToggleDate={handleToggle}
-              lang={lang}
-            />
-          ) : filteredHabits.length === 0 ? (
+          {/* Habit Content: Desktop Matrix Table or Mobile Cards */}
+          {filteredHabits.length === 0 ? (
             <div className="bg-white dark:bg-neutral-900 p-12 rounded-3xl border border-neutral-200 dark:border-neutral-800 text-center text-sm text-neutral-500 dark:text-neutral-400">
               <CheckCircle2 size={36} className="mx-auto text-neutral-300 dark:text-neutral-600 mb-2" />
               <p className="font-semibold text-neutral-900 dark:text-white">{isAr ? 'لا توجد عادات تطابق البحث' : 'No habits found'}</p>
@@ -2483,6 +2479,68 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
           onDeleteReward={onDeleteReward || (async () => {})}
           lang={lang}
         />
+      )}
+
+      {/* Workout Session Logging Prompt Modal */}
+      {promptWorkoutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-md bg-white dark:bg-[#18191D] rounded-3xl p-6 sm:p-7 border border-slate-200/90 dark:border-neutral-800 shadow-2xl text-slate-900 dark:text-white space-y-5 animate-scaleUp">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0 border border-emerald-500/20">
+                <Dumbbell size={24} />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                  {isAr ? 'عاش يا بطل! 💪' : 'Crushed It! 💪'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {isAr ? 'تم تعليم عادة التمرين لهذا اليوم' : 'Workout habit marked completed'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-neutral-900/90 border border-slate-200 dark:border-neutral-800 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{promptWorkoutModal.habit.icon || '🏋️'}</span>
+                <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                  {promptWorkoutModal.habit.title}
+                </span>
+                <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 font-bold ml-auto rtl:ml-0 rtl:mr-auto shrink-0">
+                  {promptWorkoutModal.date}
+                </span>
+              </div>
+              <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                {isAr
+                  ? 'لم تقم بتسجيل تفاصيل التكرارات والأوزان للحصة في محرك التمرين (The Iron Engine) بعد. هل تريد الانتقال الآن لتوثيق مجموعاتك وأوزانك وتطبيق زيادة الحمل التدريجي (Progressive Overload)؟'
+                  : 'You have not logged the exercises, weights, and sets for this session in The Iron Engine yet. Would you like to navigate there now to log your sets and track progressive overload?'}
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const cb = onNavigateModule;
+                  setPromptWorkoutModal(null);
+                  if (cb) cb('training');
+                }}
+                className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 cursor-pointer transition-all active:scale-95"
+              >
+                <Dumbbell size={16} />
+                <span>{isAr ? 'تسجيل تفاصيل الحصة الآن (Iron Engine)' : 'Log Workout Details Now'}</span>
+                <ArrowRight size={14} className="rtl:rotate-180" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPromptWorkoutModal(null)}
+                className="w-full sm:w-auto py-3 px-4 rounded-2xl text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
+              >
+                {isAr ? 'لاحقاً' : 'Later'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

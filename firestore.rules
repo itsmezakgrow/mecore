@@ -101,9 +101,35 @@ service cloud.firestore {
     match /access_control/{docId} {
       allow read, write: if true;
     }
+
+    // Body Metrics & Weight Logs Collection Rules
+    match /body_metrics/{metricId} {
+      allow read, write: if true;
+    }
+
+    // Body Profile Config Collection Rules
+    match /body_profile/{profileId} {
+      allow read, write: if true;
+    }
+
+    // Scheduled Workouts Collection Rules
+    match /scheduled_workouts/{workoutId} {
+      allow read, write: if true;
+    }
+
+    // Cognitive Reflections Journal Rules
+    match /reflections/{reflectionId} {
+      allow read, write: if true;
+    }
+
+    // Visualization Stories Rules
+    match /visions/{visionId} {
+      allow read, write: if true;
+    }
+
+    // Affirmations Deck Rules
+    match /affirmations/{affirmationId} {
+      allow read, write: if true;
+    }
   }
 }
-
-
-
-

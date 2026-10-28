@@ -34,6 +34,7 @@ export interface WorkoutExercise {
   sets: WorkoutSet[];
   notes?: string;
   restSeconds?: number;
+  isAutoFilled?: boolean;
 }
 
 export interface WorkoutSession {
@@ -61,6 +62,59 @@ export interface WorkoutRoutineTemplate {
     targetReps: number;
     defaultWeight: string;
   }[];
+}
+
+export interface BodyMetricLog {
+  id?: string;
+  date: string; // YYYY-MM-DD
+  weightKg: number;
+  heightCm?: number;
+  numberOfMeals?: number;
+  notes?: string;
+  createdAt: number;
+}
+
+export type PrimaryFocusMode = 'hypertrophy_sprint' | 'business_maintenance' | 'fat_loss_cut';
+export type BreakfastStrategy = 'intermittent_fasting' | 'light_breakfast' | 'full_breakfast';
+export type MiddayMealStrategy = 'light_protein_fiber' | 'high_carb_power' | 'standard_balanced' | 'skipped';
+export type PreSunsetMealStrategy = 'fruit_dates_yogurt' | 'pre_workout_carbs' | 'light_protein_snack' | 'skipped';
+export type EveningFeastStrategy = 'peak_muscle_feast' | 'light_casein_salad' | 'skipped';
+
+export interface BodyProfileConfig {
+  heightCm: number;
+  currentWeightKg: number;
+  targetWeightKg?: number; // e.g. 70 kg
+  timelineMonths?: number; // e.g. 2 months
+  targetDeadlineDate?: string; // YYYY-MM-DD
+  primaryFocusMode?: PrimaryFocusMode;
+  breakfastStrategy?: BreakfastStrategy;
+  middayMealStrategy?: MiddayMealStrategy;
+  preSunsetMealStrategy?: PreSunsetMealStrategy;
+  eveningFeastStrategy?: EveningFeastStrategy;
+  breakfastTime?: string; // e.g. "08:30"
+  meal1Time?: string; // Midday / Lunch (e.g. "13:00")
+  meal2Time?: string; // Pre-Sunset / Snack (e.g. "17:30")
+  meal3Time?: string; // Evening Feast / Dinner (e.g. "20:30")
+  numberOfMeals: number; // default 3 or 4
+  goal?: 'lean_bulk' | 'cut' | 'maintain';
+  dailyCalories?: number;
+  proteinGrams?: number;
+  carbsGrams?: number;
+  fatsGrams?: number;
+  updatedAt?: number;
+}
+
+export interface ScheduledWorkoutItem {
+  id?: string;
+  date: string; // YYYY-MM-DD
+  routineId: string;
+  routineName: string;
+  category?: string;
+  completed: boolean;
+  time?: string;
+  workoutSessionId?: string;
+  linkedHabitId?: string;
+  createdAt: number;
 }
 
 export interface FocusSession {
@@ -349,6 +403,8 @@ export interface ReviewEntry {
   dayMood?: 'calm' | 'productive' | 'stressed' | 'neutral' | 'tired' | 'victorious';
   habitScore?: number; // percentage
   completedTasksCount?: number;
+  completedWorkoutsCount?: number;
+  totalLiftedVolume?: number;
   focusMinutes?: number;
   excusesCount?: number;
   wins?: string;

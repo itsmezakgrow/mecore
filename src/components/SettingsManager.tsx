@@ -211,6 +211,23 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
     }
   });
 
+  // Iron Engine Module Integrations States
+  const [gymHabitId, setGymHabitId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('iron_engine_gym_habit') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const [cardioHabitId, setCardioHabitId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('iron_engine_cardio_habit') || '';
+    } catch {
+      return '';
+    }
+  });
+
   // AI Config State
   const [apiKey, setApiKey] = useState<string>(() => {
     try {
@@ -1509,6 +1526,80 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
           {/* APPS & CATEGORIES MANAGEMENT TAB */}
           {activeTab === 'apps' && (
             <div className="space-y-6">
+              {/* THE IRON ENGINE: MODULE INTEGRATIONS */}
+              <div className="p-5 rounded-3xl bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent dark:from-emerald-950/20 dark:to-neutral-900 border border-emerald-500/30 dark:border-emerald-800/40 space-y-4 shadow-2xs">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-emerald-500 text-white font-black shadow-md shadow-emerald-500/20">
+                    <Activity size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-[#2F3437] dark:text-white flex items-center gap-2">
+                      <span>{isAr ? 'ربط تكامل محرك التدريب (Module Integrations)' : 'Module Integrations: The Iron Engine'}</span>
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                        FIRESTORE BATCH
+                      </span>
+                    </h4>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 leading-relaxed">
+                      {isAr
+                        ? 'اختر العادات التي تريد تعليمها تلقائياً عند إكمال أي تمرين. النظام ينفذ أتمتة دفعة واحدة (Batch Write) في Firestore دون الحاجة لتحديثها يدويّاً.'
+                        : 'Link workout sessions directly to active habits. Finishing a workout automatically triggers a batch write in Firestore to check off the associated Habit for that date.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  {/* 1) Link Gym Habit Dropdown */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
+                      <span>🏋️</span>
+                      <span>{isAr ? 'عادة تمارين الصالة (Link Gym Habit):' : 'Link Gym Habit:'}</span>
+                    </label>
+                    <select
+                      value={gymHabitId}
+                      onChange={(e) => {
+                        setGymHabitId(e.target.value);
+                        try {
+                          localStorage.setItem('iron_engine_gym_habit', e.target.value);
+                        } catch {}
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#18191D] text-neutral-900 dark:text-white text-xs font-bold focus:outline-none focus:border-emerald-500 cursor-pointer shadow-2xs"
+                    >
+                      <option value="">{isAr ? '-- غير مربوط (بدون أتمتة) --' : '-- None / Not Linked --'}</option>
+                      {habits.filter(h => !h.archived).map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {h.icon || '🔥'} {h.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 2) Link Cardio Habit Dropdown */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
+                      <span>🏃</span>
+                      <span>{isAr ? 'عادة تمارين الكارديو (Link Cardio Habit):' : 'Link Cardio Habit:'}</span>
+                    </label>
+                    <select
+                      value={cardioHabitId}
+                      onChange={(e) => {
+                        setCardioHabitId(e.target.value);
+                        try {
+                          localStorage.setItem('iron_engine_cardio_habit', e.target.value);
+                        } catch {}
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#18191D] text-neutral-900 dark:text-white text-xs font-bold focus:outline-none focus:border-emerald-500 cursor-pointer shadow-2xs"
+                    >
+                      <option value="">{isAr ? '-- غير مربوط (بدون أتمتة) --' : '-- None / Not Linked --'}</option>
+                      {habits.filter(h => !h.archived).map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {h.icon || '🔥'} {h.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between border-b border-[#EAE9E6] dark:border-[#2A2C33] pb-3">
                 <div className="space-y-0.5">
                   <h3 className="text-sm font-bold text-[#2F3437] dark:text-[#F3F4F6] flex items-center gap-2">
