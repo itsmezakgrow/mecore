@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Sparkles, ChevronRight, ChevronLeft, Shuffle, Play, Pause, CheckCircle2, Flame, ShieldAlert, Award, RefreshCw } from 'lucide-react';
+import { X, Sparkles, ChevronRight, ChevronLeft, Shuffle, Play, Pause, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { Affirmation } from '../types';
 
 interface AffirmationsModalPopupProps {
@@ -22,7 +22,7 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isAutoPlay, setIsAutoPlay] = useState(false);
-  const [timerProgress, setTimerProgress] = useState(0);
+  const [_timerProgress, setTimerProgress] = useState(0);
   const [completedSet, setCompletedSet] = useState<Set<number>>(new Set());
 
   // Filter affirmations by category
@@ -101,10 +101,10 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
   const categories = ['all', 'Mindset', 'Focus', 'Confidence', 'Abundance', 'Resilience', 'Health'];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-2xl bg-[#18191D] border border-neutral-800 rounded-3xl shadow-2xl shadow-emerald-950/30 overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-md animate-fade-in">
+      <div className="relative w-full max-w-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-colors">
         {/* Top Glow & Progress Line */}
-        <div className="h-1.5 w-full bg-neutral-800 relative">
+        <div className="h-1.5 w-full bg-neutral-100 dark:bg-neutral-800 relative">
           <div
             className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300"
             style={{ width: `${totalCards > 0 ? ((currentIndex + 1) / totalCards) * 100 : 0}%` }}
@@ -112,16 +112,16 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
         </div>
 
         {/* Modal Header */}
-        <header className="px-6 py-4 border-b border-neutral-800/80 flex items-center justify-between">
+        <header className="px-6 py-4 border-b border-neutral-200/80 dark:border-neutral-800/80 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-inner">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-inner">
               <Sparkles className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-extrabold text-neutral-900 dark:text-white flex items-center gap-2">
                 {lang === 'ar' ? titleAr : titleEn}
               </h2>
-              <p className="text-xs text-neutral-400">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 {lang === 'ar' ? 'إعادة تشكيل المعتقدات وتثبيت التفكير الإيجابي' : 'Cognitive reprogramming & daily identity alignment'}
               </p>
             </div>
@@ -129,14 +129,14 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors border border-neutral-700/50"
+            className="p-2 rounded-xl bg-neutral-100 dark:bg-neutral-800/80 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors border border-neutral-200 dark:border-neutral-700/50 cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </header>
 
         {/* Categories Bar */}
-        <div className="px-6 py-3 border-b border-neutral-800/60 bg-neutral-900/40 flex items-center gap-2 overflow-x-auto scrollbar-none">
+        <div className="px-6 py-3 border-b border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/80 dark:bg-neutral-900/40 flex items-center gap-2 overflow-x-auto scrollbar-none">
           {categories.map((cat) => (
             <button
               key={cat}
@@ -144,10 +144,10 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
                 setSelectedCategory(cat);
                 setCurrentIndex(0);
               }}
-              className={`px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap capitalize transition-all ${
+              className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap capitalize transition-all cursor-pointer ${
                 selectedCategory === cat
-                  ? 'bg-emerald-500 text-neutral-950 font-bold shadow-md shadow-emerald-500/20'
-                  : 'bg-neutral-800/60 text-neutral-400 hover:text-neutral-200 border border-neutral-700/40'
+                  ? 'bg-emerald-500 text-white font-extrabold shadow-sm'
+                  : 'bg-white dark:bg-neutral-800/60 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200 border border-neutral-200/90 dark:border-neutral-700/40'
               }`}
             >
               {cat === 'all' ? (lang === 'ar' ? 'الكل' : 'All Decks') : cat}
@@ -159,8 +159,8 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
         <div className="p-8 md:p-12 flex-1 flex flex-col items-center justify-center text-center relative min-h-[280px]">
           {totalCards === 0 ? (
             <div className="space-y-4 text-center max-w-sm">
-              <ShieldAlert className="w-12 h-12 text-amber-400/80 mx-auto" />
-              <p className="text-neutral-300 text-sm">
+              <ShieldAlert className="w-12 h-12 text-amber-500 mx-auto" />
+              <p className="text-neutral-600 dark:text-neutral-300 text-sm">
                 {lang === 'ar' ? 'لا توجد توكيدات في هذه الفئة حالياً. أضف توكيدات جديدة من دفتر التفكير!' : 'No affirmations available in this deck yet. Add new ones from your Mindset & Reflections journal!'}
               </p>
             </div>
@@ -168,18 +168,18 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
             <div className="w-full space-y-6 animate-fade-in key={currentIndex}">
               {/* Category & Source Tag */}
               <div className="flex items-center justify-center gap-2 flex-wrap">
-                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 uppercase tracking-wider">
                   {currentCard.category || 'Mindset Alignment'}
                 </span>
                 {currentCard.sourceBlockTitle && (
-                  <span className="px-3 py-1 rounded-full text-xs font-medium bg-neutral-800 text-neutral-400 border border-neutral-700/60">
+                  <span className="px-3 py-1 rounded-full text-xs font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700/60">
                     {lang === 'ar' ? 'مستخرجة من:' : 'Reframing:'} {currentCard.sourceBlockTitle}
                   </span>
                 )}
               </div>
 
               {/* Main Statement Quote */}
-              <blockquote className="text-2xl md:text-3xl font-extrabold text-white leading-relaxed tracking-tight max-w-xl mx-auto drop-shadow-md">
+              <blockquote className="text-2xl md:text-3xl font-extrabold text-neutral-900 dark:text-white leading-relaxed tracking-tight max-w-xl mx-auto drop-shadow-sm font-serif">
                 "{currentCard.statement}"
               </blockquote>
 
@@ -187,13 +187,13 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
               <div className="pt-2">
                 <button
                   onClick={() => handleToggleComplete(currentIndex)}
-                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                  className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                     completedSet.has(currentIndex)
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-lg shadow-emerald-500/10'
-                      : 'bg-neutral-800/80 text-neutral-400 hover:text-white border border-neutral-700/60'
+                      ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                      : 'bg-neutral-100 dark:bg-neutral-800/80 text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white border border-neutral-200 dark:border-neutral-700/60'
                   }`}
                 >
-                  <CheckCircle2 className={`w-4 h-4 ${completedSet.has(currentIndex) ? 'text-emerald-400 fill-emerald-400/20' : ''}`} />
+                  <CheckCircle2 className={`w-4 h-4 ${completedSet.has(currentIndex) ? 'text-white fill-white/20' : 'text-neutral-400'}`} />
                   {completedSet.has(currentIndex)
                     ? (lang === 'ar' ? 'تم استيعاب التوكيد اليوم' : 'Internalized & Believed')
                     : (lang === 'ar' ? 'انقر لتثبيت المعتقد' : 'Internalize Statement')}
@@ -204,23 +204,23 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
         </div>
 
         {/* Footer & Navigation Controls */}
-        <footer className="px-6 py-4 bg-neutral-900/60 border-t border-neutral-800/80 flex items-center justify-between">
+        <footer className="px-6 py-4 bg-neutral-50 dark:bg-neutral-900/60 border-t border-neutral-200/80 dark:border-neutral-800/80 flex items-center justify-between">
           {/* Card Count & AutoPlay Toggle */}
           <div className="flex items-center gap-3">
-            <span className="text-xs font-semibold text-neutral-400 bg-neutral-800/80 px-3 py-1.5 rounded-lg border border-neutral-700/50">
+            <span className="text-xs font-bold text-neutral-600 dark:text-neutral-400 bg-white dark:bg-neutral-800/80 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700/50 shadow-2xs font-mono">
               {totalCards > 0 ? `${currentIndex + 1} / ${totalCards}` : '0 / 0'}
             </span>
 
             <button
               onClick={() => setIsAutoPlay(!isAutoPlay)}
-              className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all border ${
+              className={`p-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border cursor-pointer ${
                 isAutoPlay
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                  : 'bg-neutral-800/80 text-neutral-400 hover:text-white border-neutral-700/50'
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/40'
+                  : 'bg-white dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white border-neutral-200 dark:border-neutral-700/50 shadow-2xs'
               }`}
               title={isAutoPlay ? 'Pause Auto-Advance' : 'Play Auto-Advance (7s)'}
             >
-              {isAutoPlay ? <Pause className="w-4 h-4 text-emerald-400" /> : <Play className="w-4 h-4" />}
+              {isAutoPlay ? <Pause className="w-4 h-4 text-emerald-500" /> : <Play className="w-4 h-4" />}
               <span className="hidden sm:inline">
                 {isAutoPlay ? (lang === 'ar' ? 'إيقاف التلقائي' : 'Auto Playing') : (lang === 'ar' ? 'تشغيل تلقائي' : 'Auto Play')}
               </span>
@@ -232,7 +232,7 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
             <button
               onClick={handleShuffle}
               disabled={totalCards <= 1}
-              className="p-2.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 disabled:opacity-40 text-neutral-300 hover:text-white transition-colors border border-neutral-700/50"
+              className="p-2.5 rounded-xl bg-white dark:bg-neutral-800/80 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-40 text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white transition-colors border border-neutral-200 dark:border-neutral-700/50 shadow-2xs cursor-pointer"
               title="Shuffle Cards"
             >
               <Shuffle className="w-4 h-4" />
@@ -241,7 +241,7 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
             <button
               onClick={handlePrev}
               disabled={totalCards <= 1}
-              className="p-2.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 disabled:opacity-40 text-neutral-300 hover:text-white transition-colors border border-neutral-700/50"
+              className="p-2.5 rounded-xl bg-white dark:bg-neutral-800/80 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-40 text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white transition-colors border border-neutral-200 dark:border-neutral-700/50 shadow-2xs cursor-pointer"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -249,7 +249,7 @@ export const AffirmationsModalPopup: React.FC<AffirmationsModalPopupProps> = ({
             <button
               onClick={handleNext}
               disabled={totalCards <= 1}
-              className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-neutral-950 font-bold text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-emerald-500/20"
+              className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 cursor-pointer"
             >
               <span>{lang === 'ar' ? 'التالي' : 'Next'}</span>
               <ChevronRight className="w-4 h-4" />

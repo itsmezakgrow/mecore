@@ -6,30 +6,13 @@ import {
   Layers,
   Plus,
   Trash2,
-  Edit3,
-  Search,
-  CheckCircle2,
   AlertTriangle,
-  Lightbulb,
   Maximize2,
   Play,
-  Share2,
-  Tag,
-  Calendar,
   Save,
-  Check,
-  Zap,
-  Bookmark,
-  ChevronRight,
-  ChevronLeft,
-  Flame,
-  CheckSquare,
-  Moon,
-  Coffee,
-  Star,
-  TrendingUp,
-  ShieldAlert,
-  Shuffle
+  Smile,
+  Calendar,
+  Star
 } from 'lucide-react';
 import {
   HabitItem,
@@ -66,16 +49,17 @@ interface ReflectionsJournalProps {
   onDeleteVision?: (id: string) => Promise<any>;
   onAddAffirmation?: (a: Omit<Affirmation, 'id'>) => Promise<any>;
   onDeleteAffirmation?: (id: string) => Promise<any>;
+  isDark?: boolean;
   lang?: 'en' | 'ar';
 }
 
 export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
   reviews,
-  habits,
-  tasks,
-  sleepLogs = [],
-  focusSessions = [],
-  weeklyGoals = [],
+  habits: _habits,
+  tasks: _tasks,
+  sleepLogs: _sleepLogs = [],
+  focusSessions: _focusSessions = [],
+  weeklyGoals: _weeklyGoals = [],
   reflections = [],
   visions = [],
   affirmations = [],
@@ -89,12 +73,14 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
   onDeleteVision,
   onAddAffirmation,
   onDeleteAffirmation,
+  isDark: _isDark = false,
   lang = 'ar',
 }) => {
   const isAr = lang === 'ar';
 
-  // Module Tabs: 'blocks' | 'visions' | 'affirmations' | 'journal'
-  const [mainTab, setMainTab] = useState<'blocks' | 'visions' | 'affirmations' | 'journal'>('blocks');
+  // Module Tabs: 'journal' | 'blocks' | 'visions' | 'affirmations'
+  // Daily Journal is primary default
+  const [mainTab, setMainTab] = useState<'journal' | 'blocks' | 'visions' | 'affirmations'>('journal');
 
   // Modal State for Focus Mode Vision Reader
   const [activeReaderStory, setActiveReaderStory] = useState<VisualizationStory | null>(null);
@@ -102,14 +88,74 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
   // Modal State for Daily Affirmations Flashcard Pop-up
   const [isAffirmationPopupOpen, setIsAffirmationPopupOpen] = useState(false);
 
-  // ---------------- FEATURE 1: BREAKTHROUGHS & COGNITIVE BLOCKS ----------------
+  // ---------------- FEATURE 1: DAILY JOURNAL ----------------
+  const todayIso = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  const [journalSelectedDate, setJournalSelectedDate] = useState<string>(todayIso);
+  const [journalMood, setJournalMood] = useState<'calm' | 'productive' | 'stressed' | 'neutral' | 'tired' | 'victorious'>('productive');
+  const [journalRating, setJournalRating] = useState<number>(8);
+  const [journalTitle, setJournalTitle] = useState('');
+  const [journalWins, setJournalWins] = useState('');
+  const [journalLessons, setJournalLessons] = useState('');
+  const [journalChallenges, setJournalChallenges] = useState('');
+  const [journalNotes, setJournalNotes] = useState('');
+  const [isSavingJournal, setIsSavingJournal] = useState(false);
+
+  const moodEmojis: Record<string, string> = {
+    calm: '😌',
+    productive: '⚡',
+    stressed: '😣',
+    neutral: '😐',
+    tired: '🥱',
+    victorious: '🏆',
+  };
+
+  const handleSaveJournal = async () => {
+    setIsSavingJournal(true);
+    try {
+      const title = journalTitle.trim() || (isAr ? `تأمل يوم ${journalSelectedDate}` : `Daily Reflection ${journalSelectedDate}`);
+      await onSaveReview({
+        type: 'daily',
+        periodKey: journalSelectedDate,
+        title,
+        dayMood: journalMood,
+        rating: journalRating,
+        lessons: journalLessons.trim() || undefined,
+        wins: journalWins.trim() || undefined,
+        challenges: journalChallenges.trim() || undefined,
+        notes: journalNotes.trim() || undefined,
+        createdAt: Date.now(),
+      });
+      // reset form
+      setJournalTitle('');
+      setJournalWins('');
+      setJournalLessons('');
+      setJournalChallenges('');
+      setJournalNotes('');
+      soundManager.play('celebrate');
+    } catch (e) {
+      console.error('Failed to save journal entry:', e);
+    } finally {
+      setIsSavingJournal(false);
+    }
+  };
+
+  const dailyReviews = useMemo(() => {
+    return reviews
+      .filter((r) => r.type === 'daily')
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }, [reviews]);
+
+  // ---------------- FEATURE 2: BREAKTHROUGHS & COGNITIVE BLOCKS ----------------
   const [reflectionTitle, setReflectionTitle] = useState('');
   const [reflectionDesc, setReflectionDesc] = useState('');
   const [reflectionCategory, setReflectionCategory] = useState('Fear of Success');
-  const [reflectionType, setReflectionType] = useState<'cognitive_block' | 'aha_moment' | 'mindset_shift'>('cognitive_block');
+  const [reflectionType] = useState<'cognitive_block' | 'aha_moment' | 'mindset_shift'>('cognitive_block');
   const [isSavingReflection, setIsSavingReflection] = useState(false);
   const [extractingForId, setExtractingForId] = useState<string | null>(null);
-  const [customAffirmationInput, setCustomAffirmationInput] = useState('');
 
   const handleSaveReflection = async () => {
     if (!reflectionTitle.trim() || !reflectionDesc.trim()) return;
@@ -139,25 +185,24 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
     if (!refItem.id || !onUpdateReflection) return;
     setExtractingForId(refItem.id);
 
-    // AI-like transformation logic based on psychological reframing
     const promptReframes: Record<string, string[]> = {
       'Fear of Success': [
-        `I am fully worthy and equipped to handle the exponential growth and new opportunities coming my way.`,
-        `Success is a natural extension of my disciplined service and dedication.`
+        'I am fully worthy and equipped to handle the exponential growth and new opportunities coming my way.',
+        'Success is a natural extension of my disciplined service and dedication.'
       ],
       'Imposter Syndrome': [
-        `My achievements are earned through my focus, relentless execution, and continuous learning.`,
-        `I belong in every room I enter, bringing unique value and clarity.`
+        'My achievements are earned through my focus, relentless execution, and continuous learning.',
+        'I belong in every room I enter, bringing unique value and clarity.'
       ],
       'Perfectionism': [
-        `Done and iterated is vastly superior to perfect and unreleased.`,
-        `I celebrate bold action and continuous refinement over stalling.`
+        'Done and iterated is vastly superior to perfect and unreleased.',
+        'I celebrate bold action and continuous refinement over stalling.'
       ],
     };
 
     const generated = promptReframes[refItem.category || ''] || [
       `I replace "${refItem.title}" with unwavering conviction and daily aligned action.`,
-      `My mind is my standard-bearer; I choose empowerment over hesitation.`
+      'My mind is my standard-bearer; I choose empowerment over hesitation.'
     ];
 
     const currentExtracted = refItem.extractedAffirmations || [];
@@ -172,17 +217,6 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
     soundManager.play('celebrate');
   };
 
-  const handleAddManualAffirmationToBlock = async (refItem: CognitiveReflection) => {
-    if (!refItem.id || !customAffirmationInput.trim() || !onUpdateReflection) return;
-    const currentExtracted = refItem.extractedAffirmations || [];
-    const updated = [...currentExtracted, customAffirmationInput.trim()];
-    await onUpdateReflection(refItem.id, {
-      extractedAffirmations: updated,
-      updatedAt: Date.now()
-    });
-    setCustomAffirmationInput('');
-  };
-
   const handlePromoteToDeck = async (statement: string, sourceTitle: string, sourceId?: string) => {
     if (!onAddAffirmation) return;
     await onAddAffirmation({
@@ -195,7 +229,7 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
     soundManager.play('celebrate');
   };
 
-  // ---------------- FEATURE 2: VISUALIZATION STORIES ----------------
+  // ---------------- FEATURE 3: VISUALIZATION STORIES ----------------
   const [visionTitle, setVisionTitle] = useState('');
   const [visionStoryText, setVisionStoryText] = useState('');
   const [visionTheme, setVisionTheme] = useState('1 Year Ideal Future');
@@ -227,7 +261,7 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
     }
   };
 
-  // ---------------- FEATURE 3: AFFIRMATIONS DECK MANAGEMENT ----------------
+  // ---------------- FEATURE 4: AFFIRMATIONS DECK MANAGEMENT ----------------
   const [newAffirmationText, setNewAffirmationText] = useState('');
   const [newAffirmationCategory, setNewAffirmationCategory] = useState('Mindset');
 
@@ -242,204 +276,439 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
     soundManager.play('celebrate');
   };
 
-  // ---------------- FEATURE 4: JOURNAL & REFLECTIONS ----------------
-  const todayIso = useMemo(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }, []);
-
-  const [journalSelectedDate, setJournalSelectedDate] = useState<string>(todayIso);
-  const [journalMood, setJournalMood] = useState<'calm' | 'productive' | 'stressed' | 'neutral' | 'tired' | 'victorious'>('productive');
-  const [journalRating, setJournalRating] = useState<number>(8);
-  const [journalTitle, setJournalTitle] = useState('');
-  const [journalLessons, setJournalLessons] = useState('');
-  const [journalWins, setJournalWins] = useState('');
-  const [journalChallenges, setJournalChallenges] = useState('');
-  const [journalNotes, setJournalNotes] = useState('');
-  const [isSavingJournal, setIsSavingJournal] = useState(false);
-
-  const handleSaveJournal = async () => {
-    setIsSavingJournal(true);
-    try {
-      const title = journalTitle.trim() || (isAr ? `تأمل يوم ${journalSelectedDate}` : `Reflection for ${journalSelectedDate}`);
-      await onSaveReview({
-        type: 'daily',
-        periodKey: journalSelectedDate,
-        title,
-        dayMood: journalMood,
-        rating: journalRating,
-        lessons: journalLessons.trim() || undefined,
-        wins: journalWins.trim() || undefined,
-        challenges: journalChallenges.trim() || undefined,
-        notes: journalNotes.trim() || undefined,
-        createdAt: Date.now(),
-      });
-      soundManager.play('celebrate');
-    } catch (e) {
-      console.error('Failed to save journal entry:', e);
-    } finally {
-      setIsSavingJournal(false);
-    }
-  };
-
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-16">
-      {/* MODULE HEADER BAR */}
-      <div className="bg-[#18191D] border border-neutral-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-40 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+      {/* MODULE MAIN CARD */}
+      <div className="bg-white dark:bg-[#18191D] border border-neutral-200/90 dark:border-neutral-800 rounded-3xl p-5 sm:p-7 shadow-sm dark:shadow-xl relative overflow-hidden transition-colors">
+        <div className="absolute top-0 right-0 w-96 h-40 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 pb-6 border-b border-neutral-800">
+        {/* Header & Tabs Grid */}
+        <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 pb-6 border-b border-neutral-200/80 dark:border-neutral-800">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0 shadow-inner">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 shadow-inner">
               <Brain size={24} className="animate-pulse" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-extrabold text-white">
-                  {isAr ? 'العقلية وإعادة البرمجة (Mindset & Reflections)' : 'Mindset & Reflections Engine'}
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg sm:text-xl font-extrabold text-neutral-900 dark:text-white">
+                  {isAr ? 'العقلية واليوميات (Mindset & Reflections)' : 'Mindset & Reflections Engine'}
                 </h2>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30">
                   Atlas Cognitive OS
                 </span>
               </div>
-              <p className="text-xs text-neutral-400 mt-1">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                 {isAr
-                  ? 'سجل التحديات النفسية والتحولات الذهنية، قمم التجسيد البصري، وتوكيدات إعادة البرمجة اليومية.'
-                  : 'Log cognitive blocks, anchor vivid visualization stories, and practice daily identity reframing.'}
+                  ? 'سجل التقييم والدروس اليومية، تتبع المزاج، حل العوائق النفسية، وتوكيدات البرمجة الذهنية.'
+                  : 'Log daily reviews, track mood & rating (1-10), solve cognitive barriers, and practice affirmations.'}
               </p>
             </div>
           </div>
 
-          {/* MAIN MODULE TABS */}
-          <div className="flex items-center gap-1.5 p-1 bg-neutral-900 rounded-2xl border border-neutral-800 w-full lg:w-auto overflow-x-auto">
+          {/* MAIN MODULE TABS - Clean Responsive Grid, No Awkward Scrollbar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full xl:w-auto p-1.5 bg-neutral-100/90 dark:bg-neutral-900 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shrink-0">
             <button
-              onClick={() => setMainTab('blocks')}
-              className={`flex-1 lg:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
-                mainTab === 'blocks'
-                  ? 'bg-emerald-500 text-neutral-950 font-bold shadow-lg shadow-emerald-500/20'
-                  : 'text-neutral-400 hover:text-white'
+              onClick={() => setMainTab('journal')}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                mainTab === 'journal'
+                  ? 'bg-emerald-500 text-white font-extrabold shadow-sm'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-white dark:hover:bg-neutral-800/60'
               }`}
             >
-              <Brain size={15} />
-              <span>{isAr ? 'العوائق والتحولات' : 'Blocks & Breakthroughs'}</span>
+              <BookOpen size={15} className="shrink-0" />
+              <span className="truncate">{isAr ? 'سجل اليوميات' : 'Daily Journal'}</span>
+            </button>
+
+            <button
+              onClick={() => setMainTab('blocks')}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                mainTab === 'blocks'
+                  ? 'bg-emerald-500 text-white font-extrabold shadow-sm'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-white dark:hover:bg-neutral-800/60'
+              }`}
+            >
+              <Brain size={15} className="shrink-0" />
+              <span className="truncate">{isAr ? 'العوائق والتحولات' : 'Blocks & Breakthroughs'}</span>
             </button>
 
             <button
               onClick={() => setMainTab('visions')}
-              className={`flex-1 lg:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                 mainTab === 'visions'
-                  ? 'bg-emerald-500 text-neutral-950 font-bold shadow-lg shadow-emerald-500/20'
-                  : 'text-neutral-400 hover:text-white'
+                  ? 'bg-emerald-500 text-white font-extrabold shadow-sm'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-white dark:hover:bg-neutral-800/60'
               }`}
             >
-              <Sparkles size={15} />
-              <span>{isAr ? 'قصص التجسيد' : 'Visualization Stories'}</span>
+              <Sparkles size={15} className="shrink-0" />
+              <span className="truncate">{isAr ? 'قصص التجسيد' : 'Visualization Stories'}</span>
             </button>
 
             <button
               onClick={() => setMainTab('affirmations')}
-              className={`flex-1 lg:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                 mainTab === 'affirmations'
-                  ? 'bg-emerald-500 text-neutral-950 font-bold shadow-lg shadow-emerald-500/20'
-                  : 'text-neutral-400 hover:text-white'
+                  ? 'bg-emerald-500 text-white font-extrabold shadow-sm'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-white dark:hover:bg-neutral-800/60'
               }`}
             >
-              <Layers size={15} />
-              <span>{isAr ? 'سطح التوكيدات' : 'Affirmations Deck'}</span>
-            </button>
-
-            <button
-              onClick={() => setMainTab('journal')}
-              className={`flex-1 lg:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
-                mainTab === 'journal'
-                  ? 'bg-emerald-500 text-neutral-950 font-bold shadow-lg shadow-emerald-500/20'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              <BookOpen size={15} />
-              <span>{isAr ? 'سجل الدروس اليومي' : 'Daily Journal'}</span>
+              <Layers size={15} className="shrink-0" />
+              <span className="truncate">{isAr ? 'سطح التوكيدات' : 'Affirmations Deck'}</span>
             </button>
           </div>
         </div>
 
-        {/* SUB-SECTION 1: BREAKTHROUGHS & COGNITIVE BLOCKS */}
+        {/* TAB 1: DAILY JOURNAL */}
+        {mainTab === 'journal' && (
+          <div className="pt-6 space-y-6">
+            <div className="bg-neutral-50/70 dark:bg-neutral-900/90 border border-neutral-200/90 dark:border-neutral-800 rounded-3xl p-5 sm:p-6 space-y-6 shadow-sm dark:shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                    <BookOpen className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-neutral-900 dark:text-white">
+                      {isAr ? 'سجل اليوميات والتقييم اليومي' : 'Daily Journal & Mood Reflection'}
+                    </h3>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      {isAr ? 'سجل حالتك الذهنية، تقييم يومك على 10، الدروس المستفادة والإنجازات.' : 'Capture daily mood, rating out of 10, key lessons, and daily wins.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Calendar size={14} className="text-neutral-500 dark:text-neutral-400" />
+                  <input
+                    type="date"
+                    value={journalSelectedDate}
+                    onChange={(e) => setJournalSelectedDate(e.target.value)}
+                    className="px-3.5 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#18191D] text-xs text-neutral-900 dark:text-white font-mono cursor-pointer focus:outline-none focus:border-emerald-500 shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              {/* Mood and Rating Controls */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                {/* Mood Selection */}
+                <div className="space-y-2 p-4 rounded-2xl bg-white dark:bg-[#141518] border border-neutral-200/80 dark:border-neutral-800/80 shadow-2xs">
+                  <label className="text-xs text-neutral-800 dark:text-neutral-300 font-bold flex items-center gap-1.5">
+                    <Smile size={14} className="text-emerald-500" />
+                    <span>{isAr ? 'الحالة المزاجية لليوم (Daily Mood)' : 'Daily Mood'}</span>
+                  </label>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {(['calm', 'productive', 'stressed', 'neutral', 'tired', 'victorious'] as const).map((mood) => {
+                      const isSelected = journalMood === mood;
+                      return (
+                        <button
+                          key={mood}
+                          type="button"
+                          onClick={() => setJournalMood(mood)}
+                          className={`py-2 px-1.5 rounded-xl text-xs font-bold flex flex-col items-center justify-center gap-1 border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm scale-102 font-extrabold'
+                              : 'bg-neutral-50/80 dark:bg-[#18191D] border-neutral-200/90 dark:border-neutral-800 text-neutral-700 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-700 hover:text-neutral-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <span className="text-base">{moodEmojis[mood] || '✨'}</span>
+                          <span className="capitalize text-[10px] truncate max-w-full">{mood}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Rating 1 - 10 */}
+                <div className="space-y-2 p-4 rounded-2xl bg-white dark:bg-[#141518] border border-neutral-200/80 dark:border-neutral-800/80 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-neutral-800 dark:text-neutral-300 font-bold flex items-center gap-1.5">
+                      <Star size={14} className="text-amber-500 fill-amber-500" />
+                      <span>{isAr ? 'تقييم اليوم الإجمالي (من 10)' : 'Daily Rating (1-10)'}</span>
+                    </label>
+                    <span className="text-xs font-black px-2.5 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
+                      {journalRating} / 10
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 pt-1">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
+                      const isSelected = journalRating === num;
+                      return (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setJournalRating(num)}
+                          className={`h-9 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center ${
+                            isSelected
+                              ? 'bg-amber-500 text-neutral-950 font-black shadow-md scale-105'
+                              : 'bg-neutral-50/80 dark:bg-[#18191D] text-neutral-600 dark:text-neutral-400 border border-neutral-200/80 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 hover:text-neutral-900 dark:hover:text-white'
+                          }`}
+                        >
+                          {num}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Title Input */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-neutral-700 dark:text-neutral-300 font-bold">
+                  {isAr ? 'عنوان اليوم / الفكرة المركزية (اختياري)' : 'Day Title / Central Theme (Optional)'}
+                </label>
+                <input
+                  type="text"
+                  value={journalTitle}
+                  onChange={(e) => setJournalTitle(e.target.value)}
+                  placeholder={isAr ? 'مثال: يوم عالي التركيز والإنتاجية، كسر حاجز المقاومة...' : 'e.g. Relentless execution day, broke resistance...'}
+                  className="w-full px-4 py-2.5 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20 shadow-2xs"
+                />
+              </div>
+
+              {/* Wins & Lessons Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-neutral-700 dark:text-neutral-300 font-bold flex items-center gap-1.5">
+                    <span className="text-emerald-500">✨</span>
+                    <span>{isAr ? 'إنجازات اليوم (Wins & Accomplishments)' : 'Wins & Accomplishments'}</span>
+                  </label>
+                  <textarea
+                    value={journalWins}
+                    onChange={(e) => setJournalWins(e.target.value)}
+                    rows={3}
+                    placeholder={isAr ? 'ما الذي نجحت في تحقيقه اليوم؟ المهام، التمارين، الالتزام...' : 'What went well today? Key wins, milestones, completed work...'}
+                    className="w-full p-3.5 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20 leading-relaxed shadow-2xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs text-neutral-700 dark:text-neutral-300 font-bold flex items-center gap-1.5">
+                    <span className="text-amber-500">💡</span>
+                    <span>{isAr ? 'الدروس المستفادة (Lessons Learned)' : 'Lessons Learned & Realizations'}</span>
+                  </label>
+                  <textarea
+                    value={journalLessons}
+                    onChange={(e) => setJournalLessons(e.target.value)}
+                    rows={3}
+                    placeholder={isAr ? 'ماذا تعلمت عن نفسك، عاداتك، أو عملك اليوم؟' : 'What insights or adjustments did you realize today?'}
+                    className="w-full p-3.5 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20 leading-relaxed shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              {/* Challenges & Time Leaks */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-neutral-700 dark:text-neutral-300 font-bold flex items-center gap-1.5">
+                    <span className="text-rose-500">🛡️</span>
+                    <span>{isAr ? 'التحديات وضياع الوقت (Obstacles & Time Leaks)' : 'Obstacles & Time Leaks'}</span>
+                  </label>
+                  <textarea
+                    value={journalChallenges}
+                    onChange={(e) => setJournalChallenges(e.target.value)}
+                    rows={2}
+                    placeholder={isAr ? 'أين كانت المقاومة؟ أين ضاع الوقت أو التركيز؟' : 'What drained focus or triggered friction today?'}
+                    className="w-full p-3.5 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20 leading-relaxed shadow-2xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs text-neutral-700 dark:text-neutral-300 font-bold flex items-center gap-1.5">
+                    <span className="text-blue-500">📝</span>
+                    <span>{isAr ? 'ملاحظات وتوجيهات للغد (Next Day Focus)' : 'Next Day Intentions & Notes'}</span>
+                  </label>
+                  <textarea
+                    value={journalNotes}
+                    onChange={(e) => setJournalNotes(e.target.value)}
+                    rows={2}
+                    placeholder={isAr ? 'الهدف الأساسي لليوم القادم...' : 'Primary intent and non-negotiable target for tomorrow...'}
+                    className="w-full p-3.5 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20 leading-relaxed shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="button"
+                onClick={handleSaveJournal}
+                disabled={isSavingJournal}
+                className="w-full py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-emerald-500/20 cursor-pointer disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                <span>{isSavingJournal ? (isAr ? 'جاري الحفظ في السحابة...' : 'Saving to cloud...') : (isAr ? 'حفظ اليوميات والتأمل' : 'Save Daily Journal Entry')}</span>
+              </button>
+            </div>
+
+            {/* Previous Daily Reflections Feed */}
+            <div className="space-y-4 pt-2">
+              <h3 className="text-xs uppercase tracking-wider font-extrabold text-neutral-500 dark:text-neutral-400 flex items-center justify-between">
+                <span>{isAr ? 'اليوميات المحفوظة السابقة' : 'Saved Daily Journal Entries'} ({dailyReviews.length})</span>
+              </h3>
+
+              {dailyReviews.length === 0 ? (
+                <div className="text-center py-10 border border-dashed border-neutral-300 dark:border-neutral-800 rounded-3xl p-6 bg-white dark:bg-neutral-900/40">
+                  <BookOpen className="w-9 h-9 text-neutral-400 dark:text-neutral-600 mx-auto mb-2" />
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {isAr ? 'لم تقم بتسجيل أي تأمل يومي بعد. املأ النموذج أعلاه لحفظ أول يومية!' : 'No daily reflections saved yet. Fill the log above to record your first day!'}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {dailyReviews.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="bg-white dark:bg-neutral-900/80 border border-neutral-200/90 dark:border-neutral-800 rounded-2xl p-5 space-y-3.5 hover:border-neutral-300 dark:hover:border-neutral-700 transition-all shadow-sm flex flex-col justify-between"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-white font-mono border border-neutral-200 dark:border-neutral-700">
+                              {entry.periodKey}
+                            </span>
+                            {entry.dayMood && (
+                              <span className="px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/20 flex items-center gap-1">
+                                <span>{moodEmojis[entry.dayMood] || '✨'}</span>
+                                <span className="capitalize">{entry.dayMood}</span>
+                              </span>
+                            )}
+                            {entry.rating && (
+                              <span className="px-2 py-0.5 rounded-lg text-[11px] font-black bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30 flex items-center gap-1">
+                                <Star size={11} className="fill-amber-500 text-amber-500" />
+                                <span>{entry.rating}/10</span>
+                              </span>
+                            )}
+                          </div>
+
+                          {onDeleteReview && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteReview(entry.id)}
+                              className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors cursor-pointer"
+                              title="Delete Entry"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+
+                        {entry.title && (
+                          <h4 className="text-sm font-bold text-neutral-900 dark:text-white">{entry.title}</h4>
+                        )}
+
+                        {entry.wins && (
+                          <div className="text-xs bg-neutral-50 dark:bg-[#141518] p-3 rounded-xl border border-neutral-200/70 dark:border-neutral-800/80 space-y-1">
+                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">
+                              {isAr ? 'الإنجازات' : 'Wins'}
+                            </span>
+                            <p className="text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap leading-relaxed">{entry.wins}</p>
+                          </div>
+                        )}
+
+                        {entry.lessons && (
+                          <div className="text-xs bg-neutral-50 dark:bg-[#141518] p-3 rounded-xl border border-neutral-200/70 dark:border-neutral-800/80 space-y-1">
+                            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider block">
+                              {isAr ? 'الدروس' : 'Lessons'}
+                            </span>
+                            <p className="text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap leading-relaxed">{entry.lessons}</p>
+                          </div>
+                        )}
+
+                        {entry.challenges && (
+                          <div className="text-xs bg-neutral-50 dark:bg-[#141518] p-3 rounded-xl border border-neutral-200/70 dark:border-neutral-800/80 space-y-1">
+                            <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider block">
+                              {isAr ? 'المعوقات' : 'Challenges'}
+                            </span>
+                            <p className="text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap leading-relaxed">{entry.challenges}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-[10px] text-neutral-400 pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
+                        <span>{new Date(entry.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span>{new Date(entry.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: BREAKTHROUGHS & COGNITIVE BLOCKS */}
         {mainTab === 'blocks' && (
-          <div className="pt-6 space-y-8">
+          <div className="pt-6 space-y-8 animate-fadeIn">
             {/* Create Block Form */}
-            <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-5 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
-                {isAr ? 'تسجيل عائق نفسي أو لحظة إدراك (Log Breakthrough or Block)' : 'Log Psychological Barrier or Aha! Moment'}
+            <div className="bg-neutral-50/70 dark:bg-neutral-900/80 border border-neutral-200/90 dark:border-neutral-800 rounded-3xl p-5 sm:p-6 space-y-4 shadow-sm">
+              <h3 className="text-sm font-extrabold text-neutral-900 dark:text-white flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                {isAr ? 'تسجيل عائق نفسي أو لحظة إدراك' : 'Log Psychological Barrier / Aha! Moment'}
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="md:col-span-2 space-y-1">
-                  <label className="text-xs text-neutral-400 font-medium">
-                    {isAr ? 'العنوان الرئيسي للتحدي الذهني' : 'Barrier / Breakthrough Title'}
+                  <label className="text-xs text-neutral-700 dark:text-neutral-300 font-bold">
+                    {isAr ? 'العنوان' : 'Title'}
                   </label>
                   <input
                     type="text"
                     value={reflectionTitle}
                     onChange={(e) => setReflectionTitle(e.target.value)}
-                    placeholder={isAr ? 'مثال: الخوف من النجاح، متلازمة المحتال، الخوف من النقد...' : 'e.g. Fear of Success, Imposter Syndrome, Perfectionism...'}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    placeholder={isAr ? 'مثال: متلازمة المحتال، الخوف من النجاح...' : 'e.g. Imposter Syndrome, Fear of Scale...'}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:border-emerald-500 shadow-2xs"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-neutral-400 font-medium">
-                    {isAr ? 'الفئة النفسية' : 'Psychological Category'}
+                  <label className="text-xs text-neutral-700 dark:text-neutral-300 font-bold">
+                    {isAr ? 'الفئة' : 'Category'}
                   </label>
                   <select
                     value={reflectionCategory}
                     onChange={(e) => setReflectionCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white focus:outline-none focus:border-emerald-500 shadow-2xs"
                   >
                     <option value="Fear of Success">Fear of Success</option>
                     <option value="Imposter Syndrome">Imposter Syndrome</option>
-                    <option value="Perfectionism">Perfectionism Stalling</option>
+                    <option value="Perfectionism">Perfectionism</option>
                     <option value="Fear of Failure">Fear of Failure</option>
-                    <option value="Abundance vs Scarcity">Abundance vs Scarcity</option>
-                    <option value="General Mindset">General Mindset Shift</option>
+                    <option value="General Mindset">General Mindset</option>
                   </select>
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs text-neutral-400 font-medium">
-                  {isAr ? 'الوصف التفصيلي وحقيقة الشعور' : 'Deep Description & Root Cause Analysis'}
+                <label className="text-xs text-neutral-700 dark:text-neutral-300 font-bold">
+                  {isAr ? 'الوصف' : 'Detailed Description'}
                 </label>
                 <textarea
                   value={reflectionDesc}
                   onChange={(e) => setReflectionDesc(e.target.value)}
-                  rows={3}
-                  placeholder={isAr ? 'اشرح بالتفصيل كيف يظهر هذا العائق في يومك وما هي جذوره...' : 'Explain how this friction surfaces in your decisions and daily work...'}
-                  className="w-full p-3 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  rows={2}
+                  placeholder={isAr ? 'صف العائق والشعور الداخلي بدقة...' : 'Describe the resistance or cognitive pattern...'}
+                  className="w-full p-3 rounded-xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:border-emerald-500 shadow-2xs"
                 />
               </div>
 
-              <div className="flex justify-end">
-                <button
-                  onClick={handleSaveReflection}
-                  disabled={isSavingReflection || !reflectionTitle.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-neutral-950 font-bold text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-500/10"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>{isAr ? 'حفظ العائق في السجل' : 'Save Barrier Entry'}</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleSaveReflection}
+                disabled={isSavingReflection || !reflectionTitle.trim()}
+                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs shadow-md shadow-emerald-500/20 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isAr ? 'حفظ العائق' : 'Save Barrier'}
+              </button>
             </div>
 
             {/* Saved Reflections List */}
             <div className="space-y-4">
-              <h3 className="text-xs uppercase tracking-wider font-bold text-neutral-400">
+              <h3 className="text-xs uppercase tracking-wider font-extrabold text-neutral-500 dark:text-neutral-400">
                 {isAr ? 'سجل التحديات والأفكار المسجلة' : 'Recorded Breakthroughs & Cognitive Barriers'} ({reflections.length})
               </h3>
 
               {reflections.length === 0 ? (
-                <div className="text-center py-12 border border-dashed border-neutral-800 rounded-2xl p-6">
-                  <Brain className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
-                  <p className="text-xs text-neutral-400">
+                <div className="text-center py-12 border border-dashed border-neutral-300 dark:border-neutral-800 rounded-3xl p-6 bg-white dark:bg-neutral-900/40">
+                  <Brain className="w-10 h-10 text-neutral-400 dark:text-neutral-600 mx-auto mb-2" />
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
                     {isAr ? 'لم تقم بتسجيل أي عائق أو فكرة ذهنية بعد. استخدم النموذج أعلاه للبدء!' : 'No cognitive reflections logged yet. Record your first breakthrough above!'}
                   </p>
                 </div>
@@ -448,47 +717,49 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
                   {reflections.map((ref) => (
                     <div
                       key={ref.id}
-                      className="bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700/80 rounded-2xl p-5 space-y-4 transition-all"
+                      className="bg-white dark:bg-neutral-900/60 border border-neutral-200/90 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700/80 rounded-2xl p-5 space-y-4 shadow-sm transition-all"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20">
                               {ref.category || 'Mindset'}
                             </span>
-                            <span className="text-[10px] text-neutral-500">
+                            <span className="text-[10px] text-neutral-400 font-mono">
                               {new Date(ref.createdAt).toLocaleDateString()}
                             </span>
                           </div>
-                          <h4 className="text-base font-bold text-white">{ref.title}</h4>
+                          <h4 className="text-base font-bold text-neutral-900 dark:text-white">{ref.title}</h4>
                         </div>
 
                         {onDeleteReflection && ref.id && (
                           <button
+                            type="button"
                             onClick={() => onDeleteReflection(ref.id!)}
-                            className="p-1.5 rounded-lg bg-neutral-800/80 hover:bg-rose-500/20 text-neutral-400 hover:text-rose-400 transition-colors"
+                            className="p-1.5 rounded-lg bg-neutral-100 dark:bg-neutral-800/80 hover:bg-rose-50 dark:hover:bg-rose-500/20 text-neutral-400 hover:text-rose-500 transition-colors cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
                       </div>
 
-                      <p className="text-xs text-neutral-300 whitespace-pre-wrap leading-relaxed bg-[#18191D] p-3 rounded-xl border border-neutral-800/80">
+                      <p className="text-xs text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap leading-relaxed bg-neutral-50 dark:bg-[#18191D] p-3 rounded-xl border border-neutral-200/70 dark:border-neutral-800/80">
                         {ref.description}
                       </p>
 
                       {/* Extracted Affirmations Display & Controls */}
-                      <div className="pt-2 border-t border-neutral-800 space-y-3">
+                      <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                             <Sparkles className="w-3.5 h-3.5" />
                             {isAr ? 'التوكيدات المعاكسة المستخرجة:' : 'Counter Affirmations:'}
                           </span>
 
                           <button
+                            type="button"
                             onClick={() => handleGenerateAtlasAffirmation(ref)}
                             disabled={extractingForId === ref.id}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                            className="px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
                           >
                             <Sparkles className="w-3.5 h-3.5" />
                             <span>{isAr ? 'توليد توكيدات ذكية (Atlas AI)' : 'Extract Affirmations (AI)'}</span>
@@ -501,12 +772,13 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
                             {ref.extractedAffirmations.map((aff, idx) => (
                               <div
                                 key={idx}
-                                className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-neutral-200"
+                                className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 text-xs text-neutral-800 dark:text-neutral-200"
                               >
                                 <span className="font-medium italic">"{aff}"</span>
                                 <button
+                                  type="button"
                                   onClick={() => handlePromoteToDeck(aff, ref.title, ref.id)}
-                                  className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-[10px] whitespace-nowrap transition-colors"
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] whitespace-nowrap transition-colors cursor-pointer"
                                 >
                                   {isAr ? '+ إضافة لسطح التوكيدات' : '+ Add to Deck'}
                                 </button>
@@ -523,19 +795,19 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
           </div>
         )}
 
-        {/* SUB-SECTION 2: VISUALIZATION STORIES */}
+        {/* TAB 3: VISUALIZATION STORIES */}
         {mainTab === 'visions' && (
-          <div className="pt-6 space-y-8">
+          <div className="pt-6 space-y-8 animate-fadeIn">
             {/* Create Story Form */}
-            <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-5 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-400" />
+            <div className="bg-neutral-50/70 dark:bg-neutral-900/80 border border-neutral-200/90 dark:border-neutral-800 rounded-3xl p-5 sm:p-6 space-y-4 shadow-sm">
+              <h3 className="text-sm font-extrabold text-neutral-900 dark:text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-500" />
                 {isAr ? 'صياغة قصة تجسيد جديدة (Write Visualization Story)' : 'Write New Visualization Story'}
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="md:col-span-2 space-y-1">
-                  <label className="text-xs text-neutral-400 font-medium">
+                  <label className="text-xs text-neutral-700 dark:text-neutral-300 font-bold">
                     {isAr ? 'عنوان القصة والرؤية' : 'Story Title'}
                   </label>
                   <input
@@ -543,12 +815,12 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
                     value={visionTitle}
                     onChange={(e) => setVisionTitle(e.target.value)}
                     placeholder={isAr ? 'مثال: يوم في حياتي بعد سنة من الآن، إطلاق المنصة بنجاح...' : 'e.g. A day in my life 1 year from now, Scaling to $10k/mo...'}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:border-emerald-500 shadow-2xs"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-neutral-400 font-medium">
+                  <label className="text-xs text-neutral-700 dark:text-neutral-300 font-bold">
                     {isAr ? 'موضوع التجسيد' : 'Visualization Theme'}
                   </label>
                   <input
@@ -556,29 +828,30 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
                     value={visionTheme}
                     onChange={(e) => setVisionTheme(e.target.value)}
                     placeholder="e.g. 1 Year Ideal Future"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white focus:outline-none focus:border-emerald-500 shadow-2xs"
                   />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs text-neutral-400 font-medium">
+                <label className="text-xs text-neutral-700 dark:text-neutral-300 font-bold">
                   {isAr ? 'نص التجسيد العميق (Rich Story Content)' : 'Rich Story Content (First Person Present Tense)'}
                 </label>
                 <textarea
                   value={visionStoryText}
                   onChange={(e) => setVisionStoryText(e.target.value)}
-                  rows={6}
+                  rows={5}
                   placeholder={isAr ? 'اكتب بصيغة الحاضر والتفاصيل الحسية كاملة...' : 'Write in present tense describing sight, feel, energy and outcomes...'}
-                  className="w-full p-3 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500 font-serif leading-relaxed"
+                  className="w-full p-3.5 rounded-xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:border-emerald-500 font-serif leading-relaxed shadow-2xs"
                 />
               </div>
 
               <div className="flex justify-end">
                 <button
+                  type="button"
                   onClick={handleSaveVision}
                   disabled={isSavingVision || !visionTitle.trim() || !visionStoryText.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-neutral-950 font-bold text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-500/10"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-extrabold text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-500/10 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>{isAr ? 'حفظ قصة التجسيد' : 'Save Story'}</span>
@@ -588,14 +861,14 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
 
             {/* List of Saved Visions */}
             <div className="space-y-4">
-              <h3 className="text-xs uppercase tracking-wider font-bold text-neutral-400">
+              <h3 className="text-xs uppercase tracking-wider font-extrabold text-neutral-500 dark:text-neutral-400">
                 {isAr ? 'قصص التجسيد المحفوظة' : 'Saved Visualization Scripts'} ({visions.length})
               </h3>
 
               {visions.length === 0 ? (
-                <div className="text-center py-12 border border-dashed border-neutral-800 rounded-2xl p-6">
-                  <Sparkles className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
-                  <p className="text-xs text-neutral-400">
+                <div className="text-center py-12 border border-dashed border-neutral-300 dark:border-neutral-800 rounded-3xl p-6 bg-white dark:bg-neutral-900/40">
+                  <Sparkles className="w-10 h-10 text-neutral-400 dark:text-neutral-600 mx-auto mb-2" />
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
                     {isAr ? 'لا توجد قصص تجسيد بعد. اكتب قصتك الأولى وأطلق طاقة التركيز!' : 'No visualization stories written yet. Create your first script above!'}
                   </p>
                 </div>
@@ -604,37 +877,39 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
                   {visions.map((vis) => (
                     <div
                       key={vis.id}
-                      className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-5 flex flex-col justify-between space-y-4 hover:border-emerald-500/30 transition-all"
+                      className="bg-white dark:bg-neutral-900/60 border border-neutral-200/90 dark:border-neutral-800 rounded-2xl p-5 flex flex-col justify-between space-y-4 hover:border-emerald-500/40 shadow-sm transition-all"
                     >
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
                             {vis.theme || 'Future Vision'}
                           </span>
                           {onDeleteVision && vis.id && (
                             <button
+                              type="button"
                               onClick={() => onDeleteVision(vis.id!)}
-                              className="p-1 rounded-lg hover:bg-rose-500/20 text-neutral-500 hover:text-rose-400"
+                              className="p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/20 text-neutral-400 hover:text-rose-500 cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>
 
-                        <h4 className="text-base font-bold text-white">{vis.title}</h4>
-                        <p className="text-xs text-neutral-400 line-clamp-3 font-serif">
+                        <h4 className="text-base font-bold text-neutral-900 dark:text-white">{vis.title}</h4>
+                        <p className="text-xs text-neutral-600 dark:text-neutral-400 line-clamp-3 font-serif leading-relaxed">
                           {vis.storyContent}
                         </p>
                       </div>
 
-                      <div className="pt-3 border-t border-neutral-800/80 flex items-center justify-between">
-                        <span className="text-[10px] text-neutral-500">
+                      <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800/80 flex items-center justify-between">
+                        <span className="text-[10px] text-neutral-400 font-mono">
                           {vis.readingTimeMinutes || 2} {isAr ? 'دقائق قراءة' : 'min read'}
                         </span>
 
                         <button
+                          type="button"
                           onClick={() => setActiveReaderStory(vis)}
-                          className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20"
+                          className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 cursor-pointer"
                         >
                           <Maximize2 className="w-3.5 h-3.5" />
                           <span>{isAr ? 'نموذج التركيز (Focus Reader)' : 'Focus Reader Mode'}</span>
@@ -648,44 +923,45 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
           </div>
         )}
 
-        {/* SUB-SECTION 3: AFFIRMATIONS DECK */}
+        {/* TAB 4: AFFIRMATIONS DECK */}
         {mainTab === 'affirmations' && (
-          <div className="pt-6 space-y-8">
+          <div className="pt-6 space-y-8 animate-fadeIn">
             {/* Top Deck Banner & Trigger Flashcard Modal */}
-            <div className="p-6 bg-gradient-to-r from-emerald-950/40 to-neutral-900 border border-emerald-500/30 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="p-6 bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-transparent dark:from-emerald-950/40 dark:to-neutral-900 border border-emerald-500/20 dark:border-emerald-500/30 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
               <div className="space-y-1 text-center md:text-left">
-                <h3 className="text-base font-extrabold text-white flex items-center gap-2 justify-center md:justify-start">
-                  <Layers className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-extrabold text-neutral-900 dark:text-white flex items-center gap-2 justify-center md:justify-start">
+                  <Layers className="w-5 h-5 text-emerald-500" />
                   {isAr ? 'سطح البرمجة التلقائية والتوكيدات' : 'Daily Identity Reprogramming Deck'}
                 </h3>
-                <p className="text-xs text-neutral-400">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
                   {isAr ? 'انقر للبدء في تصفح بطاقات البرمجة الذهنية في تجربة تفاعلية مليئة بالتركيز.' : 'Start the immersive flashcard experience with timer or manual step.'}
                 </p>
               </div>
 
               <button
+                type="button"
                 onClick={() => setIsAffirmationPopupOpen(true)}
-                className="px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-extrabold text-xs flex items-center gap-2 transition-all shadow-xl shadow-emerald-500/20 shrink-0"
+                className="px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-500/20 shrink-0 cursor-pointer"
               >
-                <Play className="w-4 h-4 fill-neutral-950" />
+                <Play className="w-4 h-4 fill-white" />
                 <span>{isAr ? 'تشغيل بطاقات التوكيدات اليومية' : 'Open Affirmations Popup'}</span>
               </button>
             </div>
 
             {/* Quick Add Affirmation Form */}
-            <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-3">
+            <div className="bg-neutral-50/70 dark:bg-neutral-900/80 border border-neutral-200/90 dark:border-neutral-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-3 shadow-sm">
               <input
                 type="text"
                 value={newAffirmationText}
                 onChange={(e) => setNewAffirmationText(e.target.value)}
                 placeholder={isAr ? 'اكتب توكيداً جديداً وتثبيتاً لمعتقد إيجابي...' : 'Type a new empowering statement...'}
-                className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500 w-full"
+                className="flex-1 px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:border-emerald-500 w-full shadow-2xs"
               />
 
               <select
                 value={newAffirmationCategory}
                 onChange={(e) => setNewAffirmationCategory(e.target.value)}
-                className="px-3.5 py-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500 w-full sm:w-auto"
+                className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white focus:outline-none focus:border-emerald-500 w-full sm:w-auto shadow-2xs"
               >
                 <option value="Mindset">Mindset</option>
                 <option value="Focus">Focus</option>
@@ -696,9 +972,10 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
               </select>
 
               <button
+                type="button"
                 onClick={handleAddDeckAffirmation}
                 disabled={!newAffirmationText.trim()}
-                className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-neutral-950 font-bold text-xs whitespace-nowrap w-full sm:w-auto"
+                className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-extrabold text-xs whitespace-nowrap w-full sm:w-auto cursor-pointer shadow-sm shadow-emerald-500/20"
               >
                 + {isAr ? 'إضافة' : 'Add Card'}
               </button>
@@ -709,22 +986,23 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
               {affirmations.map((aff) => (
                 <div
                   key={aff.id}
-                  className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-4 flex flex-col justify-between space-y-3 relative group"
+                  className="bg-white dark:bg-neutral-900/50 border border-neutral-200/90 dark:border-neutral-800 rounded-2xl p-4 flex flex-col justify-between space-y-3 relative group shadow-sm hover:border-emerald-500/30 transition-all"
                 >
                   <div className="space-y-2">
-                    <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
                       {aff.category || 'Mindset'}
                     </span>
-                    <p className="text-xs font-bold text-white italic leading-relaxed">
+                    <p className="text-xs font-bold text-neutral-800 dark:text-white italic leading-relaxed">
                       "{aff.statement}"
                     </p>
                   </div>
 
                   {onDeleteAffirmation && aff.id && (
-                    <div className="flex justify-end pt-2 border-t border-neutral-800/60">
+                    <div className="flex justify-end pt-2 border-t border-neutral-100 dark:border-neutral-800/60">
                       <button
+                        type="button"
                         onClick={() => onDeleteAffirmation(aff.id!)}
-                        className="p-1 rounded hover:bg-rose-500/20 text-neutral-500 hover:text-rose-400 transition-colors"
+                        className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-500/20 text-neutral-400 hover:text-rose-500 transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -732,59 +1010,6 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
                   )}
                 </div>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* SUB-SECTION 4: DAILY JOURNAL */}
-        {mainTab === 'journal' && (
-          <div className="pt-6 space-y-6">
-            <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-emerald-400" />
-                  {isAr ? 'تأمل اليوم والدروس المستفادة' : 'Daily Reflection Log'}
-                </h3>
-                <input
-                  type="date"
-                  value={journalSelectedDate}
-                  onChange={(e) => setJournalSelectedDate(e.target.value)}
-                  className="px-3 py-1 rounded-lg border border-neutral-800 bg-[#18191D] text-xs text-white font-mono"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs text-neutral-400">{isAr ? 'الدروس المستفادة' : 'Lessons Learned'}</label>
-                  <textarea
-                    value={journalLessons}
-                    onChange={(e) => setJournalLessons(e.target.value)}
-                    rows={3}
-                    className="w-full p-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs text-neutral-400">{isAr ? 'أين ضاع الوقت؟' : 'Time Leaks / Friction'}</label>
-                  <textarea
-                    value={journalChallenges}
-                    onChange={(e) => setJournalChallenges(e.target.value)}
-                    rows={3}
-                    className="w-full p-2.5 rounded-xl bg-[#18191D] border border-neutral-800 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  onClick={handleSaveJournal}
-                  disabled={isSavingJournal}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-500/10"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>{isSavingJournal ? '...' : (isAr ? 'حفظ اليوم' : 'Save Entry')}</span>
-                </button>
-              </div>
             </div>
           </div>
         )}

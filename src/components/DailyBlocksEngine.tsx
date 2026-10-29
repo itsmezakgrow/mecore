@@ -1270,39 +1270,38 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
       {/* ----------------------------------------------------
           1. HEADER & DATE SWITCHER
           ---------------------------------------------------- */}
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-200/80 dark:border-neutral-800/80">
+      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 pb-3 border-b border-neutral-200/80 dark:border-neutral-800/80">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center justify-center shrink-0 shadow-2xs">
-            <Layers size={20} className="text-indigo-600 dark:text-indigo-400" />
+          <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800 flex items-center justify-center shrink-0 shadow-2xs">
+            <Layers size={20} />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-base sm:text-lg font-extrabold tracking-tight text-neutral-900 dark:text-white flex items-center gap-2">
                 <span>{isAr ? 'قوالب وفترات اليوم (Daily Blocks)' : 'Daily Blocks Architecture'}</span>
-                <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block shadow-xs shadow-indigo-500/50" />
               </h1>
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700">
-                {isAr ? 'تنظيم سهل وبدون إجهاد' : 'Zero-Stress Day Flow'}
+              <span className="text-xs px-2 py-0.5 rounded-full font-mono bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200/60 dark:border-neutral-700/60">
+                {dayBlocks.length} {isAr ? 'فترات اليوم' : 'today'}
               </span>
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
               {isAr
-                ? 'قسّم يومك إلى فترات واضحة وسهلة الاختيار، واتبع تدفق يومك وأسبوعك وشهرك بكل راحة ووضوح.'
-                : 'Structure each day into macro blocks. Enter, select what you want effortlessly, and track how your days unfold.'}
+                ? 'قسّم يومك إلى فترات واضحة وسهلة الاختيار، وتابع تدفق التركيز والإنتاجية بكل وضوح.'
+                : 'Structure each day into macro blocks. Select proven routines, link tasks, and execute with zero friction.'}
             </p>
           </div>
         </div>
 
         {/* Action Controls & View Switcher */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Day / Week / Month Mode Tabs */}
-          <div className="flex items-center p-0.5 bg-neutral-100 dark:bg-[#1E2025] rounded-xl border border-neutral-200 dark:border-neutral-800 text-xs">
+          {/* Day / Week View Mode Tabs */}
+          <div className="flex items-center p-1 bg-neutral-100 dark:bg-neutral-800/80 rounded-xl border border-neutral-200/80 dark:border-neutral-700/80 text-xs">
             <button
               type="button"
               onClick={() => setViewMode('today')}
               className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                 viewMode === 'today'
-                  ? 'bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-2xs'
+                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-2xs'
                   : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
               }`}
             >
@@ -1313,7 +1312,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
               onClick={() => setViewMode('week')}
               className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                 viewMode === 'week'
-                  ? 'bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-2xs'
+                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-2xs'
                   : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
               }`}
             >
@@ -1323,11 +1322,11 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
             <button
               type="button"
               onClick={toggleTimeFormat}
-              className="px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 text-[11px] font-mono font-bold text-neutral-700 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer transition-colors shadow-2xs"
+              className="px-2.5 py-1.5 rounded-lg border border-neutral-200/80 dark:border-neutral-700/80 bg-white dark:bg-neutral-900 text-[11px] font-mono font-bold text-neutral-700 dark:text-neutral-300 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer transition-colors shadow-2xs ml-0.5"
               title={isAr ? 'التبديل بين نظام 12 ساعة ونظام 24 ساعة' : 'Toggle 12h / 24h format'}
             >
               <Clock size={11} className="inline ltr:mr-1 rtl:ml-1 text-neutral-400" />
-              <span>{use12HourTime ? '12h (AM/PM)' : '24h'}</span>
+              <span>{use12HourTime ? '12h' : '24h'}</span>
             </button>
           </div>
 
@@ -1336,9 +1335,9 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
             type="button"
             onClick={() => onNavigateModule('planner')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-xl text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-2xs transition-all active:scale-95"
-            title={isAr ? 'فتح المخطط الأسبوعي وتخطيط الأسبوع' : 'Open Weekly Planner'}
+            title={isAr ? 'فتح المخطط الأسبوعي' : 'Open Weekly Planner'}
           >
-            <Calendar size={14} className="text-indigo-500" />
+            <Calendar size={14} className="text-emerald-500" />
             <span>{isAr ? 'المخطط الأسبوعي' : 'Weekly Planner'}</span>
           </button>
 
@@ -1359,7 +1358,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
             </button>
           )}
 
-          {/* Reuse Past Block Button ("إنفايت / غيت") */}
+          {/* Reuse Past Block Button */}
           <button
             type="button"
             onClick={() => {
@@ -1367,10 +1366,10 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
               setReuseTypeFilter('all');
               setShowReuseBlockModal(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300/80 dark:border-emerald-800/80 rounded-xl text-xs font-bold cursor-pointer shadow-2xs transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs font-bold cursor-pointer shadow-2xs transition-all active:scale-95"
             title={isAr ? 'استيراد واختيار فترة موجودة من قبل في أيام سابقة وتعديلها لهذا اليوم' : 'Reuse past block without typing from scratch'}
           >
-            <Search size={13} />
+            <Search size={13} className="text-neutral-500" />
             <span>{isAr ? 'جلب فترة سابقة' : 'Reuse Block'}</span>
           </button>
 
@@ -1378,18 +1377,18 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           <button
             type="button"
             onClick={() => setShowArchetypeModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer shadow-xs transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-neutral-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs font-bold cursor-pointer shadow-2xs transition-all active:scale-95"
             title={isAr ? 'اختيار وتطبيق نموذج يومي أو إدارة نماذجك المخصصة' : 'Day Blueprints & Custom Templates'}
           >
-            <Sparkles size={14} />
+            <Sparkles size={14} className="text-amber-500" />
             <span>{isAr ? 'نماذج الأيام' : 'Day Templates'}</span>
           </button>
 
-          {/* Add Block Button */}
+          {/* Add Block Button (Primary CTA) */}
           <button
             type="button"
             onClick={() => handleOpenAddModal()}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900 hover:bg-black text-white dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100 rounded-xl text-xs font-bold cursor-pointer shadow-xs transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold cursor-pointer shadow-xs transition-all"
           >
             <Plus size={14} />
             <span>{isAr ? 'إضافة فترة' : 'Add Block'}</span>
@@ -1408,7 +1407,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
       {/* ----------------------------------------------------
           2. DATE PICKER & METRICS BAR
           ---------------------------------------------------- */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3.5 rounded-2xl bg-white dark:bg-[#181A20] border border-neutral-200/90 dark:border-neutral-800/90 shadow-2xs">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3.5 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/90 dark:border-neutral-800 shadow-2xs">
         {/* Date Selector */}
         <div className="flex items-center gap-2">
           <button
@@ -1420,8 +1419,8 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
             <ChevronLeft size={16} />
           </button>
 
-          <div className="flex items-center gap-2 bg-neutral-50 dark:bg-neutral-900 px-3 py-1.5 rounded-xl border border-neutral-200/80 dark:border-neutral-800/80">
-            <Calendar size={15} className="text-indigo-500" />
+          <div className="flex items-center gap-2 bg-neutral-50 dark:bg-neutral-800/80 px-3 py-1.5 rounded-xl border border-neutral-200/80 dark:border-neutral-700/80">
+            <Calendar size={15} className="text-emerald-500" />
             <input
               type="date"
               value={selectedDate}
@@ -1448,7 +1447,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
             <button
               type="button"
               onClick={handleJumpToToday}
-              className="px-2.5 py-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+              className="px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
             >
               {isAr ? 'العودة لليوم' : 'Jump to Today'}
             </button>
@@ -1480,14 +1479,14 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
             <span className="font-bold text-neutral-900 dark:text-white">
               {dayStats.completed}/{dayStats.total}
             </span>
-            <span className="text-[10px] text-emerald-500 font-bold">({dayStats.pct}%)</span>
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">({dayStats.pct}%)</span>
           </div>
 
           <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-800" />
 
           <div className="flex items-center gap-1.5">
             <span className="text-neutral-400">{isAr ? 'ساعات التركيز:' : 'Focus Time:'}</span>
-            <span className="font-bold text-indigo-600 dark:text-indigo-400">
+            <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
               {Math.floor(dayStats.totalPlannedFocusMins / 60)}h {dayStats.totalPlannedFocusMins % 60}m
             </span>
           </div>
@@ -1495,9 +1494,9 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
       </div>
 
       {/* ----------------------------------------------------
-          2.5. DAILY WORKFLOW STRIP (MORNING KICKOFF & EVENING AUDIT)
+          2.5. DAILY WORKFLOW STRIP (MORNING SETUP & EVENING AUDIT)
           ---------------------------------------------------- */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-indigo-500/5 to-purple-500/10 border border-neutral-200/90 dark:border-neutral-800/90 shadow-2xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/90 dark:border-neutral-800 shadow-2xs">
         {/* Morning Setup Strip */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
@@ -1507,7 +1506,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           <button
             type="button"
             onClick={() => setShowArchetypeModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-3xs transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-50 dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-3xs transition-all active:scale-95"
             title={isAr ? 'اختيار قالب يوم جاهز بنقرة واحدة' : 'Select a ready day blueprint'}
           >
             <Sparkles size={13} className="text-amber-500" />
@@ -1517,7 +1516,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           <button
             type="button"
             onClick={() => onNavigateModule('tasks')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-3xs transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-50 dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-3xs transition-all active:scale-95"
             title={isAr ? 'الانتقال إلى قائمة المهام' : 'Go to tasks'}
           >
             <ListChecks size={13} className="text-emerald-500" />
@@ -1532,11 +1531,11 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           <button
             type="button"
             onClick={() => onNavigateModule('reflections')}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-95 text-white text-xs font-bold cursor-pointer shadow-xs transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 active:scale-95 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-2xs transition-all"
             title={isAr ? 'إجراء تقييم اليوم وتدوين الإنجازات والدروس' : 'Run daily evening review and reflections'}
           >
-            <Moon size={13} />
-            <span>{isAr ? 'تقييم نهاية اليوم 🌙' : 'Evening Audit 🌙'}</span>
+            <Moon size={13} className="text-amber-500" />
+            <span>{isAr ? 'تقييم نهاية اليوم' : 'Evening Audit'}</span>
           </button>
         </div>
       </div>
@@ -1548,9 +1547,9 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
         <div className="space-y-3">
           {dayBlocks.length === 0 ? (
             /* Empty State: Zero Stress Quick Starter */
-            <div className="p-8 sm:p-12 text-center rounded-3xl bg-white dark:bg-[#181A20] border border-dashed border-neutral-300 dark:border-neutral-800 space-y-4">
-              <div className="w-16 h-16 rounded-3xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 mx-auto flex items-center justify-center text-2xl shadow-xs">
-                ✨
+            <div className="p-8 sm:p-12 text-center rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200/90 dark:border-neutral-800 space-y-4 shadow-2xs">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800 mx-auto flex items-center justify-center text-xl shadow-2xs">
+                <Layers size={24} />
               </div>
               <div className="max-w-md mx-auto space-y-1">
                 <h3 className="text-sm sm:text-base font-bold text-neutral-900 dark:text-white">
@@ -1569,7 +1568,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                   <button
                     type="button"
                     onClick={handleImportFromWeeklyPlan}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer shadow-xs flex items-center gap-1.5"
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer shadow-xs flex items-center gap-1.5 transition-all active:scale-95"
                   >
                     <RotateCcw size={14} />
                     <span>
@@ -1583,7 +1582,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 <button
                   type="button"
                   onClick={() => handleApplyArchetype(DAY_ARCHETYPES[0])}
-                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer shadow-xs flex items-center gap-1.5"
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer shadow-xs flex items-center gap-1.5 transition-all active:scale-95"
                 >
                   <Zap size={14} />
                   <span>{isAr ? 'قالب التركيز العميق (Deep Work)' : 'Deep Work Blueprint'}</span>
@@ -1592,7 +1591,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 <button
                   type="button"
                   onClick={() => handleApplyArchetype(DAY_ARCHETYPES[1])}
-                  className="px-3.5 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold cursor-pointer flex items-center gap-1.5"
+                  className="px-3.5 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-all active:scale-95"
                 >
                   <Compass size={14} />
                   <span>{isAr ? 'اليوم التنفيذي المتوازن' : 'Balanced Executive'}</span>
@@ -1601,7 +1600,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowArchetypeModal(true)}
-                  className="px-3.5 py-2 rounded-xl border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-900 text-xs font-bold cursor-pointer text-neutral-700 dark:text-neutral-300"
+                  className="px-3.5 py-2 rounded-xl border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-900 text-xs font-bold cursor-pointer text-neutral-700 dark:text-neutral-300 transition-all active:scale-95"
                 >
                   {isAr ? 'عرض كافة القوالب' : 'Explore All Blueprints'}
                 </button>
@@ -1609,17 +1608,17 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
             </div>
           ) : (
             /* Structured Blocks Timeline List */
-            <div className="space-y-2.5">
+            <div className="space-y-3">
               {/* Day Blocks Toolbar: Select All & Save as Template */}
               <div className="flex items-center justify-between px-1 py-1 text-xs">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={selectedBlockIds.length === dayBlocks.length ? handleDeselectAll : handleSelectAllDayBlocks}
-                    className="flex items-center gap-1.5 text-xs font-bold text-neutral-600 dark:text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer transition-colors"
+                    className="flex items-center gap-1.5 text-xs font-bold text-neutral-600 dark:text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer transition-colors"
                   >
                     {selectedBlockIds.length === dayBlocks.length && dayBlocks.length > 0 ? (
-                      <CheckSquare size={15} className="text-indigo-600" />
+                      <CheckSquare size={15} className="text-emerald-600 dark:text-emerald-400" />
                     ) : (
                       <Square size={15} />
                     )}
@@ -1630,7 +1629,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     </span>
                   </button>
                   {selectedBlockIds.length > 0 && (
-                    <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-full font-mono">
+                    <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full font-mono border border-emerald-200/60 dark:border-emerald-800">
                       {selectedBlockIds.length} {isAr ? 'محدد' : 'selected'}
                     </span>
                   )}
@@ -1644,17 +1643,17 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                         setNewTemplateName(isAr ? `قالب ${selectedDate}` : `Schedule ${selectedDate}`);
                         setShowSaveTemplateModal(true);
                       }}
-                      className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer transition-all"
+                      className="text-xs font-bold text-neutral-600 dark:text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center gap-1 cursor-pointer transition-all"
                       title={isAr ? 'حفظ فترات هذا اليوم كنموذج جاهز لتطبيقه في أي وقت' : 'Save current day as a reusable template'}
                     >
-                      <BookmarkCheck size={13} />
-                      <span>{isAr ? 'حفظ اليوم كنموذج 📋' : 'Save as Template 📋'}</span>
+                      <BookmarkCheck size={14} className="text-emerald-500" />
+                      <span>{isAr ? 'حفظ اليوم كنموذج' : 'Save as Template'}</span>
                     </button>
                   )}
                 </div>
               </div>
 
-                                            {dayBlocks.map((block, index) => {
+              {dayBlocks.map((block, index) => {
                 const isCurrentlyActive = isViewingToday && block.startTime <= currentTimeStr && block.endTime >= currentTimeStr;
                 const isCompleted = block.status === 'completed';
                 const isSelected = !!block.id && selectedBlockIds.includes(block.id);
@@ -1662,40 +1661,50 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 const energyBadge = getEnergyBadge(block.energyRequired);
                 const TypeIcon = typeBadge.icon;
 
+                // Duration in minutes & hours
+                const [sH, sM] = (block.startTime || '00:00').split(':').map(Number);
+                const [eH, eM] = (block.endTime || '00:00').split(':').map(Number);
+                let durMins = (eH * 60 + (eM || 0)) - (sH * 60 + (sM || 0));
+                if (durMins < 0) durMins += 24 * 60; // Crosses midnight
+                const durH = Math.floor(durMins / 60);
+                const durRemM = durMins % 60;
+                const durationLabel = durH > 0 ? (durRemM > 0 ? `${durH}h ${durRemM}m` : `${durH}h`) : `${durRemM}m`;
+
                 return (
                   <div
                     key={block.id || index}
-                    className={`group relative p-3 sm:p-4 rounded-2xl border transition-all ${
+                    className={`group relative p-3.5 sm:p-4 rounded-2xl border transition-all ${
                       isSelected
-                        ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-400 dark:border-indigo-700 ring-2 ring-indigo-500/30'
+                        ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-500/80 dark:border-emerald-600 ring-1 ring-emerald-500/30'
                         : isCurrentlyActive
-                        ? 'bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/40 shadow-md ring-1 ring-emerald-500/20'
+                        ? 'bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/50 shadow-xs ring-1 ring-emerald-500/20'
                         : isCompleted
-                        ? 'bg-neutral-50/70 dark:bg-[#16171B]/60 border-neutral-200/60 dark:border-neutral-800/60 opacity-80'
-                        : 'bg-white dark:bg-[#181A20] border-neutral-200/90 dark:border-neutral-800/90 hover:border-neutral-300 dark:hover:border-neutral-700 shadow-2xs'
+                        ? 'bg-neutral-50/70 dark:bg-neutral-900/40 border-neutral-200/60 dark:border-neutral-800/60 opacity-80'
+                        : 'bg-white dark:bg-neutral-900 border-neutral-200/90 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 shadow-2xs'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
-                      {/* Left: Multi-Select Checkbox, Status Toggle & Time Interval */}
-                      <div className="flex items-center gap-2.5 shrink-0">
+                    {/* Top Row: Select, Status, Time Range, Duration, and Quick Actions */}
+                    <div className="flex items-center justify-between gap-2.5 flex-wrap pb-2 border-b border-neutral-100 dark:border-neutral-800/80">
+                      <div className="flex items-center gap-2 flex-wrap">
                         {/* Multi-Select Checkbox */}
                         <button
                           type="button"
                           onClick={() => block.id && handleToggleSelectBlock(block.id)}
-                          className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all cursor-pointer shrink-0 ${
+                          className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all cursor-pointer shrink-0 ${
                             isSelected
-                              ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
-                              : 'bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-700 text-transparent hover:border-indigo-400'
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                              : 'bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-700 text-transparent hover:border-emerald-500'
                           }`}
-                          title={isAr ? 'تحديد الفترة لتكرارها أو نقلها' : 'Select for bulk actions'}
+                          title={isAr ? 'تحديد الفترة' : 'Select block'}
                         >
-                          <Check size={13} className={isSelected ? 'stroke-[3]' : 'opacity-0'} />
+                          <Check size={12} className={isSelected ? 'stroke-[3]' : 'opacity-0'} />
                         </button>
 
+                        {/* Status Toggle Button */}
                         <button
                           type="button"
                           onClick={() => handleToggleStatus(block)}
-                          className={`w-7 h-7 rounded-xl flex items-center justify-center border transition-all cursor-pointer ${
+                          className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all cursor-pointer shrink-0 ${
                             isCompleted
                               ? 'bg-emerald-500 text-white border-emerald-600 shadow-xs'
                               : isCurrentlyActive
@@ -1704,82 +1713,258 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                           }`}
                           title={isCompleted ? (isAr ? 'إلغاء الإكمال' : 'Unmark completed') : (isAr ? 'وضع علامة تم الإنجاز' : 'Mark as done')}
                         >
-                          <Check size={15} className={isCompleted ? 'stroke-[3]' : ''} />
+                          <Check size={13} className={isCompleted ? 'stroke-[3]' : ''} />
                         </button>
 
-                        <div className="flex-1">
-                          <div className="flex items-center gap-1.5 font-mono text-xs font-extrabold text-neutral-900 dark:text-white flex-wrap">
-                            <Clock size={13} className="text-neutral-400 shrink-0" />
-                            <span>{formatTimeDisplay(block.startTime)}</span>
-                            <span className="text-neutral-400">→</span>
-                            <span>{formatTimeDisplay(block.endTime, true, block.startTime)}</span>
-                            
-                            {/* 00:00 Fix Button - Reduced size for mobile */}
-                            {block.endTime === '00:00' && block.id && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onUpdateBlock(block.id!, { endTime: '12:00' });
-                                }}
-                                className="text-[9px] font-sans font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 cursor-pointer shrink-0"
-                              >
-                                {isAr ? '⚡ تعديل 12:00' : '⚡ Fix'}
-                              </button>
-                            )}
-                          </div>
-                          {isCurrentlyActive && (
-                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 font-sans flex items-center gap-1 mt-0.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" />
-                              {isAr ? 'جارية الآن' : 'Active Now'}
-                            </span>
+                        {/* Time Interval & Duration */}
+                        <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-neutral-900 dark:text-white">
+                          <Clock size={12} className="text-neutral-400 shrink-0" />
+                          <span>{formatTimeDisplay(block.startTime)}</span>
+                          <span className="text-neutral-400">→</span>
+                          <span>{formatTimeDisplay(block.endTime, true, block.startTime)}</span>
+                          <span className="text-[10px] font-sans font-medium text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.2 rounded-md">
+                            {durationLabel}
+                          </span>
+
+                          {/* 00:00 Fix Button if needed */}
+                          {block.endTime === '00:00' && block.id && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateBlock(block.id!, { endTime: '12:00' });
+                              }}
+                              className="text-[9px] font-sans font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 cursor-pointer shrink-0 ml-1"
+                            >
+                              {isAr ? '⚡ تعديل 12:00' : '⚡ Fix to 12:00'}
+                            </button>
                           )}
                         </div>
+
+                        {/* Active Now Pill */}
+                        {isCurrentlyActive && (
+                          <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 font-sans flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" />
+                            {isAr ? 'جارية الآن' : 'Active Now'}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="flex items-start gap-2 pt-1">
-                        <span className="text-base shrink-0">{block.icon || '📌'}</span>
-                          <h4
-                            className={`text-xs sm:text-sm font-bold truncate ${
-                              isCompleted
-                                ? 'text-neutral-500 dark:text-neutral-400 line-through'
-                                : 'text-neutral-900 dark:text-white'
-                            }`}
-                          >
-                            {block.title}
-                          </h4>
+                      {/* Right Action Icons on Card */}
+                      <div className="flex items-center gap-1">
+                        {/* Start Focus Button */}
+                        <button
+                          type="button"
+                          onClick={() => onNavigateModule('focus')}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold cursor-pointer transition-colors"
+                          title={isAr ? 'بدء جلسة تركيز لهذه الفترة' : 'Start Pomodoro focus session'}
+                        >
+                          <Timer size={12} />
+                          <span className="hidden sm:inline">{isAr ? 'تركيز' : 'Focus'}</span>
+                        </button>
 
-                          {/* Block Type Badge */}
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border ${typeBadge.bg}`}>
-                            <TypeIcon size={10} />
-                            <span>{typeBadge.label}</span>
-                          </span>
+                        {/* Save as Weekly Recurring */}
+                        <button
+                          type="button"
+                          onClick={() => handleSaveBlockAsWeeklyRecurring(block)}
+                          className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors"
+                          title={isAr ? 'حفظ كقالب أسبوعي دائم' : 'Save as recurring weekly plan'}
+                        >
+                          <BookmarkCheck size={14} />
+                        </button>
 
-                          {/* Energy Badge */}
-                          <span className="inline-flex items-center gap-1 text-[10px] text-neutral-400 font-mono">
-                            <energyBadge.icon size={11} className={energyBadge.color} />
-                            <span>{energyBadge.label}</span>
-                          </span>
-                        </div>
+                        {/* Duplicate */}
+                        <button
+                          type="button"
+                          onClick={() => handleDuplicateSingleBlock(block)}
+                          className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors"
+                          title={isAr ? 'نسخ الفترة' : 'Duplicate block'}
+                        >
+                          <Copy size={14} />
+                        </button>
+
+                        {/* Edit */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingBlock(block);
+                            setNewTitle(block.title);
+                            setNewSubtitle(block.subtitle || '');
+                            setNewStartTime(block.startTime);
+                            setNewEndTime(block.endTime);
+                            setNewType(block.blockType);
+                            setNewEnergy(block.energyRequired || 'high');
+                            setNewColor(block.color || 'emerald');
+                            setNewTargetFocus(block.targetFocusMinutes || 60);
+                            setNewLinkedTasks(block.linkedTaskIds || []);
+                            setNewLinkedHabits(block.linkedHabitIds || []);
+                            setNewProjectId(block.linkedProjectId || '');
+                            setNewGoalId(block.linkedGoalId || '');
+                            setNewChecklist(block.nestedChecklist || []);
+                            setNewStepText('');
+                            setShowAddBlockModal(true);
+                          }}
+                          className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors"
+                          title={isAr ? 'تعديل الفترة' : 'Edit block'}
+                        >
+                          <Edit3 size={14} />
+                        </button>
+
+                        {/* Delete */}
+                        <button
+                          type="button"
+                          onClick={() => block.id && onDeleteBlock(block.id)}
+                          className="p-1 rounded-lg text-neutral-400 hover:text-rose-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors"
+                          title={isAr ? 'حذف الفترة' : 'Delete block'}
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     </div>
-                  );
-                })}
+
+                    {/* Middle Section: Title, Badges, and Subtitle */}
+                    <div className="pt-2.5 space-y-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-base shrink-0">{block.icon || '📌'}</span>
+                        <h4
+                          className={`text-xs sm:text-sm font-bold ${
+                            isCompleted
+                              ? 'text-neutral-400 dark:text-neutral-500 line-through'
+                              : 'text-neutral-900 dark:text-white'
+                          }`}
+                        >
+                          {block.title}
+                        </h4>
+
+                        {/* Type Badge */}
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border ${typeBadge.bg}`}>
+                          <TypeIcon size={10} />
+                          <span>{typeBadge.label}</span>
+                        </span>
+
+                        {/* Energy Badge */}
+                        <span className="inline-flex items-center gap-1 text-[10px] text-neutral-400 font-mono">
+                          <energyBadge.icon size={11} className={energyBadge.color} />
+                          <span>{energyBadge.label}</span>
+                        </span>
+
+                        {/* Target Focus Minutes */}
+                        {block.targetFocusMinutes ? (
+                          <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                            🎯 {block.targetFocusMinutes}m {isAr ? 'هدف' : 'target'}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {/* Subtitle / Objective */}
+                      {block.subtitle && (
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 pl-6 rtl:pr-6 rtl:pl-0 leading-relaxed">
+                          {block.subtitle}
+                        </p>
+                      )}
+
+                      {/* Nested Checklist (Micro-steps) */}
+                      {block.nestedChecklist && block.nestedChecklist.length > 0 && (
+                        <div className="pt-1.5 pl-6 rtl:pr-6 rtl:pl-0 space-y-1">
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-neutral-500">
+                            <ListChecks size={12} className="text-emerald-500" />
+                            <span>
+                              {isAr ? 'الخطوات الفرعية:' : 'Checklist:'}{' '}
+                              <span className="font-mono">
+                                ({block.nestedChecklist.filter(it => it.completed).length}/{block.nestedChecklist.length})
+                              </span>
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 pt-0.5">
+                            {block.nestedChecklist.map((item) => (
+                              <div
+                                key={item.id}
+                                onClick={() => handleToggleNestedChecklistItem(block, item.id)}
+                                className="flex items-center gap-2 p-1.5 rounded-lg bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200/60 dark:border-neutral-700/60 cursor-pointer text-xs transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={item.completed}
+                                  onChange={() => {}} // handled by parent onClick
+                                  className="rounded text-emerald-600 focus:ring-emerald-500 shrink-0"
+                                />
+                                <span className={`truncate text-xs ${item.completed ? 'line-through text-neutral-400' : 'text-neutral-800 dark:text-neutral-200'}`}>
+                                  {item.text}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Linked Tasks and Habits Tags */}
+                      {((block.linkedTaskIds && block.linkedTaskIds.length > 0) || (block.linkedHabitIds && block.linkedHabitIds.length > 0)) && (
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1.5 pl-6 rtl:pr-6 rtl:pl-0">
+                          {/* Linked Tasks */}
+                          {block.linkedTaskIds?.map((tId) => {
+                            const task = tasks.find(t => t.id === tId);
+                            if (!task) return null;
+                            return (
+                              <button
+                                key={tId}
+                                type="button"
+                                onClick={() => onToggleTask && onToggleTask(tId, !task.completed)}
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 cursor-pointer transition-all ${
+                                  task.completed
+                                    ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-400 border-neutral-200 dark:border-neutral-700 line-through'
+                                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                }`}
+                                title={task.completed ? (isAr ? 'مهمة منجزة' : 'Task completed') : (isAr ? 'نقر لتبديل حالة المهمة' : 'Click to complete task')}
+                              >
+                                <Check size={10} className={task.completed ? '' : 'opacity-40'} />
+                                <span className="truncate max-w-[140px]">{task.title}</span>
+                              </button>
+                            );
+                          })}
+
+                          {/* Linked Habits */}
+                          {block.linkedHabitIds?.map((hId) => {
+                            const habit = habits.find(h => h.id === hId);
+                            if (!habit) return null;
+                            const isDoneToday = (habit.completedDates || []).includes(selectedDate);
+                            return (
+                              <button
+                                key={hId}
+                                type="button"
+                                onClick={() => onToggleHabit && onToggleHabit(hId, selectedDate)}
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 cursor-pointer transition-all ${
+                                  isDoneToday
+                                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                                    : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700'
+                                }`}
+                                title={isAr ? 'نقر لتسجيل العادة' : 'Click to log habit'}
+                              >
+                                <span>{habit.icon || '🔥'}</span>
+                                <span className="truncate max-w-[120px]">{habit.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
 
               {/* EXECUTIVE EVENING REVIEW & AUDIT CARD */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-purple-500/10 via-indigo-500/5 to-transparent dark:from-purple-950/30 dark:via-indigo-950/20 border border-purple-300/40 dark:border-purple-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2 animate-fadeIn">
+              <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/90 dark:border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-3 shadow-2xs">
                 <div className="flex items-center gap-3.5">
-                  <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center text-lg shrink-0 shadow-xs">
+                  <div className="w-10 h-10 rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 flex items-center justify-center text-lg shrink-0 shadow-2xs">
                     🌙
                   </div>
                   <div>
                     <h4 className="text-xs sm:text-sm font-extrabold text-neutral-900 dark:text-white flex items-center gap-2">
                       <span>{isAr ? 'تقييم وإغلاق اليوم (Evening Audit)' : 'Evening Audit & Day Closeout'}</span>
-                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                         {dayStats.completed}/{dayStats.total} {isAr ? 'فترات منجزة' : 'done'} ({dayStats.pct}%)
                       </span>
                     </h4>
-                    <p className="text-[11px] text-neutral-600 dark:text-neutral-400 mt-0.5">
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
                       {isAr
                         ? 'في نهاية اليوم: قيّم مستوى طاقتك، سجّل أهم إنجازاتك والدروس المستفادة، وتأكد من ترحيل ما تبقى لغدٍ جديد.'
                         : 'Close your day intentionally: assess energy, celebrate daily wins, and note improvements.'}
@@ -1791,10 +1976,10 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                   <button
                     type="button"
                     onClick={() => onNavigateModule('reflections')}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
                   >
                     <Sparkles size={14} />
-                    <span>{isAr ? 'إجراء تقييم اليوم 📝' : 'Open Daily Reflection 📝'}</span>
+                    <span>{isAr ? 'إجراء تقييم اليوم' : 'Open Daily Reflection'}</span>
                   </button>
                 </div>
               </div>
@@ -1805,7 +1990,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           {selectedBlockIds.length > 0 && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-neutral-900/95 dark:bg-neutral-800/95 text-white border border-neutral-700/80 shadow-2xl rounded-2xl px-4 py-3 flex items-center gap-3 backdrop-blur-md animate-slideUp max-w-[94vw] flex-wrap justify-between">
               <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white font-mono font-extrabold text-xs flex items-center justify-center">
+                <span className="w-6 h-6 rounded-lg bg-emerald-600 text-white font-mono font-extrabold text-xs flex items-center justify-center">
                   {selectedBlockIds.length}
                 </span>
                 <span className="text-xs font-bold text-neutral-200">
@@ -1820,7 +2005,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     setTargetReplicateDates([]);
                     setShowReplicateModal(true);
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-xs"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-xs"
                 >
                   <CalendarRange size={14} />
                   <span>{isAr ? 'تكرار على الأسبوع / الشهر' : 'Replicate across Days'}</span>
@@ -1865,10 +2050,10 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
            WEEK FLOW MATRIX (7-Day Overview)
            ---------------------------------------------------- */
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-white dark:bg-[#181A20] border border-neutral-200/90 dark:border-neutral-800/90 space-y-3 shadow-2xs">
+          <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/90 dark:border-neutral-800 space-y-3 shadow-2xs">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-neutral-900 dark:text-white flex items-center gap-1.5">
-                <CalendarDays size={15} className="text-indigo-500" />
+                <CalendarDays size={15} className="text-emerald-500" />
                 <span>{isAr ? 'تدفق الأسبوع ومتابعة الإنجاز' : '7-Day Weekly Flow & Adherence'}</span>
               </h3>
               <span className="text-[11px] text-neutral-400 font-mono">
@@ -1891,7 +2076,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     }}
                     className={`p-3 rounded-2xl border text-start transition-all cursor-pointer flex flex-col justify-between min-h-[140px] ${
                       isSelected
-                        ? 'bg-indigo-500/10 border-indigo-500/40 ring-1 ring-indigo-500/20'
+                        ? 'bg-emerald-500/10 border-emerald-500/40 ring-1 ring-emerald-500/20'
                         : isDayToday
                         ? 'bg-neutral-50 dark:bg-neutral-900 border-neutral-300 dark:border-neutral-700'
                         : 'bg-white dark:bg-neutral-900/50 border-neutral-200 dark:border-neutral-800/80 hover:border-neutral-300 dark:hover:border-neutral-700'
@@ -1928,7 +2113,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                       </div>
                     </div>
 
-                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 text-center block pt-1 border-t border-neutral-100 dark:border-neutral-800">
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 text-center block pt-1 border-t border-neutral-100 dark:border-neutral-800">
                       {isAr ? 'عرض اليوم' : 'Open Day'}
                     </span>
                   </button>
@@ -1950,7 +2135,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           }}
         >
           <div 
-            className="bg-white dark:bg-[#181A20] border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl my-auto custom-scrollbar"
+            className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl my-auto custom-scrollbar"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-3">
@@ -1977,12 +2162,12 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
             </div>
 
             {/* Quick action to save current day as a custom template */}
-            <div className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/40 flex items-center justify-between gap-3 flex-wrap">
+            <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 flex items-center justify-between gap-3 flex-wrap">
               <div className="text-xs">
-                <span className="font-extrabold text-indigo-950 dark:text-indigo-200 block">
+                <span className="font-extrabold text-emerald-950 dark:text-emerald-200 block">
                   {isAr ? 'حفظ فترات اليوم الحالي كنموذج مخصص:' : 'Save Current Day as Template:'}
                 </span>
-                <span className="text-[11px] text-indigo-700 dark:text-indigo-400">
+                <span className="text-[11px] text-emerald-700 dark:text-emerald-400">
                   {dayBlocks.length > 0
                     ? isAr
                       ? `اليوم يحتوي على ${dayBlocks.length} فترات يمكن حفظها وإعادة استخدامها لأيام أخرى.`
@@ -2001,7 +2186,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 }}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer ${
                   dayBlocks.length > 0
-                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white active:scale-95'
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
                     : 'bg-neutral-200 dark:bg-neutral-800 text-neutral-400 cursor-not-allowed'
                 }`}
               >
@@ -2020,7 +2205,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                   {customTemplates.map((tmpl) => (
                     <div
                       key={tmpl.id}
-                      className="p-3.5 rounded-2xl border border-indigo-200 dark:border-indigo-900/50 bg-white dark:bg-neutral-900 flex flex-col justify-between space-y-2.5 shadow-2xs"
+                      className="p-3.5 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col justify-between space-y-2.5 shadow-2xs"
                     >
                       <div>
                         <div className="flex items-center justify-between">
@@ -2043,7 +2228,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                           <div className="flex items-center gap-1 pt-1 flex-wrap">
                             <span className="text-[9px] text-neutral-400">{isAr ? 'الأيام الموصى بها:' : 'Days:'}</span>
                             {tmpl.targetDays.map((d) => (
-                              <span key={d} className="px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[9px] font-mono font-bold">
+                              <span key={d} className="px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[9px] font-mono font-bold">
                                 {d}
                               </span>
                             ))}
@@ -2058,7 +2243,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                         <button
                           type="button"
                           onClick={() => handleApplyTemplateToDate(tmpl, 'append')}
-                          className="flex-1 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs cursor-pointer shadow-2xs transition-all active:scale-95 flex items-center justify-center gap-1"
+                          className="flex-1 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer shadow-2xs transition-all active:scale-95 flex items-center justify-center gap-1"
                         >
                           <Check size={13} />
                           <span>{isAr ? 'تطبيق على اليوم' : 'Apply to Day'}</span>
@@ -2087,13 +2272,13 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 {DAY_ARCHETYPES.map((arch) => (
                   <div
                     key={arch.id}
-                    className="p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/60 flex flex-col justify-between space-y-3 hover:border-indigo-500/50 transition-all shadow-2xs"
+                    className="p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/60 flex flex-col justify-between space-y-3 hover:border-emerald-500/50 transition-all shadow-2xs"
                   >
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-xl">{arch.icon}</span>
                         {arch.badge && (
-                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                             {arch.badge}
                           </span>
                         )}
@@ -2112,7 +2297,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     <button
                       type="button"
                       onClick={() => handleApplyArchetype(arch)}
-                      className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs cursor-pointer shadow-xs transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                      className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer shadow-xs transition-all active:scale-95 flex items-center justify-center gap-1.5"
                     >
                       <Check size={14} />
                       <span>{isAr ? 'تطبيق هذا القالب على اليوم' : 'Apply to Today'}</span>
@@ -2139,12 +2324,12 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           }}
         >
           <div 
-            className="bg-white dark:bg-[#181A20] border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[88vh] overflow-hidden my-auto"
+            className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[88vh] overflow-hidden my-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 px-5 py-4 shrink-0 bg-white dark:bg-[#181A20]">
+            <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 px-5 py-4 shrink-0 bg-white dark:bg-neutral-900">
               <h3 className="text-sm sm:text-base font-extrabold text-neutral-900 dark:text-white flex items-center gap-2">
-                <Layers size={16} className="text-indigo-500" />
+                <Layers size={16} className="text-emerald-500" />
                 <span>
                   {editingBlock
                     ? isAr
@@ -2176,7 +2361,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                   onClick={() => setAddModalTab('new')}
                   className={`pb-2 px-3 text-xs font-bold transition-all border-b-2 cursor-pointer ${
                     addModalTab === 'new'
-                      ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                      ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
                       : 'border-transparent text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
                   }`}
                 >
@@ -2187,13 +2372,13 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                   onClick={() => setAddModalTab('reuse')}
                   className={`pb-2 px-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
                     addModalTab === 'reuse'
-                      ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                      ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
                       : 'border-transparent text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
                   }`}
                 >
                   📥 {isAr ? 'جلب من فترات سابقة' : 'Reuse Past Block'}
                   {uniquePastBlocks.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono font-bold">
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-mono font-bold">
                       {uniquePastBlocks.length}
                     </span>
                   )}
@@ -2211,7 +2396,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     value={reuseSearchQuery}
                     onChange={(e) => setReuseSearchQuery(e.target.value)}
                     placeholder={isAr ? 'ابحث في فتراتك السابقة (بالاسم أو المحتوى)...' : 'Search previous blocks by title...'}
-                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
@@ -2231,7 +2416,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                         <div
                           key={`${pBlock.id || pBlock.title}-${pBlock.startTime}`}
                           onClick={() => handleSelectPastBlockForToday(pBlock)}
-                          className="p-3 rounded-2xl border border-neutral-200 dark:border-neutral-800 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all cursor-pointer flex items-center justify-between gap-3 group"
+                          className="p-3 rounded-2xl border border-neutral-200 dark:border-neutral-800 hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all cursor-pointer flex items-center justify-between gap-3 group"
                         >
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
@@ -2256,7 +2441,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
 
                           <button
                             type="button"
-                            className="px-2.5 py-1 rounded-xl bg-indigo-600 group-hover:bg-indigo-700 text-white font-bold text-[11px] transition-all shrink-0 cursor-pointer"
+                            className="px-2.5 py-1 rounded-xl bg-emerald-600 group-hover:bg-emerald-700 text-white font-bold text-[11px] transition-all shrink-0 cursor-pointer"
                           >
                             {isAr ? 'جلب وتعديل' : 'Select'}
                           </button>
@@ -2280,7 +2465,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     placeholder={isAr ? 'مثال: فترة التركيز العميق الأولى' : 'e.g. Deep Work Sprint 1'}
-                    className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white focus:outline-none focus:border-indigo-500 font-semibold"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white focus:outline-none focus:border-emerald-500 font-semibold"
                   />
                 </div>
 
@@ -2294,7 +2479,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     value={newSubtitle}
                     onChange={(e) => setNewSubtitle(e.target.value)}
                     placeholder={isAr ? 'مثال: إنهاء ميزة الـ analytics وتجهيز التقرير' : 'e.g. Finish analytics feature and architecture'}
-                    className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
@@ -2313,7 +2498,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                         required
                         value={newStartTime}
                         onChange={(e) => setNewStartTime(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white font-mono font-bold focus:outline-none"
+                        className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
                       />
                     </div>
                     <div className="space-y-1">
@@ -2328,7 +2513,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                         required
                         value={newEndTime}
                         onChange={(e) => setNewEndTime(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white font-mono font-bold focus:outline-none"
+                        className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
                       />
                     </div>
                   </div>
@@ -2339,7 +2524,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     <button
                       type="button"
                       onClick={() => setNewEndTime('12:00')}
-                      className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/20 border border-indigo-500/30 cursor-pointer"
+                      className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/30 cursor-pointer"
                     >
                       ⚡ 12:00 {isAr ? 'ظهراً' : 'PM'}
                     </button>
@@ -2416,7 +2601,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                   <select
                     value={newType}
                     onChange={(e) => setNewType(e.target.value as DailyBlockType)}
-                    className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white font-semibold focus:outline-none cursor-pointer"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer"
                   >
                     <option value="morning">{isAr ? '🌅 روتين صباحي' : '🌅 Morning'}</option>
                     <option value="deep-work">{isAr ? '🎯 تركيز عميق' : '🎯 Deep Work'}</option>
@@ -2435,7 +2620,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                   <select
                     value={newEnergy}
                     onChange={(e) => setNewEnergy(e.target.value as DailyBlockEnergy)}
-                    className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white font-semibold focus:outline-none cursor-pointer"
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer"
                   >
                     <option value="high">{isAr ? '⚡ طاقة عالية (High)' : '⚡ High Energy'}</option>
                     <option value="medium">{isAr ? '⚖️ طاقة متوازنة (Medium)' : '⚖️ Balanced'}</option>
@@ -2462,8 +2647,8 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                       onClick={() => setNewTargetFocus(mins)}
                       className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition-all ${
                         newTargetFocus === mins
-                          ? 'bg-emerald-500 text-white shadow-2xs'
-                          : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200'
                       }`}
                     >
                       {mins}m
@@ -2482,7 +2667,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                   <select
                     value={newProjectId}
                     onChange={(e) => setNewProjectId(e.target.value)}
-                    className="w-full px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white font-semibold focus:outline-none"
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white font-semibold focus:outline-none focus:border-emerald-500"
                   >
                     <option value="">{isAr ? 'بدون مشروع' : 'No Project'}</option>
                     {projects.map((p) => (
@@ -2501,7 +2686,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                   <select
                     value={newGoalId}
                     onChange={(e) => setNewGoalId(e.target.value)}
-                    className="w-full px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white font-semibold focus:outline-none"
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white font-semibold focus:outline-none focus:border-emerald-500"
                   >
                     <option value="">{isAr ? 'بدون هدف' : 'No Goal'}</option>
                     {goals.map((g) => (
@@ -2536,7 +2721,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                           }}
                           className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
                             isSelected
-                              ? 'bg-indigo-600 text-white border-indigo-700'
+                              ? 'bg-emerald-600 text-white border-emerald-700'
                               : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
                           }`}
                         >
@@ -2585,7 +2770,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 </div>
               )}
 
-              {/* Sub-steps Checklist ("حاجة وسط حاجة") */}
+              {/* Sub-steps Checklist */}
               <div className="space-y-1.5 p-2.5 rounded-2xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
                 <label className="font-bold text-neutral-800 dark:text-neutral-200 flex items-center justify-between">
                   <span className="flex items-center gap-1">
@@ -2616,7 +2801,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                       }
                     }}
                     placeholder={isAr ? 'أضف خطوة فرعية واضغط إدخال...' : 'Add sub-step item and press enter...'}
-                    className="flex-1 px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white text-xs focus:outline-none"
+                    className="flex-1 px-2.5 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white text-xs focus:outline-none focus:border-emerald-500"
                   />
                   <button
                     type="button"
@@ -2674,7 +2859,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
               </div>
             </div>
 
-            {/* Fixed Footer: Cancel & Submit Buttons ALWAYS visible on screen */}
+            {/* Fixed Footer: Cancel & Submit Buttons */}
             <div className="px-5 py-3.5 border-t border-neutral-200 dark:border-neutral-800 shrink-0 bg-neutral-50/95 dark:bg-neutral-900/95 backdrop-blur-xs flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -2688,7 +2873,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold cursor-pointer shadow-xs transition-all text-xs flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold cursor-pointer shadow-xs transition-all text-xs flex items-center gap-1.5"
                 >
                   {editingBlock ? (isAr ? 'تحديث الفترة' : 'Update Block') : (isAr ? 'إضافة الفترة' : 'Add Block')}
                 </button>
@@ -2710,7 +2895,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           }}
         >
           <div 
-            className="bg-white dark:bg-[#181A20] border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-xl max-h-[88vh] overflow-hidden flex flex-col shadow-2xl my-auto"
+            className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-xl max-h-[88vh] overflow-hidden flex flex-col shadow-2xl my-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 px-5 py-4 shrink-0">
@@ -2746,13 +2931,13 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     value={reuseSearchQuery}
                     onChange={(e) => setReuseSearchQuery(e.target.value)}
                     placeholder={isAr ? 'بحث في الفترات السابقة...' : 'Search past blocks...'}
-                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <select
                   value={reuseTypeFilter}
                   onChange={(e) => setReuseTypeFilter(e.target.value)}
-                  className="px-2.5 py-2 text-xs rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 font-semibold focus:outline-none cursor-pointer"
+                  className="px-2.5 py-2 text-xs rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer"
                 >
                   <option value="all">{isAr ? 'جميع الأنواع' : 'All Types'}</option>
                   <option value="deep-work">{isAr ? '🎯 تركيز عميق' : 'Deep Work'}</option>
@@ -2778,7 +2963,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     <div
                       key={`${pBlock.id || pBlock.title}-${pBlock.startTime}`}
                       onClick={() => handleSelectPastBlockForToday(pBlock)}
-                      className="p-3.5 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50 hover:border-indigo-500/60 hover:bg-indigo-500/5 transition-all cursor-pointer flex items-center justify-between gap-3 group shadow-2xs"
+                      className="p-3.5 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50 hover:border-emerald-500/60 hover:bg-emerald-500/5 transition-all cursor-pointer flex items-center justify-between gap-3 group shadow-2xs"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -2795,7 +2980,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                           </p>
                         )}
                         <div className="flex items-center gap-2 text-[10px] text-neutral-400 font-mono mt-1.5">
-                          <span className="text-indigo-600 dark:text-indigo-400 font-bold">
+                          <span className="text-emerald-600 dark:text-emerald-400 font-bold">
                             {isAr ? `تكررت ${count} مرات` : `Used ${count}x`}
                           </span>
                           <span>•</span>
@@ -2805,7 +2990,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
 
                       <button
                         type="button"
-                        className="px-3 py-1.5 rounded-xl bg-indigo-600 group-hover:bg-indigo-700 text-white font-bold text-xs transition-all shadow-2xs shrink-0 cursor-pointer"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 group-hover:bg-emerald-700 text-white font-bold text-xs transition-all shadow-2xs shrink-0 cursor-pointer"
                       >
                         {isAr ? 'جلب وتعديل' : 'Select'}
                       </button>
@@ -2829,7 +3014,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           }}
         >
           <div 
-            className="bg-white dark:bg-[#181A20] border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl my-auto"
+            className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl my-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 px-5 py-4 shrink-0">
@@ -2869,9 +3054,9 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                       const dates = weekData.map((d) => d.date);
                       setTargetReplicateDates(dates);
                     }}
-                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 border border-indigo-200 dark:border-indigo-900 cursor-pointer"
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800 cursor-pointer"
                   >
-                    ✨ {isAr ? 'الأسبوع الحالي (This Week)' : 'This Week'}
+                    ✨ {isAr ? 'الأسبوع الحالي' : 'This Week'}
                   </button>
 
                   {/* Workdays Mon-Fri */}
@@ -2889,7 +3074,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     }}
                     className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 cursor-pointer"
                   >
-                    💼 {isAr ? 'أيام العمل (Mon-Fri)' : 'Workdays (5d)'}
+                    💼 {isAr ? 'أيام العمل' : 'Workdays (5d)'}
                   </button>
 
                   {/* Next Full Week (7 days) */}
@@ -2901,7 +3086,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     }}
                     className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 cursor-pointer"
                   >
-                    🚀 {isAr ? 'الأسبوع القادم كاملاً (Next Week)' : 'Next Week (7d)'}
+                    🚀 {isAr ? 'الأسبوع القادم' : 'Next Week (7d)'}
                   </button>
 
                   {/* Whole 21 Days */}
@@ -2912,7 +3097,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                     }}
                     className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 cursor-pointer"
                   >
-                    📆 {isAr ? 'الأسابيع القادمة (Next 3 Weeks)' : 'Next 3 Weeks'}
+                    📆 {isAr ? 'الأسابيع القادمة' : 'Next 3 Weeks'}
                   </button>
 
                   {/* Clear selection */}
@@ -2936,7 +3121,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <label className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-all ${
                     replicateMode === 'append'
-                      ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-500 text-indigo-900 dark:text-indigo-200 font-bold'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-900 dark:text-emerald-200 font-bold'
                       : 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400'
                   }`}>
                     <input
@@ -2944,7 +3129,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                       name="replicateMode"
                       checked={replicateMode === 'append'}
                       onChange={() => setReplicateMode('append')}
-                      className="text-indigo-600 focus:ring-indigo-500"
+                      className="text-emerald-600 focus:ring-emerald-500"
                     />
                     <span>{isAr ? 'إضافة إلى الفترات الحالية' : 'Append to existing'}</span>
                   </label>
@@ -2972,7 +3157,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                   <label className="font-extrabold text-neutral-700 dark:text-neutral-300">
                     {isAr ? 'اختر الأيام يدوياً:' : 'Select Target Days:'}
                   </label>
-                  <span className="font-mono text-[11px] text-indigo-600 dark:text-indigo-400 font-bold">
+                  <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
                     {targetReplicateDates.length} {isAr ? 'أيام مختارة' : 'days selected'}
                   </span>
                 </div>
@@ -2992,7 +3177,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                         }}
                         className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between gap-1.5 ${
                           isChecked
-                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
                             : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200 hover:border-neutral-400'
                         }`}
                       >
@@ -3005,7 +3190,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                               </span>
                             )}
                           </div>
-                          <span className={`text-[10px] font-mono block ${isChecked ? 'text-indigo-100' : 'text-neutral-400'}`}>
+                          <span className={`text-[10px] font-mono block ${isChecked ? 'text-emerald-100' : 'text-neutral-400'}`}>
                             {d.date.slice(5)}
                           </span>
                         </div>
@@ -3013,7 +3198,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                         <div className="text-right shrink-0">
                           <span className={`w-4 h-4 rounded flex items-center justify-center text-[10px] border ${
                             isChecked
-                              ? 'bg-white text-indigo-700 border-white font-extrabold'
+                              ? 'bg-white text-emerald-700 border-white font-extrabold'
                               : 'border-neutral-300 dark:border-neutral-700'
                           }`}>
                             {isChecked ? '✓' : ''}
@@ -3041,7 +3226,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 onClick={handleReplicateSelectedBlocks}
                 className={`px-4 py-2 rounded-xl text-white font-bold text-xs shadow-xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
                   targetReplicateDates.length > 0
-                    ? 'bg-indigo-600 hover:bg-indigo-700'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
                     : 'bg-neutral-400 dark:bg-neutral-700 cursor-not-allowed opacity-60'
                 }`}
               >
@@ -3068,7 +3253,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           }}
         >
           <div 
-            className="bg-white dark:bg-[#181A20] border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-md p-5 space-y-4 shadow-2xl my-auto"
+            className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-md p-5 space-y-4 shadow-2xl my-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-3">
@@ -3103,7 +3288,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 value={moveTargetDate}
                 onChange={(e) => setMoveTargetDate(e.target.value)}
                 min={todayStr}
-                className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white font-mono font-bold text-xs focus:outline-none focus:border-indigo-500"
+                className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white font-mono font-bold text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
 
@@ -3121,7 +3306,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 onClick={handleMoveSelectedBlocks}
                 className={`px-4 py-2 rounded-xl text-white font-bold text-xs shadow-xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
                   moveTargetDate && moveTargetDate !== selectedDate
-                    ? 'bg-indigo-600 hover:bg-indigo-700'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
                     : 'bg-neutral-400 dark:bg-neutral-700 cursor-not-allowed opacity-60'
                 }`}
               >
@@ -3144,7 +3329,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           }}
         >
           <div 
-            className="bg-white dark:bg-[#181A20] border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-md p-5 space-y-4 shadow-2xl my-auto"
+            className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-md p-5 space-y-4 shadow-2xl my-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-3">
@@ -3179,7 +3364,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                 value={newTemplateName}
                 onChange={(e) => setNewTemplateName(e.target.value)}
                 placeholder={isAr ? 'مثال: روتين أيام العمل المركزة' : 'e.g. Focus Sprint Schedule'}
-                className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white text-xs font-bold focus:outline-none focus:border-indigo-500"
+                className="w-full px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white text-xs font-bold focus:outline-none focus:border-emerald-500"
               />
             </div>
 
@@ -3202,7 +3387,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
                       }}
                       className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold cursor-pointer transition-all border ${
                         isChecked
-                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
                           : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
                       }`}
                     >
@@ -3224,7 +3409,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
               <button
                 type="button"
                 onClick={handleSaveCurrentDayAsTemplate}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
               >
                 <BookmarkCheck size={14} />
                 <span>{isAr ? 'حفظ النموذج' : 'Save Template'}</span>

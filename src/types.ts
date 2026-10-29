@@ -599,3 +599,33 @@ export interface AccessControlData {
   updatedAt?: number;
 }
 
+export interface CognitiveReflection {
+  id?: string;
+  title: string;
+  description: string;
+  category?: string;
+  type?: 'cognitive_block' | 'aha_moment' | 'mindset_shift';
+  extractedAffirmations?: string[];
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface VisualizationStory {
+  id?: string;
+  title: string;
+  storyContent: string;
+  theme?: string;
+  readingTimeMinutes?: number;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface Affirmation {
+  id?: string;
+  statement: string;
+  category?: string;
+  sourceBlockId?: string;
+  sourceBlockTitle?: string;
+  createdAt: number;
+}
+

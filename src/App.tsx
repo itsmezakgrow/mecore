@@ -100,7 +100,10 @@ import {
   WeeklyPriorityGoal,
   DailySleepLog,
   SleepScheduleConfig,
-  AccessControlData
+  AccessControlData,
+  CognitiveReflection,
+  VisualizationStory,
+  Affirmation
 } from './types';
 import {
   subscribeToTasks,
@@ -176,6 +179,17 @@ import {
   subscribeToAccessControl,
   addCollaboratorEmail,
   removeCollaboratorEmail,
+  subscribeToReflections,
+  addReflection,
+  updateReflection,
+  deleteReflection,
+  subscribeToVisions,
+  addVision,
+  updateVision,
+  deleteVision,
+  subscribeToAffirmations,
+  addAffirmation,
+  deleteAffirmation,
   DEFAULT_OWNER_EMAIL,
   DEFAULT_ALLOWED_EMAILS,
   isAbortError
@@ -444,6 +458,9 @@ export default function App() {
   const [moduleLifecycleEvents, setModuleLifecycleEvents] = useState<ModuleLifecycleEvent[]>([]);
   const [sleepLogs, setSleepLogs] = useState<DailySleepLog[]>([]);
   const [sleepConfig, setSleepConfig] = useState<SleepScheduleConfig | null>(null);
+  const [reflections, setReflections] = useState<CognitiveReflection[]>([]);
+  const [visions, setVisions] = useState<VisualizationStory[]>([]);
+  const [affirmations, setAffirmations] = useState<Affirmation[]>([]);
   const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
   const [reviewModalTab, setReviewModalTab] = useState<'weekly' | 'monthly' | 'archive'>('weekly');
 
@@ -1047,6 +1064,27 @@ export default function App() {
       () => checkInitialLoad()
     );
 
+    const unsubReflections = subscribeToReflections(
+      (data) => {
+        setReflections(data);
+      },
+      () => {}
+    );
+
+    const unsubVisions = subscribeToVisions(
+      (data) => {
+        setVisions(data);
+      },
+      () => {}
+    );
+
+    const unsubAffirmations = subscribeToAffirmations(
+      (data) => {
+        setAffirmations(data);
+      },
+      () => {}
+    );
+
     // Timeout safety fallback so UI loads quickly
     const timer = setTimeout(() => {
       setIsLoading(false);
@@ -1059,7 +1097,8 @@ export default function App() {
         unsubPlans, unsubNotes, unsubGoals, unsubFocusSessions,
         unsubComments, unsubWorkouts, unsubReviews, unsubSundayResets,
         unsubDailyBlocks, unsubModuleLifecycle, unsubWeeklyGoals,
-        unsubSleepLogs, unsubSleepConfig
+        unsubSleepLogs, unsubSleepConfig,
+        unsubReflections, unsubVisions, unsubAffirmations
       ];
       unsubs.forEach((unsub) => {
         try {
@@ -2379,8 +2418,20 @@ export default function App() {
                   sleepLogs={sleepLogs}
                   focusSessions={focusSessions}
                   weeklyGoals={weeklyPriorityGoals}
+                  reflections={reflections}
+                  visions={visions}
+                  affirmations={affirmations}
                   onSaveReview={handleSaveReview}
                   onDeleteReview={handleDeleteReview}
+                  onAddReflection={addReflection}
+                  onUpdateReflection={updateReflection}
+                  onDeleteReflection={deleteReflection}
+                  onAddVision={addVision}
+                  onUpdateVision={updateVision}
+                  onDeleteVision={deleteVision}
+                  onAddAffirmation={addAffirmation}
+                  onDeleteAffirmation={deleteAffirmation}
+                  isDark={isDark}
                   lang={lang}
                 />
               )}

@@ -73,6 +73,19 @@
             return true;
           }
 
+          // Vite dev server WebSocket/HMR disconnect errors (HMR is disabled in preview iframe)
+          if (
+            msg.includes('WebSocket') ||
+            msg.includes('websocket') ||
+            str.includes('WebSocket') ||
+            str.includes('websocket') ||
+            stack.includes('@vite/client') ||
+            reasonStr.includes('WebSocket') ||
+            reasonStr.includes('websocket')
+          ) {
+            return true;
+          }
+
           // Abort & Stream Cancellation errors
           return (
             name === 'AbortError' ||
@@ -89,6 +102,22 @@
             reasonStr.includes('signal is aborted')
           );
         };
+
+        // Suppress Vite websocket console errors in preview iframe
+        try {
+          var origConsoleError = console.error;
+          console.error = function() {
+            var args = Array.prototype.slice.call(arguments);
+            var text = args.map(function(a) { return String(a || ''); }).join(' ');
+            if (
+              text.includes('[vite] failed to connect to websocket') ||
+              text.includes('WebSocket closed without opened')
+            ) {
+              return;
+            }
+            return origConsoleError.apply(console, args);
+          };
+        } catch (e) {}
 
         window.addEventListener('unhandledrejection', function(event) {
           if (isIgnoredError(event.reason)) {

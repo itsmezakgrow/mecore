@@ -72,7 +72,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
   const [copiedDomain, setCopiedDomain] = useState<boolean>(false);
   
   // Form State
-  const [email, setEmail] = useState<string>(DEFAULT_OWNER_EMAIL);
+  const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -322,8 +322,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({
               </h1>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-xs mx-auto leading-relaxed">
                 {isAr 
-                  ? 'مساحة عمل خاصة ومزامنة سحابية حية عبر Firebase لـ itsmezaki77@gmail.com والشركاء.' 
-                  : 'Private workspace with live Firebase sync for itsmezaki77@gmail.com and authorized collaborators.'}
+                  ? 'مساحة عمل خاصة ومزامنة سحابية حية عبر Firebase للأعضاء المصرح لهم والشركاء.' 
+                  : 'Private workspace with live Firebase sync for authorized members and collaborators.'}
               </p>
             </div>
 
@@ -371,7 +371,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                     </p>
                     <p className="text-[11px] text-neutral-600 dark:text-neutral-300 leading-relaxed">
                       {isAr
-                        ? 'حساب Google مفعّل ومجهّز في هذا المشروع دون الحاجة لأي إعداد. يمكنك الدخول فوراً بحساب itsmezaki77@gmail.com بنقرة واحدة:'
+                        ? 'حساب Google مفعّل ومجهّز في هذا المشروع دون الحاجة لأي إعداد. يمكنك الدخول فوراً بحسابك المصرح به بنقرة واحدة:'
                         : 'Google Login is pre-configured and active in this project. You can sign in immediately with your Google account:'}
                     </p>
                   </div>
@@ -537,8 +537,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                   </p>
                   <p className="leading-relaxed">
                     {isAr 
-                      ? 'يمكنك تسجيل الدخول بنقرة واحدة بحسابك itsmezaki77@gmail.com أو أي بريد مضاف في قائمة الشركاء.' 
-                      : 'Log in seamlessly with your Gmail address (itsmezaki77@gmail.com) across any mobile or desktop browser.'}
+                      ? 'يمكنك تسجيل الدخول بنقرة واحدة بحساب Google الخاص بك أو أي بريد مضاف في قائمة الشركاء.' 
+                      : 'Log in seamlessly with your authorized Google account or email address across any mobile or desktop browser.'}
                   </p>
                 </div>
               </div>
@@ -558,7 +558,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="itsmezaki77@gmail.com"
+                    placeholder="name@example.com"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50 text-xs font-medium text-neutral-900 dark:text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
                   />
                 </div>

@@ -314,7 +314,7 @@ export const ArchiveHub: React.FC<ArchiveHubProps> = ({
   return (
     <div className={`space-y-6 max-w-6xl mx-auto pb-16 ${isAr ? 'text-right' : 'text-left'}`} dir={isAr ? 'rtl' : 'ltr'}>
       {/* Header Banner */}
-      <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 md:p-8 shadow-sm">
+      <div className="bg-white dark:bg-neutral-900 rounded-3xl border border-neutral-200 dark:border-neutral-800 p-6 md:p-8 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-start gap-4">
             <div className="p-3.5 rounded-2xl bg-amber-500/10 text-amber-600 border border-amber-500/20 shrink-0">
@@ -431,7 +431,7 @@ export const ArchiveHub: React.FC<ArchiveHubProps> = ({
 
       {/* Items List */}
       {filteredItems.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-dashed border-neutral-200 p-12 text-center space-y-4">
+        <div className="bg-white dark:bg-neutral-900 rounded-3xl border border-dashed border-neutral-200 dark:border-neutral-800 p-12 text-center space-y-4">
           <div className="w-16 h-16 mx-auto rounded-3xl bg-neutral-100 flex items-center justify-center text-neutral-400">
             <Archive size={32} />
           </div>
@@ -465,7 +465,7 @@ export const ArchiveHub: React.FC<ArchiveHubProps> = ({
             return (
               <div
                 key={`${item.type}-${item.id}`}
-                className="bg-white rounded-2xl border border-neutral-200/80 p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-3 group"
+                className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-3 group"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">

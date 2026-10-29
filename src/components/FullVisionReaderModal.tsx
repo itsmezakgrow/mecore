@@ -14,7 +14,7 @@ export const FullVisionReaderModal: React.FC<FullVisionReaderModalProps> = ({
   lang = 'en'
 }) => {
   const [fontSize, setFontSize] = useState<'sm' | 'md' | 'lg' | 'xl'>('lg');
-  const [themeMode, setThemeMode] = useState<'charcoal' | 'pitch' | 'warm'>('charcoal');
+  const [themeMode, setThemeMode] = useState<'light' | 'charcoal' | 'pitch' | 'warm'>('light');
   const [scrollProgress, setScrollProgress] = useState(0);
 
   useEffect(() => {
@@ -48,6 +48,7 @@ export const FullVisionReaderModal: React.FC<FullVisionReaderModalProps> = ({
   }[fontSize];
 
   const themeClasses = {
+    light: 'bg-[#faf9f5] text-neutral-900 border-neutral-200',
     charcoal: 'bg-[#121316] text-neutral-100',
     pitch: 'bg-black text-neutral-200',
     warm: 'bg-[#1a1816] text-[#e8ded2]',
@@ -85,6 +86,15 @@ export const FullVisionReaderModal: React.FC<FullVisionReaderModalProps> = ({
           {/* Theme toggles */}
           <div className="flex items-center bg-neutral-800/60 p-1 rounded-lg border border-neutral-700/50">
             <button
+              onClick={() => setThemeMode('light')}
+              className={`p-1.5 rounded-md text-xs font-medium transition-colors ${
+                themeMode === 'light' ? 'bg-emerald-500 text-neutral-950 font-bold' : 'text-neutral-400 hover:text-neutral-200'
+              }`}
+              title="Light Paper"
+            >
+              <Sun className="w-3.5 h-3.5" />
+            </button>
+            <button
               onClick={() => setThemeMode('charcoal')}
               className={`p-1.5 rounded-md text-xs font-medium transition-colors ${
                 themeMode === 'charcoal' ? 'bg-emerald-500 text-neutral-950 font-bold' : 'text-neutral-400 hover:text-neutral-200'
@@ -109,7 +119,7 @@ export const FullVisionReaderModal: React.FC<FullVisionReaderModalProps> = ({
               }`}
               title="Warm Sepia"
             >
-              <Sun className="w-3.5 h-3.5" />
+              <span className="w-3.5 h-3.5 block rounded-full bg-[#d4a373]" />
             </button>
           </div>
 
