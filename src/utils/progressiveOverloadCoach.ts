@@ -1,4 +1,5 @@
 import { WorkoutSession, WorkoutExercise } from '../types';
+import { getNextProgressionWeight } from './exerciseAssets';
 
 export interface CoachPrescription {
   exerciseName: string;
@@ -80,17 +81,21 @@ export function getCoachPrescriptionForExercise(
   const completedSets = lastRecordedExercise.sets.filter(s => s.completed || (s.reps && Number(s.reps) > 0));
   const activeSets = completedSets.length > 0 ? completedSets : lastRecordedExercise.sets;
 
-  const weights = activeSets.map(s => parseWeight(s.weight));
+  const validWeights = activeSets
+    .map(s => parseWeight(s.weight))
+    .filter(w => w > 0);
   const reps = activeSets.map(s => Number(s.reps) || 0);
 
-  const maxWeight = Math.max(...weights, defaultNumWeight);
-  const allSetsHitTarget = reps.length >= targetSets && reps.every(r => r >= targetReps);
+  // CRITICAL FIX: If the athlete actually logged weights in their past workout,
+  // we MUST use their real logged weight (e.g. 7.5kg), NEVER Math.max with a default fallback!
+  const maxWeight = validWeights.length > 0 ? Math.max(...validWeights) : defaultNumWeight;
+  const allSetsHitTarget = reps.length >= (targetSets || 3) && reps.every(r => r >= targetReps);
   const repsSummary = reps.join(', ');
 
   if (allSetsHitTarget) {
-    // PROGRESSIVE OVERLOAD ACHIEVED: Recommend weight jump!
-    const weightIncrement = maxWeight >= 40 ? 5 : 2.5;
-    const nextWeight = maxWeight + weightIncrement;
+    // PROGRESSIVE OVERLOAD ACHIEVED: Recommend next standard gym weight!
+    const { nextWeight, incrementStep } = getNextProgressionWeight(exerciseName, maxWeight);
+    const weightIncrement = incrementStep > 0 ? incrementStep : (maxWeight >= 40 ? 5 : 2.5);
     const nextTargetReps = Math.max(8, targetReps - 2); // temporarily drop reps to adapt to higher load
 
     return {
@@ -104,7 +109,7 @@ export function getCoachPrescriptionForExercise(
       suggestedReps: nextTargetReps,
       suggestedSets: targetSets,
       lastWeight: maxWeight,
-      lastRepsSummary: `${repsSummary} reps @ ${maxWeight}kg`,
+      lastRepsSummary: `${repsSummary} reps`,
       isReadyForOverload: true,
     };
   }
@@ -115,13 +120,13 @@ export function getCoachPrescriptionForExercise(
     action: 'consolidate_volume',
     headlineEn: `🎯 Volume Consolidation @ ${maxWeight} kg`,
     headlineAr: `🎯 تثبيت الحجم عند ${maxWeight} كجم`,
-    detailsEn: `Last logs: ${repsSummary} reps. Maintain ${maxWeight} kg and aim to hit ${targetReps} reps on all ${targetSets} sets before increasing weight.`,
-    detailsAr: `سجلك السابق: ${repsSummary} تكرارات. حافظ على وزن ${maxWeight} كجم وركّز على إكمال ${targetReps} تكرار في كل المجموعات قبل رفع الوزن.`,
+    detailsEn: `Last logs: ${repsSummary} reps @ ${maxWeight}kg. Maintain ${maxWeight} kg and aim to hit ${targetReps} reps on all ${targetSets} sets before increasing weight.`,
+    detailsAr: `سجلك السابق: ${repsSummary} تكرارات بوزن ${maxWeight} كجم. حافظ على وزن ${maxWeight} كجم وركّز على إكمال ${targetReps} تكرار في كل المجموعات قبل رفع الوزن.`,
     suggestedWeight: maxWeight,
     suggestedReps: targetReps,
     suggestedSets: targetSets,
     lastWeight: maxWeight,
-    lastRepsSummary: `${repsSummary} reps @ ${maxWeight}kg`,
+    lastRepsSummary: `${repsSummary} reps`,
     isReadyForOverload: false,
   };
 }

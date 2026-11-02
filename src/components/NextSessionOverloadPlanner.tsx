@@ -22,7 +22,7 @@ import {
   Camera
 } from 'lucide-react';
 import { WorkoutSession, WorkoutExercise, WorkoutSet, WorkoutRoutineTemplate, BodyProfileConfig } from '../types';
-import { getExerciseImagePath, getExerciseSpec, getExerciseMeta } from '../utils/exerciseAssets';
+import { getExerciseImagePath, getExerciseSpec, getExerciseMeta, getNextProgressionWeight, getAvailableWeightsForExercise } from '../utils/exerciseAssets';
 import { ExercisePreviewModal } from './ExercisePreviewModal';
 
 interface NextSessionOverloadPlannerProps {
@@ -40,6 +40,7 @@ interface TacticalExercisePrescription {
   repRangeMax: number;
   incrementStep: number;
   lastWeightKg: number | null;
+  lastReps?: number[];
   lastRepsSummary: string;
   nextWeightKg: number;
   nextTargetReps: number;
@@ -61,21 +62,21 @@ const PRESET_ROUTINES_CONFIG: {
     id: 'routine-a-fullbody',
     name: 'Routine A (Full Body)',
     exercises: [
-      { name: 'Leg Press Machine', defaultWeight: 60 },
-      { name: 'Flat Dumbbell Bench Press', defaultWeight: 20 },
-      { name: 'Wide Grip Lat Pulldown', defaultWeight: 45 },
-      { name: 'Seated Dumbbell Shoulder Press', defaultWeight: 14 },
-      { name: 'Cable Rope Hammer Curls', defaultWeight: 18 },
+      { name: 'Leg Press Machine', defaultWeight: 20 },
+      { name: 'Flat Dumbbell Bench Press', defaultWeight: 7.5 },
+      { name: 'Wide Grip Lat Pulldown', defaultWeight: 25 },
+      { name: 'Seated Dumbbell Shoulder Press', defaultWeight: 7.5 },
+      { name: 'Cable Rope Hammer Curls', defaultWeight: 12.5 },
     ]
   },
   {
     id: 'routine-b-fullbody',
     name: 'Routine B (Full Body)',
     exercises: [
-      { name: 'Goblet Squat', defaultWeight: 24 },
-      { name: 'Seated Cable Row', defaultWeight: 45 },
-      { name: 'Incline Dumbbell Bench Press', defaultWeight: 18 },
-      { name: 'Dumbbell Lateral Raises', defaultWeight: 8 },
+      { name: 'Goblet Squat', defaultWeight: 7.5 },
+      { name: 'Seated Cable Row', defaultWeight: 20 },
+      { name: 'Incline Dumbbell Bench Press', defaultWeight: 7.5 },
+      { name: 'Dumbbell Lateral Raises', defaultWeight: 2.5 },
       { name: 'Tricep Rope Pushdown', defaultWeight: 20 },
     ]
   }
@@ -94,7 +95,13 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
   const [selectedRoutineId, setSelectedRoutineId] = useState<'routine-a-fullbody' | 'routine-b-fullbody'>('routine-a-fullbody');
 
   // Modal preview state
-  const [previewExerciseName, setPreviewExerciseName] = useState<string | null>(null);
+  const [previewExercise, setPreviewExercise] = useState<{
+    name: string;
+    weightKg: number;
+    lastWeightKg?: number | null;
+    lastRepsSummary?: string;
+    nextTargetReps?: number;
+  } | null>(null);
 
   // Input Parameters required by user:
   const [sessionDate, setSessionDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
@@ -203,13 +210,16 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
       const completedSets = lastExerciseMatch.sets.filter(s => s.completed || (s.reps && Number(s.reps) > 0));
       const activeSets = completedSets.length > 0 ? completedSets : lastExerciseMatch.sets;
 
-      const weights = activeSets.map(s => {
-        const parsed = parseFloat(String(s.weight).replace(/[^0-9.]/g, ''));
-        return isNaN(parsed) ? item.defaultWeight : parsed;
-      });
+      const validWeights = activeSets
+        .map(s => {
+          const parsed = parseFloat(String(s.weight).replace(/[^0-9.]/g, ''));
+          return isNaN(parsed) ? 0 : parsed;
+        })
+        .filter(w => w > 0);
       const reps = activeSets.map(s => Number(s.reps) || 0);
 
-      const maxWeight = Math.max(...weights, item.defaultWeight);
+      // CRITICAL FIX: NEVER override real logged weights with hardcoded item.defaultWeight!
+      const maxWeight = validWeights.length > 0 ? Math.max(...validWeights) : item.defaultWeight;
       const repsSummary = reps.join(', ') + ' reps';
 
       // DOUBLE PROGRESSION SCENARIOS:
@@ -220,8 +230,9 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
       const hitMinRepRangeAllSets = reps.length >= 3 && reps.every(r => r >= spec.repRangeMin);
 
       if (masteredAllSets) {
-        // SCENARIO A: Mastered the weight -> Increase TargetWeight by incrementStep, reset reps to repRangeMin
-        const nextWeight = maxWeight + spec.incrementStep;
+        // SCENARIO A: Mastered the weight -> Increase TargetWeight by exact next available gym weight
+        const { nextWeight, incrementStep } = getNextProgressionWeight(item.name, maxWeight);
+        const actualStep = incrementStep > 0 ? incrementStep : spec.incrementStep;
         const nextTargetReps = spec.repRangeMin;
 
         return {
@@ -229,14 +240,15 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
           targetSets: 3,
           repRangeMin: spec.repRangeMin,
           repRangeMax: spec.repRangeMax,
-          incrementStep: spec.incrementStep,
+          incrementStep: actualStep,
           lastWeightKg: maxWeight,
+          lastReps: reps,
           lastRepsSummary: repsSummary,
           nextWeightKg: nextWeight,
           nextTargetReps,
           overloadStatus: 'increase_weight',
-          actionTagEn: `🔥 Weight Increase ⬆️ (+${spec.incrementStep}kg)`,
-          actionTagAr: `🔥 زيادة الوزن (+${spec.incrementStep} كجم)`,
+          actionTagEn: `🔥 Weight Increase ⬆️ (+${actualStep}kg)`,
+          actionTagAr: `🔥 زيادة الوزن (+${actualStep} كجم)`,
           executionCueEn: `Mastered ${maxWeight}kg! Increased to ${nextWeight}kg for ${nextTargetReps} reps. Explosive push, 3s negative.`,
           executionCueAr: `أتقنت وزن ${maxWeight} كجم! تمت زيادة الوزن إلى ${nextWeight} كجم لـ ${nextTargetReps} تكرارات. دفع قوي ونزول بطيء.`,
           imagePath: imgPath,
@@ -254,6 +266,7 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
           repRangeMax: spec.repRangeMax,
           incrementStep: spec.incrementStep,
           lastWeightKg: maxWeight,
+          lastReps: reps,
           lastRepsSummary: repsSummary,
           nextWeightKg: maxWeight,
           nextTargetReps,
@@ -274,6 +287,7 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
           repRangeMax: spec.repRangeMax,
           incrementStep: spec.incrementStep,
           lastWeightKg: maxWeight,
+          lastReps: reps,
           lastRepsSummary: repsSummary,
           nextWeightKg: maxWeight,
           nextTargetReps: spec.repRangeMin,
@@ -309,23 +323,63 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
       return {
         name: e.name,
         targetSets: 3,
-        targetReps: spec.repRangeMin,
+        repRangeMin: spec.repRangeMin,
+        repRangeMax: spec.repRangeMax,
+        incrementStep: spec.incrementStep,
+        lastWeightKg: null,
+        lastReps: [],
+        lastRepsSummary: '',
         nextWeightKg: e.defaultWeight,
-        nextTargetReps: spec.repRangeMin
+        nextTargetReps: spec.repRangeMin,
+        overloadStatus: 'baseline' as const,
+        actionTagEn: '🎯 Baseline Setup',
+        actionTagAr: '🎯 إدراج المستوى الأول',
+        executionCueEn: spec.executionCueEn,
+        executionCueAr: spec.executionCueAr,
+        imagePath: getExerciseImagePath(e.name),
+        meta: getExerciseMeta(e.name)
       };
-    })).map((p: any, idx: number) => ({
-      id: `ex-${Date.now()}-${idx}`,
-      name: p.name,
-      isAutoFilled: true,
-      sets: Array.from({ length: p.targetSets || 3 }).map((_, sIdx) => ({
-        id: `s-${Date.now()}-${idx}-${sIdx}`,
-        setNumber: sIdx + 1,
-        reps: p.nextTargetReps || 10,
-        weight: (p.nextWeightKg || 20).toString(),
-        weightUnit: 'kg' as const,
-        completed: false
-      }))
-    }));
+    })).map((p: TacticalExercisePrescription, idx: number) => {
+      const targetWeightNum = p.nextWeightKg !== undefined ? p.nextWeightKg : 7.5;
+      const targetWeightStr = targetWeightNum.toString();
+      const targetRepsNum = p.nextTargetReps || 10;
+      
+      const prevWeightVal = p.lastWeightKg !== undefined && p.lastWeightKg !== null ? p.lastWeightKg : null;
+      const prevWeightStr = prevWeightVal !== null ? prevWeightVal.toString() : '';
+      
+      const prevRepsArr = Array.isArray(p.lastReps) ? p.lastReps : [];
+      const prevSummary = prevWeightVal !== null
+        ? `${prevWeightVal}kg (${prevRepsArr.length > 0 ? prevRepsArr.join(', ') : p.lastRepsSummary} reps)`
+        : undefined;
+
+      return {
+        id: `ex-${Date.now()}-${idx}`,
+        name: p.name,
+        isAutoFilled: true,
+        previousWeight: prevWeightStr,
+        previousReps: prevRepsArr[0] || 0,
+        previousPerformanceSummary: prevSummary,
+        nextTargetSummary: `${targetWeightStr}kg × ${targetRepsNum} reps (${p.targetSets || 3} sets)`,
+        targetWeight: targetWeightStr,
+        targetReps: targetRepsNum,
+        targetSetsCount: p.targetSets || 3,
+        sets: Array.from({ length: p.targetSets || 3 }).map((_, sIdx) => {
+          const sPastReps = prevRepsArr[sIdx] !== undefined ? prevRepsArr[sIdx] : (prevRepsArr[0] || 0);
+          return {
+            id: `s-${Date.now()}-${idx}-${sIdx}`,
+            setNumber: sIdx + 1,
+            reps: targetRepsNum, // PRE-FILLED WITH TARGET REPS!
+            weight: targetWeightStr, // PRE-FILLED WITH TARGET WEIGHT!
+            weightUnit: 'kg' as const,
+            completed: false,
+            previousWeight: prevWeightStr,
+            previousReps: sPastReps,
+            targetWeight: targetWeightStr,
+            targetReps: targetRepsNum
+          };
+        })
+      };
+    });
 
     onLaunchWorkoutWithTargets(template, targetExercises, sessionDate);
   };
@@ -594,9 +648,15 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
                       {/* Interactive Exercise Thumbnail with Pop-up trigger */}
                       <button
                         type="button"
-                        onClick={() => setPreviewExerciseName(ex.name)}
+                        onClick={() => setPreviewExercise({
+                          name: ex.name,
+                          weightKg: ex.nextWeightKg,
+                          lastWeightKg: ex.lastWeightKg,
+                          lastRepsSummary: ex.lastRepsSummary,
+                          nextTargetReps: ex.nextTargetReps
+                        })}
                         className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-100 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 overflow-hidden shrink-0 flex items-center justify-center relative group cursor-pointer hover:border-emerald-500 transition-all"
-                        title={isAr ? 'انقر لمعاينة حركة التمرين والتكنيك' : 'Click to preview exercise technique'}
+                        title={isAr ? 'انقر لمعاينة تركيب الأقراص والتكنيك' : 'Click to calculate plates & form'}
                       >
                         <img
                           src={ex.imagePath}
@@ -625,7 +685,13 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
                           <span className="text-xs font-mono font-black text-slate-400">#{idx + 1}</span>
                           <button
                             type="button"
-                            onClick={() => setPreviewExerciseName(ex.name)}
+                            onClick={() => setPreviewExercise({
+                              name: ex.name,
+                              weightKg: ex.nextWeightKg,
+                              lastWeightKg: ex.lastWeightKg,
+                              lastRepsSummary: ex.lastRepsSummary,
+                              nextTargetReps: ex.nextTargetReps
+                            })}
                             className="text-base font-black text-slate-900 dark:text-white truncate hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors text-left rtl:text-right cursor-pointer flex items-center gap-1.5"
                           >
                             <span>{ex.name}</span>
@@ -648,33 +714,52 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
                       </div>
                     </div>
 
-                    {/* Right: Last Performance vs Next Target Numbers */}
-                    <div className="flex items-center gap-4 bg-slate-50 dark:bg-neutral-900/90 p-3 rounded-2xl border border-slate-200 dark:border-neutral-800 self-start lg:self-auto shrink-0">
-                      {/* Past Session */}
-                      <div className="text-left rtl:text-right">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                          {isAr ? 'آخر حصة' : 'LAST SESSION'}
-                        </span>
-                        <p className="text-xs font-mono font-bold text-slate-700 dark:text-neutral-300 mt-0.5">
-                          {ex.lastWeightKg !== null ? `${ex.lastWeightKg} kg` : '—'}
-                        </p>
-                        <span className="text-[10px] font-mono text-slate-400">{ex.lastRepsSummary}</span>
+                    {/* Right: Last Performance vs Next Target Numbers & Plate Loader Trigger */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 self-start lg:self-auto shrink-0">
+                      <div className="flex items-center gap-4 bg-slate-50 dark:bg-neutral-900/90 p-3 rounded-2xl border border-slate-200 dark:border-neutral-800">
+                        {/* Past Session */}
+                        <div className="text-left rtl:text-right">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                            {isAr ? 'آخر حصة' : 'LAST SESSION'}
+                          </span>
+                          <p className="text-xs font-mono font-bold text-slate-700 dark:text-neutral-300 mt-0.5">
+                            {ex.lastWeightKg !== null ? `${ex.lastWeightKg} kg` : '—'}
+                          </p>
+                          <span className="text-[10px] font-mono text-slate-400">{ex.lastRepsSummary}</span>
+                        </div>
+
+                        <ArrowRight size={16} className="text-emerald-500 rtl:rotate-180" />
+
+                        {/* Next Target */}
+                        <div className="text-left rtl:text-right">
+                          <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 block">
+                            {isAr ? 'الهدف القادم' : 'NEXT TARGET'}
+                          </span>
+                          <p className="text-base font-mono font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                            {ex.nextWeightKg} kg
+                          </p>
+                          <span className="text-[10px] font-mono font-bold text-slate-700 dark:text-neutral-200">
+                            {ex.targetSets} sets × {ex.nextTargetReps} reps
+                          </span>
+                        </div>
                       </div>
 
-                      <ArrowRight size={16} className="text-emerald-500 rtl:rotate-180" />
-
-                      {/* Next Target */}
-                      <div className="text-left rtl:text-right">
-                        <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 block">
-                          {isAr ? 'الهدف القادم' : 'NEXT TARGET'}
-                        </span>
-                        <p className="text-base font-mono font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
-                          {ex.nextWeightKg} kg
-                        </p>
-                        <span className="text-[10px] font-mono font-bold text-slate-700 dark:text-neutral-200">
-                          {ex.targetSets} sets × {ex.nextTargetReps} reps
-                        </span>
-                      </div>
+                      {/* Equipment Plate Calculator Trigger Button */}
+                      <button
+                        type="button"
+                        onClick={() => setPreviewExercise({
+                          name: ex.name,
+                          weightKg: ex.nextWeightKg,
+                          lastWeightKg: ex.lastWeightKg,
+                          lastRepsSummary: ex.lastRepsSummary,
+                          nextTargetReps: ex.nextTargetReps
+                        })}
+                        className="px-3 py-2 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer hover:scale-[1.02] active:scale-95"
+                        title={isAr ? 'حساب توزيع الأقراص والدامبلز في الصالة' : 'Calculate plate loading & dumbbells'}
+                      >
+                        <Scale size={14} />
+                        <span>{isAr ? 'حاسبة الأقراص' : 'Plate Breakdown'}</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -711,11 +796,15 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
         </div>
       )}
 
-      {/* Exercise Preview Modal */}
-      {previewExerciseName && (
+      {/* Exercise Preview & Equipment Calculator Modal */}
+      {previewExercise && (
         <ExercisePreviewModal
-          exerciseName={previewExerciseName}
-          onClose={() => setPreviewExerciseName(null)}
+          exerciseName={previewExercise.name}
+          targetWeightKg={previewExercise.weightKg}
+          previousWeightKg={previewExercise.lastWeightKg ?? undefined}
+          previousRepsSummary={previewExercise.lastRepsSummary}
+          targetReps={previewExercise.nextTargetReps}
+          onClose={() => setPreviewExercise(null)}
           lang={lang}
         />
       )}

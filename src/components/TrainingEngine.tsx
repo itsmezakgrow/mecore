@@ -38,7 +38,10 @@ import {
   ShieldCheck,
   Activity,
   Eye,
-  Camera
+  EyeOff,
+  Camera,
+  Filter,
+  ArrowUpRight
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -46,6 +49,9 @@ import {
   Area,
   LineChart,
   Line,
+  BarChart,
+  Bar,
+  Legend,
   XAxis,
   YAxis,
   Tooltip,
@@ -122,11 +128,11 @@ const ROUTINE_TEMPLATES: WorkoutRoutineTemplate[] = [
     category: 'Full Body',
     description: 'Leg Press (3x12), Flat DB Bench (3x10), Lat Pulldown (3x12), Shoulder Press (3x10), Hammer Curls (3x12)',
     exercises: [
-      { name: 'Leg Press Machine', targetSets: 3, targetReps: 12, defaultWeight: '60' },
-      { name: 'Flat Dumbbell Bench Press', targetSets: 3, targetReps: 10, defaultWeight: '20' },
-      { name: 'Wide Grip Lat Pulldown', targetSets: 3, targetReps: 12, defaultWeight: '45' },
-      { name: 'Seated Dumbbell Shoulder Press', targetSets: 3, targetReps: 10, defaultWeight: '14' },
-      { name: 'Cable Rope Hammer Curls', targetSets: 3, targetReps: 12, defaultWeight: '18' },
+      { name: 'Leg Press Machine', targetSets: 3, targetReps: 12, defaultWeight: '20' },
+      { name: 'Flat Dumbbell Bench Press', targetSets: 3, targetReps: 10, defaultWeight: '7.5' },
+      { name: 'Wide Grip Lat Pulldown', targetSets: 3, targetReps: 12, defaultWeight: '25' },
+      { name: 'Seated Dumbbell Shoulder Press', targetSets: 3, targetReps: 10, defaultWeight: '7.5' },
+      { name: 'Cable Rope Hammer Curls', targetSets: 3, targetReps: 12, defaultWeight: '12.5' },
     ]
   },
   {
@@ -135,10 +141,10 @@ const ROUTINE_TEMPLATES: WorkoutRoutineTemplate[] = [
     category: 'Full Body',
     description: 'Goblet Squat (3x12), Seated Cable Row (3x12), Incline DB Bench (3x10), Lateral Raises (3x15), Tricep Rope Pushdown (3x12)',
     exercises: [
-      { name: 'Goblet Squat', targetSets: 3, targetReps: 12, defaultWeight: '24' },
-      { name: 'Seated Cable Row', targetSets: 3, targetReps: 12, defaultWeight: '45' },
-      { name: 'Incline Dumbbell Bench Press', targetSets: 3, targetReps: 10, defaultWeight: '18' },
-      { name: 'Dumbbell Lateral Raises', targetSets: 3, targetReps: 15, defaultWeight: '8' },
+      { name: 'Goblet Squat', targetSets: 3, targetReps: 12, defaultWeight: '7.5' },
+      { name: 'Seated Cable Row', targetSets: 3, targetReps: 12, defaultWeight: '20' },
+      { name: 'Incline Dumbbell Bench Press', targetSets: 3, targetReps: 10, defaultWeight: '7.5' },
+      { name: 'Dumbbell Lateral Raises', targetSets: 3, targetReps: 15, defaultWeight: '2.5' },
       { name: 'Tricep Rope Pushdown', targetSets: 3, targetReps: 12, defaultWeight: '20' },
     ]
   },
@@ -261,7 +267,16 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
   const [workoutDate, setWorkoutDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [workoutNotes, setWorkoutNotes] = useState<string>('');
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
-  const [previewExerciseName, setPreviewExerciseName] = useState<string | null>(null);
+  const [previewModalData, setPreviewModalData] = useState<{
+    name: string;
+    targetWeightKg?: number;
+    previousWeightKg?: number;
+    previousRepsSummary?: string;
+    targetReps?: number;
+  } | null>(null);
+  
+  // Toggle to show/hide previous performance and next targets
+  const [showTargetsAndHistory, setShowTargetsAndHistory] = useState<boolean>(true);
 
   // Duration & Stopwatch: DOES NOT auto-start as requested!
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
@@ -280,9 +295,10 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
 
   // Analytics Filter States
   const [selectedExerciseFilter, setSelectedExerciseFilter] = useState<string>('All');
+  const [selectedRoutineFilter, setSelectedRoutineFilter] = useState<'All' | 'Routine A' | 'Routine B'>('All');
   const [selectedTimeframe, setSelectedTimeframe] = useState<'7' | '30' | '90' | 'all'>('30');
-  const [analyticsMetric, setAnalyticsMetric] = useState<'maxReps' | 'totalReps' | 'volume'>('maxReps');
-  const [analyticsSubView, setAnalyticsSubView] = useState<'gameplan' | 'charts'>('gameplan');
+  const [analyticsMetric, setAnalyticsMetric] = useState<'load_1rm' | 'volume' | 'reps'>('load_1rm');
+  const [analyticsSubView, setAnalyticsSubView] = useState<'gameplan' | 'charts'>('charts');
 
   // Saving state & notifications
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -352,40 +368,69 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
     return `${mins.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Load a preset routine template (e.g. Routine A or Routine B)
+  // Load a preset routine template (e.g. Routine A or Routine B) with calculated targets
   const handleLoadPreset = (template: WorkoutRoutineTemplate) => {
     setRoutineName(template.name);
     setRoutineCategory(template.category);
     setCollapsedExercises({});
     const newExs: WorkoutExercise[] = template.exercises.map((item, idx) => {
       const lastRecorded = getLastRecordedExercise(item.name, workouts);
-      let targetSets: WorkoutSet[] = [];
+      const prescription = getCoachPrescriptionForExercise(
+        item.name,
+        item.targetSets,
+        item.targetReps,
+        item.defaultWeight,
+        workouts
+      );
 
+      const targetWeightStr = prescription.suggestedWeight.toString();
+      const targetRepsNum = prescription.suggestedReps;
+
+      let pastWeightStr = '';
+      let pastRepsNum = 0;
       if (lastRecorded && lastRecorded.sets && lastRecorded.sets.length > 0) {
-        targetSets = lastRecorded.sets.map((pastSet, sIdx) => ({
-          id: `s-${Date.now()}-${idx}-${sIdx}`,
-          setNumber: sIdx + 1,
-          reps: pastSet.reps || item.targetReps,
-          weight: pastSet.weight || item.defaultWeight,
-          weightUnit: pastSet.weightUnit || 'kg',
-          completed: false
-        }));
-      } else {
-        targetSets = Array.from({ length: item.targetSets }).map((_, sIdx) => ({
-          id: `s-${Date.now()}-${idx}-${sIdx}`,
-          setNumber: sIdx + 1,
-          reps: item.targetReps,
-          weight: item.defaultWeight,
-          weightUnit: 'kg',
-          completed: false
-        }));
+        const completedSets = lastRecorded.sets.filter(s => s.completed || (s.reps && Number(s.reps) > 0));
+        const activeSets = completedSets.length > 0 ? completedSets : lastRecorded.sets;
+        const validWeights = activeSets.map(s => parseFloat(String(s.weight).replace(/[^0-9.]/g, ''))).filter(w => !isNaN(w) && w > 0);
+        if (validWeights.length > 0) {
+          pastWeightStr = Math.max(...validWeights).toString();
+        } else {
+          pastWeightStr = (lastRecorded.sets[0].weight !== undefined ? lastRecorded.sets[0].weight : '').toString();
+        }
+        pastRepsNum = lastRecorded.sets[0].reps || 0;
       }
+
+      const targetSets: WorkoutSet[] = Array.from({ length: item.targetSets }).map((_, sIdx) => {
+        const pastSet = lastRecorded?.sets?.[sIdx] || lastRecorded?.sets?.[0];
+        const sPastWeight = pastSet?.weight !== undefined ? pastSet.weight.toString() : pastWeightStr;
+        const sPastReps = pastSet?.reps || pastRepsNum;
+
+        return {
+          id: `s-${Date.now()}-${idx}-${sIdx}`,
+          setNumber: sIdx + 1,
+          reps: targetRepsNum, // PRE-FILLED WITH TARGET REPS!
+          weight: targetWeightStr, // PRE-FILLED WITH TARGET WEIGHT!
+          weightUnit: 'kg' as const,
+          completed: false,
+          previousWeight: sPastWeight,
+          previousReps: sPastReps,
+          targetWeight: targetWeightStr,
+          targetReps: targetRepsNum
+        };
+      });
 
       return {
         id: `ex-${Date.now()}-${idx}`,
         name: item.name,
         sets: targetSets,
-        isAutoFilled: !!lastRecorded
+        isAutoFilled: true,
+        previousWeight: pastWeightStr,
+        previousReps: pastRepsNum,
+        previousPerformanceSummary: prescription.lastRepsSummary !== 'No past logs' ? `${prescription.lastWeight}kg (${prescription.lastRepsSummary})` : undefined,
+        nextTargetSummary: `${targetWeightStr}kg × ${targetRepsNum} reps (${item.targetSets} sets)`,
+        targetWeight: targetWeightStr,
+        targetReps: targetRepsNum,
+        targetSetsCount: item.targetSets
       };
     });
     setExercises(newExs);
@@ -703,15 +748,23 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
   }, [workouts]);
 
   const prAnalytics = useMemo(() => {
+    let globalMaxWeight = 0;
+    let globalPeak1RM = 0;
+    let globalMaxWeightExercise = '';
     let globalMaxReps = 0;
-    let globalMaxRepsExercise = '';
-    let globalMaxRepsDate = '';
 
-    let exerciseMaxReps = 0;
-    let exerciseMaxRepsDate = '';
-    let exerciseMaxVolume = 0;
+    let selectedFilterPeakWeight = 0;
+    let selectedFilterPeak1RM = 0;
+    let selectedFilterTotalVolume = 0;
     let totalExerciseSessions = 0;
     let totalRepsInSelected = 0;
+    let totalWorkingSets = 0;
+
+    // Routine comparison accumulators
+    let routineACount = 0;
+    let routineAVolume = 0;
+    let routineBCount = 0;
+    let routineBVolume = 0;
 
     const now = new Date();
     const timeframeDays = selectedTimeframe === 'all' ? 99999 : parseInt(selectedTimeframe, 10);
@@ -720,89 +773,169 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
     const cutoffISO = cutoffDate.toISOString().split('T')[0];
 
     const filteredWorkouts = workouts.filter((w) => {
-      if (selectedTimeframe === 'all') return true;
-      return w.date >= cutoffISO;
+      // 1. Timeframe filter
+      if (selectedTimeframe !== 'all' && w.date < cutoffISO) return false;
+
+      // 2. Routine filter (Routine A vs Routine B vs All)
+      if (selectedRoutineFilter === 'Routine A') {
+        const rName = (w.routineName || '').toLowerCase();
+        if (!rName.includes('routine a') && !rName.includes('routine-a')) return false;
+      } else if (selectedRoutineFilter === 'Routine B') {
+        const rName = (w.routineName || '').toLowerCase();
+        if (!rName.includes('routine b') && !rName.includes('routine-b')) return false;
+      }
+
+      return true;
     });
 
-    workouts.forEach((w) => {
+    // Gather statistics
+    filteredWorkouts.forEach((w) => {
+      const rName = (w.routineName || '').toLowerCase();
+      const isRoutineA = rName.includes('routine a') || rName.includes('routine-a');
+      const isRoutineB = rName.includes('routine b') || rName.includes('routine-b');
+
+      if (isRoutineA) {
+        routineACount++;
+        routineAVolume += (w.totalVolume || 0);
+      } else if (isRoutineB) {
+        routineBCount++;
+        routineBVolume += (w.totalVolume || 0);
+      }
+
+      let sessionHadMatch = false;
+
       w.exercises?.forEach((ex) => {
         const exName = ex.name.trim();
         const isMatch = selectedExerciseFilter === 'All' || exName.toLowerCase() === selectedExerciseFilter.toLowerCase();
 
-        let sessionExReps = 0;
         ex.sets?.forEach((s) => {
           const reps = Number(s.reps) || 0;
-          
+          let weightVal = 0;
+          if (typeof s.weight === 'number') weightVal = s.weight;
+          else if (typeof s.weight === 'string') {
+            const parsed = parseFloat(s.weight.replace(/[^0-9.]/g, ''));
+            if (!isNaN(parsed)) weightVal = parsed;
+          }
+
+          // Epley 1RM Formula
+          const est1RM = weightVal > 0 ? Math.round(weightVal * (1 + (Math.min(12, reps) / 30))) : weightVal;
+
+          if (weightVal > globalMaxWeight) {
+            globalMaxWeight = weightVal;
+            globalMaxWeightExercise = exName;
+          }
+          if (est1RM > globalPeak1RM) {
+            globalPeak1RM = est1RM;
+          }
           if (reps > globalMaxReps) {
             globalMaxReps = reps;
-            globalMaxRepsExercise = exName;
-            globalMaxRepsDate = w.date;
           }
 
-          if (isMatch) {
-            if (reps > exerciseMaxReps) {
-              exerciseMaxReps = reps;
-              exerciseMaxRepsDate = w.date;
-            }
-            sessionExReps += reps;
+          if (isMatch && (reps > 0 || weightVal > 0)) {
+            sessionHadMatch = true;
+            totalWorkingSets++;
             totalRepsInSelected += reps;
+            selectedFilterTotalVolume += (reps * (weightVal > 0 ? weightVal : 1));
+
+            if (weightVal > selectedFilterPeakWeight) selectedFilterPeakWeight = weightVal;
+            if (est1RM > selectedFilterPeak1RM) selectedFilterPeak1RM = est1RM;
           }
         });
-
-        if (isMatch && sessionExReps > 0) {
-          totalExerciseSessions++;
-          if (sessionExReps > exerciseMaxVolume) {
-            exerciseMaxVolume = sessionExReps;
-          }
-        }
       });
+
+      if (sessionHadMatch) {
+        totalExerciseSessions++;
+      }
     });
 
+    const avgWeightPerSet = totalWorkingSets > 0 
+      ? Math.round(selectedFilterTotalVolume / Math.max(1, totalRepsInSelected))
+      : 0;
+
     return {
+      globalMaxWeight,
+      globalPeak1RM,
+      globalMaxWeightExercise,
       globalMaxReps,
-      globalMaxRepsExercise,
-      globalMaxRepsDate,
-      exerciseMaxReps: selectedExerciseFilter === 'All' ? globalMaxReps : exerciseMaxReps,
-      exerciseMaxRepsDate: selectedExerciseFilter === 'All' ? globalMaxRepsDate : exerciseMaxRepsDate,
-      exerciseMaxVolume,
+      selectedFilterPeakWeight,
+      selectedFilterPeak1RM,
+      selectedFilterTotalVolume,
       totalExerciseSessions,
       totalRepsInSelected,
+      totalWorkingSets,
+      avgWeightPerSet,
+      routineAStats: { count: routineACount, volume: routineAVolume },
+      routineBStats: { count: routineBCount, volume: routineBVolume },
       filteredWorkouts,
     };
-  }, [workouts, selectedExerciseFilter, selectedTimeframe]);
+  }, [workouts, selectedExerciseFilter, selectedRoutineFilter, selectedTimeframe]);
 
   const chartData = useMemo(() => {
-    const rawMap: Record<string, { date: string; maxReps: number; totalReps: number; volume: number; routine: string }> = {};
+    const rawMap: Record<string, { 
+      date: string; 
+      rawDate: string;
+      maxWeight: number; 
+      est1RM: number; 
+      volume: number; 
+      maxReps: number; 
+      totalReps: number; 
+      routine: string;
+      isPR?: boolean;
+    }> = {};
 
     const sorted = [...prAnalytics.filteredWorkouts].sort((a, b) => a.date.localeCompare(b.date));
 
+    let rollingPeakWeight = 0;
+
     sorted.forEach((w) => {
+      let sessionMaxWeight = 0;
+      let sessionPeak1RM = 0;
       let sessionMaxReps = 0;
       let sessionTotalReps = 0;
-      let sessionVolume = w.totalVolume || 0;
+      let sessionCalculatedVolume = 0;
 
       w.exercises?.forEach((ex) => {
         const isMatch = selectedExerciseFilter === 'All' || ex.name.trim().toLowerCase() === selectedExerciseFilter.toLowerCase();
         if (isMatch) {
           ex.sets?.forEach((s) => {
             const reps = Number(s.reps) || 0;
+            let weightVal = 0;
+            if (typeof s.weight === 'number') weightVal = s.weight;
+            else if (typeof s.weight === 'string') {
+              const parsed = parseFloat(s.weight.replace(/[^0-9.]/g, ''));
+              if (!isNaN(parsed)) weightVal = parsed;
+            }
+
+            if (weightVal > sessionMaxWeight) sessionMaxWeight = weightVal;
             if (reps > sessionMaxReps) sessionMaxReps = reps;
+
+            const est1RM = weightVal > 0 ? Math.round(weightVal * (1 + (Math.min(12, reps) / 30))) : weightVal;
+            if (est1RM > sessionPeak1RM) sessionPeak1RM = est1RM;
+
             sessionTotalReps += reps;
+            sessionCalculatedVolume += reps * (weightVal > 0 ? weightVal : 1);
           });
         }
       });
 
-      if (selectedExerciseFilter === 'All' || sessionTotalReps > 0) {
+      if (selectedExerciseFilter === 'All' || sessionTotalReps > 0 || sessionMaxWeight > 0) {
         const parts = w.date.split('-');
         const dObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
         const shortDate = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' });
 
+        const isPR = sessionMaxWeight > rollingPeakWeight && rollingPeakWeight > 0;
+        if (sessionMaxWeight > rollingPeakWeight) rollingPeakWeight = sessionMaxWeight;
+
         rawMap[w.date] = {
           date: shortDate,
+          rawDate: w.date,
+          maxWeight: sessionMaxWeight,
+          est1RM: sessionPeak1RM || sessionMaxWeight,
+          volume: selectedExerciseFilter === 'All' ? (w.totalVolume || sessionCalculatedVolume) : Math.round(sessionCalculatedVolume),
           maxReps: sessionMaxReps,
           totalReps: sessionTotalReps > 0 ? sessionTotalReps : (w.totalReps || 0),
-          volume: sessionVolume,
           routine: w.routineName,
+          isPR
         };
       }
     });
@@ -946,12 +1079,29 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
               </h2>
             </div>
 
-            {/* Custom Session is a Secondary Button */}
-            <div className="flex items-center gap-2">
+            {/* Routine Launcher Controls with Targets Toggle & Secondary Custom Option */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowTargetsAndHistory(!showTargetsAndHistory)}
+                className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border shrink-0 ${
+                  showTargetsAndHistory
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                    : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-neutral-700'
+                }`}
+              >
+                {showTargetsAndHistory ? <Eye size={14} /> : <EyeOff size={14} />}
+                <span>
+                  {showTargetsAndHistory 
+                    ? (isAr ? 'إخفاء الأهداف والماضي' : 'Hide Targets & History') 
+                    : (isAr ? 'إظهار الأهداف والماضي' : 'Show Targets & History')}
+                </span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleStartCustomWorkout}
-                className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200 dark:border-neutral-700 shrink-0"
+                className="px-4 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200 dark:border-neutral-700 shrink-0"
               >
                 <Plus size={14} />
                 <span>{isAr ? 'جلسة مخصصة فارغة' : 'Start Custom Empty Session'}</span>
@@ -995,21 +1145,66 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                       </p>
                     </div>
 
-                    {/* Exercise List preview */}
+                    {/* Exercise List preview with Prev & Next Targets */}
                     <div className="space-y-2 pt-2 border-t border-slate-200/60 dark:border-neutral-800/80">
-                      {routine.exercises.map((ex, exI) => (
-                        <div
-                          key={ex.name}
-                          className="flex items-center justify-between text-xs py-1.5 px-3 rounded-xl bg-white/70 dark:bg-neutral-900/60 border border-slate-200/50 dark:border-neutral-800"
-                        >
-                          <span className="font-bold text-slate-800 dark:text-slate-200">
-                            {exI + 1}. {ex.name}
-                          </span>
-                          <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-black">
-                            {ex.targetSets}x{ex.targetReps} • {ex.defaultWeight}kg
-                          </span>
-                        </div>
-                      ))}
+                      {routine.exercises.map((ex, exI) => {
+                        const prescription = getCoachPrescriptionForExercise(
+                          ex.name,
+                          ex.targetSets,
+                          ex.targetReps,
+                          ex.defaultWeight,
+                          workouts
+                        );
+
+                        return (
+                          <div
+                            key={ex.name}
+                            className="flex flex-col sm:flex-row sm:items-center justify-between text-xs py-2 px-3 rounded-xl bg-white/70 dark:bg-neutral-900/60 border border-slate-200/50 dark:border-neutral-800 gap-1.5"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setPreviewModalData({
+                                name: ex.name,
+                                targetWeightKg: prescription.suggestedWeight,
+                                previousWeightKg: prescription.lastWeight > 0 ? prescription.lastWeight : undefined,
+                                previousRepsSummary: prescription.lastRepsSummary,
+                                targetReps: prescription.suggestedReps
+                              })}
+                              className="font-bold text-slate-800 dark:text-slate-200 hover:text-emerald-500 transition-colors text-left rtl:text-right cursor-pointer flex items-center gap-1.5"
+                              title={isAr ? 'عرض حاسبة الأوزان وتفاصيل التكرار' : 'View per-rep load breakdown'}
+                            >
+                              <span>{exI + 1}. {ex.name}</span>
+                              <Eye size={12} className="text-slate-400 opacity-60 hover:opacity-100" />
+                            </button>
+
+                            {showTargetsAndHistory ? (
+                              <div className="flex items-center gap-1.5 font-mono text-[11px] shrink-0">
+                                {prescription.lastWeight > 0 ? (
+                                  <span className="text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-neutral-800 px-2 py-0.5 rounded-md" title={prescription.lastRepsSummary}>
+                                    <span className="text-[10px] font-sans font-bold text-slate-400 mr-1">{isAr ? 'السابق:' : 'Prev:'}</span>
+                                    {prescription.lastWeight}kg
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 bg-slate-100 dark:bg-neutral-800 px-2 py-0.5 rounded-md text-[10px]">
+                                    {isAr ? 'بداية جديدة' : 'Baseline'}
+                                  </span>
+                                )}
+
+                                <span className="text-slate-300 dark:text-neutral-600">➔</span>
+
+                                <span className="text-emerald-600 dark:text-emerald-400 font-black bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                                  <span className="text-[10px] font-sans font-bold text-emerald-600 dark:text-emerald-400 mr-1">{isAr ? 'الهدف:' : 'Next:'}</span>
+                                  {prescription.suggestedWeight}kg × {prescription.suggestedReps}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-black">
+                                {ex.targetSets}x{ex.targetReps} • {ex.defaultWeight}kg
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1300,14 +1495,34 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
             {/* Right Column: Interactive Exercise Cards with Sets & Reps Inputs */}
             <div className="lg:col-span-8 space-y-5">
               
-              <div className="flex items-center justify-between px-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-1">
                 <h3 className="text-xs sm:text-sm font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Dumbbell size={14} className="text-emerald-500" />
                   {isAr ? 'التمارين والمجموعات' : 'Exercises & Sets'}
                 </h3>
-                <span className="text-xs font-mono font-bold text-slate-400">
-                  {exercises.length} {isAr ? 'تمارين' : 'movements'}
-                </span>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowTargetsAndHistory(!showTargetsAndHistory)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                      showTargetsAndHistory
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                        : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-neutral-700'
+                    }`}
+                  >
+                    {showTargetsAndHistory ? <Eye size={13} /> : <EyeOff size={13} />}
+                    <span>
+                      {showTargetsAndHistory 
+                        ? (isAr ? 'إخفاء الأهداف والماضي' : 'Hide Targets & History') 
+                        : (isAr ? 'إظهار الأهداف والماضي' : 'Show Targets & History')}
+                    </span>
+                  </button>
+
+                  <span className="text-xs font-mono font-bold text-slate-400">
+                    {exercises.length} {isAr ? 'تمارين' : 'movements'}
+                  </span>
+                </div>
               </div>
 
               {exercises.length === 0 ? (
@@ -1331,7 +1546,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                     // Scientific Progressive Overload Coach prescription
                     const targetSetsCount = exercise.sets.length || 3;
                     const targetRepsCount = exercise.sets[0]?.reps || 10;
-                    const defaultWeight = exercise.sets[0]?.weight || '20';
+                    const defaultWeight = exercise.previousWeight || (exercise.sets[0]?.weight ? exercise.sets[0].weight.toString() : '7.5');
                     const prescription = getCoachPrescriptionForExercise(
                       exercise.name,
                       targetSetsCount,
@@ -1398,9 +1613,15 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                                 {/* Interactive Exercise Image Thumbnail */}
                                 <button
                                   type="button"
-                                  onClick={() => setPreviewExerciseName(exercise.name)}
+                                  onClick={() => setPreviewModalData({
+                                    name: exercise.name,
+                                    targetWeightKg: exercise.targetWeight ?? (parseFloat(exercise.sets[0]?.weight) || 20),
+                                    previousWeightKg: exercise.previousWeight,
+                                    previousRepsSummary: exercise.previousPerformanceSummary,
+                                    targetReps: exercise.targetReps ?? (parseInt(exercise.sets[0]?.reps, 10) || 10)
+                                  })}
                                   className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 overflow-hidden shrink-0 flex items-center justify-center relative group cursor-pointer hover:border-emerald-500 transition-all shadow-2xs"
-                                  title={isAr ? 'انقر لمعاينة حركة التمرين والتكنيك' : 'Click to preview exercise technique'}
+                                  title={isAr ? 'انقر لمعاينة حركة التمرين والتكنيك وحاسبة الأوزان' : 'Click to preview exercise technique and per-rep load'}
                                 >
                                   <img
                                     src={getExerciseImagePath(exercise.name)}
@@ -1428,7 +1649,13 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                                     <span className="text-xs font-mono font-black text-slate-400">#{exIdx + 1}</span>
                                     <button
                                       type="button"
-                                      onClick={() => setPreviewExerciseName(exercise.name)}
+                                      onClick={() => setPreviewModalData({
+                                        name: exercise.name,
+                                        targetWeightKg: exercise.targetWeight ?? (parseFloat(exercise.sets[0]?.weight) || 20),
+                                        previousWeightKg: exercise.previousWeight,
+                                        previousRepsSummary: exercise.previousPerformanceSummary,
+                                        targetReps: exercise.targetReps ?? (parseInt(exercise.sets[0]?.reps, 10) || 10)
+                                      })}
                                       className="text-base font-black text-slate-900 dark:text-white hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors flex items-center gap-1.5 cursor-pointer text-left rtl:text-right"
                                     >
                                       <span>{exercise.name}</span>
@@ -1437,7 +1664,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                                   </div>
                                   {exercise.isAutoFilled && (
                                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 inline-block mt-0.5">
-                                      {isAr ? 'معبأ من آخر حصة' : 'Last Session Preloaded'}
+                                      {isAr ? 'الأهداف مجهزة مسبقاً' : 'Prescribed Targets Preloaded'}
                                     </span>
                                   )}
                                 </div>
@@ -1462,6 +1689,31 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                                 </button>
                               </div>
                             </div>
+
+                            {/* Previous Session vs Next Target Summary Bar */}
+                            {showTargetsAndHistory && (
+                              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-neutral-900/70 border border-slate-200/70 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                                    <History size={12} className="text-slate-400" />
+                                    <span>{isAr ? 'الحصة السابقة:' : 'Past Session:'}</span>
+                                  </span>
+                                  <span className="font-mono font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-neutral-800 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-neutral-700">
+                                    {exercise.previousPerformanceSummary || (exercise.previousWeight ? `${exercise.previousWeight}kg × ${exercise.previousReps} reps` : (prescription.lastWeight > 0 ? `${prescription.lastWeight}kg (${prescription.lastRepsSummary})` : (isAr ? 'أول حصة لهذا التمرين' : 'Baseline')))}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                    <Target size={12} className="text-emerald-500" />
+                                    <span>{isAr ? 'الهدف الموصوف:' : 'Prescribed Target:'}</span>
+                                  </span>
+                                  <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-lg border border-emerald-500/20">
+                                    {exercise.targetWeight || prescription.suggestedWeight}kg × {exercise.targetReps || prescription.suggestedReps} reps
+                                  </span>
+                                </div>
+                              </div>
+                            )}
 
                             {/* Scientific Progressive Overload Coach Box */}
                             <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
@@ -1499,7 +1751,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                             </div>
 
                             {/* Sets Table */}
-                            <div className="space-y-2">
+                            <div className="space-y-2.5">
                               <div className="grid grid-cols-12 gap-2 text-[10px] font-black uppercase text-slate-400 px-2 tracking-wider">
                                 <span className="col-span-2">{isAr ? 'المجموعة' : 'SET'}</span>
                                 <span className="col-span-4">{isAr ? 'الوزن (kg)' : 'WEIGHT (KG)'}</span>
@@ -1509,68 +1761,90 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
 
                               {exercise.sets.map((set, sIdx) => {
                                 const isDone = !!set.completed;
+                                const prevSetWeight = set.previousWeight || exercise.previousWeight || (prescription.lastWeight > 0 ? prescription.lastWeight.toString() : '');
+                                const prevSetReps = set.previousReps !== undefined ? set.previousReps : (exercise.previousReps || 0);
+                                const targetSetWeight = set.targetWeight || exercise.targetWeight || prescription.suggestedWeight;
+                                const targetSetReps = set.targetReps || exercise.targetReps || prescription.suggestedReps;
+
                                 return (
                                   <div
                                     key={set.id}
-                                    className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded-2xl border transition-all ${
+                                    className={`p-3 rounded-2xl border transition-all space-y-2 ${
                                       isDone
                                         ? 'bg-emerald-500/10 dark:bg-emerald-950/25 border-emerald-500/30'
                                         : 'bg-slate-50 dark:bg-neutral-900 border-slate-200/70 dark:border-neutral-800'
                                     }`}
                                   >
-                                    {/* Set Number */}
-                                    <span className="col-span-2 font-mono font-black text-xs text-slate-700 dark:text-slate-300">
-                                      {sIdx + 1}
-                                    </span>
+                                    {/* Set-Level Target & History Sub-line */}
+                                    {showTargetsAndHistory && (
+                                      <div className="flex items-center justify-between text-[11px] font-mono px-1 pb-1 border-b border-slate-200/60 dark:border-neutral-800/80">
+                                        <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                                          <span className="text-[10px] font-sans font-bold text-slate-400 uppercase">{isAr ? 'السابق:' : 'Prev:'}</span>
+                                          <span>{prevSetWeight ? `${prevSetWeight}kg × ${prevSetReps}` : (isAr ? 'لا يوجد' : '—')}</span>
+                                        </div>
 
-                                    {/* Weight Input (Large numeric tap target) */}
-                                    <div className="col-span-4 flex items-center gap-1">
-                                      <input
-                                        type="number"
-                                        step="0.5"
-                                        value={set.weight || ''}
-                                        onChange={(e) => handleUpdateSet(exercise.id, set.id, { weight: e.target.value })}
-                                        placeholder="kg"
-                                        className="w-full text-sm font-black font-mono px-3 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                                      />
-                                    </div>
+                                        <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
+                                          <span className="text-[10px] font-sans font-bold uppercase">{isAr ? 'هدف المجموعة:' : 'Next Target:'}</span>
+                                          <span>{targetSetWeight}kg × {targetSetReps} reps</span>
+                                        </div>
+                                      </div>
+                                    )}
 
-                                    {/* Reps Input (Large numeric tap target) */}
-                                    <div className="col-span-3 flex items-center gap-1">
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        value={set.reps || ''}
-                                        onChange={(e) => handleUpdateSet(exercise.id, set.id, { reps: parseInt(e.target.value, 10) || 0 })}
-                                        placeholder="reps"
-                                        className="w-full text-sm font-black font-mono px-3 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                                      />
-                                    </div>
+                                    <div className="grid grid-cols-12 gap-2 items-center">
+                                      {/* Set Number */}
+                                      <span className="col-span-2 font-mono font-black text-xs text-slate-700 dark:text-slate-300">
+                                        Set {sIdx + 1}
+                                      </span>
 
-                                    {/* Satisfying Big Check/Complete Button */}
-                                    <div className="col-span-3 flex items-center justify-center gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleSetComplete(exercise.id, set.id)}
-                                        className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all cursor-pointer active:scale-90 ${
-                                          isDone
-                                            ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30'
-                                            : 'bg-white dark:bg-neutral-800 text-slate-300 hover:text-emerald-500 border border-slate-200 dark:border-neutral-700'
-                                        }`}
-                                        title={isDone ? 'Mark as incomplete' : 'Complete set'}
-                                      >
-                                        <Check size={20} className="stroke-[3]" />
-                                      </button>
-                                      
-                                      {exercise.sets.length > 1 && (
+                                      {/* Weight Input (Pre-filled with Target Weight!) */}
+                                      <div className="col-span-4 flex items-center gap-1">
+                                        <input
+                                          type="number"
+                                          step="0.5"
+                                          value={set.weight !== undefined ? set.weight : ''}
+                                          onChange={(e) => handleUpdateSet(exercise.id, set.id, { weight: e.target.value })}
+                                          placeholder="kg"
+                                          className="w-full text-sm font-black font-mono px-3 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                                        />
+                                      </div>
+
+                                      {/* Reps Input (Pre-filled with Target Reps!) */}
+                                      <div className="col-span-3 flex items-center gap-1">
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          value={set.reps !== undefined ? set.reps : ''}
+                                          onChange={(e) => handleUpdateSet(exercise.id, set.id, { reps: parseInt(e.target.value, 10) || 0 })}
+                                          placeholder="reps"
+                                          className="w-full text-sm font-black font-mono px-3 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                                        />
+                                      </div>
+
+                                      {/* Satisfying Big Check/Complete Button */}
+                                      <div className="col-span-3 flex items-center justify-center gap-1">
                                         <button
                                           type="button"
-                                          onClick={() => handleRemoveSet(exercise.id, set.id)}
-                                          className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
+                                          onClick={() => handleToggleSetComplete(exercise.id, set.id)}
+                                          className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all cursor-pointer active:scale-90 ${
+                                            isDone
+                                              ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30'
+                                              : 'bg-white dark:bg-neutral-800 text-slate-300 hover:text-emerald-500 border border-slate-200 dark:border-neutral-700'
+                                          }`}
+                                          title={isDone ? 'Mark as incomplete' : 'Complete set'}
                                         >
-                                          <Trash2 size={12} />
+                                          <Check size={20} className="stroke-[3]" />
                                         </button>
-                                      )}
+                                        
+                                        {exercise.sets.length > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRemoveSet(exercise.id, set.id)}
+                                            className="p-1 text-slate-300 hover:text-rose-500 transition-colors cursor-pointer"
+                                          >
+                                            <Trash2 size={12} />
+                                          </button>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                 );
@@ -1784,168 +2058,399 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
             />
           ) : (
             <div className="space-y-5 animate-fadeIn">
-              {/* PR Bento Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <div className="bg-white dark:bg-[#18191D] p-5 rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs flex flex-col justify-between">
-              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <Trophy size={14} className="text-amber-500" />
-                {isAr ? 'الرقم القياسي (أقصى تكرار)' : 'Personal Record (PR)'}
-              </span>
-              <div className="mt-3">
-                <div className="text-3xl font-black text-slate-900 dark:text-white font-mono flex items-baseline gap-1.5">
-                  <span>{prAnalytics.exerciseMaxReps || 0}</span>
-                  <span className="text-xs font-bold text-slate-400">{isAr ? 'تكرار' : 'reps'}</span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
-                  {selectedExerciseFilter === 'All'
-                    ? (prAnalytics.globalMaxRepsExercise ? `${prAnalytics.globalMaxRepsExercise} (${prAnalytics.globalMaxRepsDate})` : (isAr ? 'سجل أول تمرين لك' : 'Log your first session'))
-                    : `${selectedExerciseFilter} ${prAnalytics.exerciseMaxRepsDate ? `(${prAnalytics.exerciseMaxRepsDate})` : ''}`}
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-[#18191D] p-5 rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs flex flex-col justify-between">
-              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <Zap size={14} className="text-emerald-500" />
-                {isAr ? 'أعلى حجم تدريبي بجلسة' : 'Peak Session Volume'}
-              </span>
-              <div className="mt-3">
-                <div className="text-3xl font-black text-slate-900 dark:text-white font-mono flex items-baseline gap-1.5">
-                  <span>{prAnalytics.exerciseMaxVolume || (workouts[0]?.totalVolume || workouts[0]?.totalReps || 0)}</span>
-                  <span className="text-xs font-bold text-slate-400">{isAr ? 'kg' : 'kg/reps'}</span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                  {isAr ? 'أعلى جهد مجمع في يوم واحد' : 'Highest cumulative output'}
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-[#18191D] p-5 rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs flex flex-col justify-between">
-              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <Flame size={14} className="text-rose-500" />
-                {isAr ? 'إجمالي التكرارات المنجزة' : 'Total Reps Crushed'}
-              </span>
-              <div className="mt-3">
-                <div className="text-3xl font-black text-slate-900 dark:text-white font-mono flex items-baseline gap-1.5">
-                  <span>{prAnalytics.totalRepsInSelected || workouts.reduce((acc, cur) => acc + (cur.totalReps || 0), 0)}</span>
-                  <span className="text-xs font-bold text-slate-400">{isAr ? 'تكرار' : 'reps'}</span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                  {isAr ? `خلال آخر ${selectedTimeframe === 'all' ? 'فترة' : selectedTimeframe + ' يوم'}` : `Across selected timeframe`}
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-[#18191D] p-5 rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs flex flex-col justify-between">
-              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <Calendar size={14} className="text-blue-500" />
-                {isAr ? 'الجلسات المسجلة' : 'Sessions Logged'}
-              </span>
-              <div className="mt-3">
-                <div className="text-3xl font-black text-slate-900 dark:text-white font-mono flex items-baseline gap-1.5">
-                  <span>{workouts.length}</span>
-                  <span className="text-xs font-bold text-slate-400">{isAr ? 'تمرين' : 'workouts'}</span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                  {isAr ? 'التزام حديدي مع المزامنة' : 'Cloud synchronized training records'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Progressive Overload Chart */}
-          <div className="bg-white dark:bg-[#18191D] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-neutral-800/80">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
-                  <TrendingUp size={18} />
-                </div>
-                <div>
-                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
-                    {isAr ? 'منحنى زيادة الحمل التدريجي (Progressive Overload Chart)' : 'Progressive Overload & Strength Trajectory'}
-                  </h3>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {isAr ? 'تتبع تطور التكرارات والأوزان المضافة عبر الزمن' : 'Plotting Max Reps & Cumulative Volume across workout sessions'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Filters */}
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  aria-label="Filter chart by exercise"
-                  value={selectedExerciseFilter}
-                  onChange={(e) => setSelectedExerciseFilter(e.target.value)}
-                  className="text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-700 text-slate-800 dark:text-slate-200 focus:outline-hidden cursor-pointer"
+              {/* Routine A vs Routine B Comparative Analysis Card */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Routine A Card */}
+                <div 
+                  onClick={() => setSelectedRoutineFilter(selectedRoutineFilter === 'Routine A' ? 'All' : 'Routine A')}
+                  className={`p-4 sm:p-5 rounded-3xl border transition-all cursor-pointer ${
+                    selectedRoutineFilter === 'Routine A'
+                      ? 'bg-emerald-500/10 border-emerald-500 shadow-md shadow-emerald-500/10 ring-2 ring-emerald-500/20'
+                      : 'bg-white dark:bg-[#18191D] border-slate-200/80 dark:border-neutral-800 hover:border-emerald-500/50'
+                  }`}
                 >
-                  <option value="All">{isAr ? 'جميع التمارين (الحجم الإجمالي)' : 'All Exercises (Total Volume)'}</option>
-                  {allUniqueExercises.map((exName) => (
-                    <option key={exName} value={exName}>
-                      {exName}
-                    </option>
-                  ))}
-                </select>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black text-xs">
+                        A
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                          Routine A (Full Body)
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-neutral-400">
+                          Leg Press • DB Bench • Lat Pulldown • DB Shoulder • Hammer Curls
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${
+                      selectedRoutineFilter === 'Routine A'
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-400'
+                    }`}>
+                      {selectedRoutineFilter === 'Routine A' ? (isAr ? 'مُحدد' : 'Filtered') : (isAr ? 'تصفية' : 'Filter')}
+                    </span>
+                  </div>
 
-                <div className="flex items-center p-0.5 bg-slate-100 dark:bg-neutral-900 rounded-xl border border-slate-200 dark:border-neutral-700 text-[11px] font-bold">
-                  {(['7', '30', '90', 'all'] as const).map((tf) => (
-                    <button
-                      key={tf}
-                      onClick={() => setSelectedTimeframe(tf)}
-                      className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${
-                        selectedTimeframe === tf
-                          ? 'bg-white dark:bg-neutral-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                      }`}
+                  <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-slate-100 dark:border-neutral-800/80">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">{isAr ? 'الحصص المنجزة' : 'Sessions Done'}</span>
+                      <p className="text-base font-black font-mono text-slate-900 dark:text-white mt-0.5">
+                        {prAnalytics.routineAStats.count} {isAr ? 'حصة' : 'sessions'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">{isAr ? 'إجمالي الحجم' : 'Total Volume'}</span>
+                      <p className="text-base font-black font-mono text-emerald-600 dark:text-emerald-400 mt-0.5">
+                        {prAnalytics.routineAStats.volume.toLocaleString()} kg
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Routine B Card */}
+                <div 
+                  onClick={() => setSelectedRoutineFilter(selectedRoutineFilter === 'Routine B' ? 'All' : 'Routine B')}
+                  className={`p-4 sm:p-5 rounded-3xl border transition-all cursor-pointer ${
+                    selectedRoutineFilter === 'Routine B'
+                      ? 'bg-sky-500/10 border-sky-500 shadow-md shadow-sky-500/10 ring-2 ring-sky-500/20'
+                      : 'bg-white dark:bg-[#18191D] border-slate-200/80 dark:border-neutral-800 hover:border-sky-500/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-sky-500 text-white flex items-center justify-center font-black text-xs">
+                        B
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                          Routine B (Full Body)
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-neutral-400">
+                          Goblet Squat • Cable Row • Incline DB • Lateral Raises • Tricep Pushdown
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${
+                      selectedRoutineFilter === 'Routine B'
+                        ? 'bg-sky-500 text-white'
+                        : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-400'
+                    }`}>
+                      {selectedRoutineFilter === 'Routine B' ? (isAr ? 'مُحدد' : 'Filtered') : (isAr ? 'تصفية' : 'Filter')}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-slate-100 dark:border-neutral-800/80">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">{isAr ? 'الحصص المنجزة' : 'Sessions Done'}</span>
+                      <p className="text-base font-black font-mono text-slate-900 dark:text-white mt-0.5">
+                        {prAnalytics.routineBStats.count} {isAr ? 'حصة' : 'sessions'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">{isAr ? 'إجمالي الحجم' : 'Total Volume'}</span>
+                      <p className="text-base font-black font-mono text-sky-600 dark:text-sky-400 mt-0.5">
+                        {prAnalytics.routineBStats.volume.toLocaleString()} kg
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Multi-Dimensional Analytics Bento Grid */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                {/* 1. Peak Weight & 1RM */}
+                <div className="bg-white dark:bg-[#18191D] p-5 rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs flex flex-col justify-between">
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Trophy size={14} className="text-amber-500" />
+                    {isAr ? 'أقصى وزن / 1RM تقديري' : 'Peak Load / Est 1RM'}
+                  </span>
+                  <div className="mt-2.5">
+                    <div className="text-2xl sm:text-3xl font-black text-amber-500 font-mono flex items-baseline gap-1.5">
+                      <span>{prAnalytics.selectedFilterPeak1RM || prAnalytics.globalPeak1RM || 0}</span>
+                      <span className="text-xs font-bold text-slate-400">kg (1RM)</span>
+                    </div>
+                    <p className="text-[10px] font-mono text-slate-500 dark:text-neutral-400 mt-1">
+                      {isAr ? 'أعلى وزن رفع:' : 'Max Working Load:'} {prAnalytics.selectedFilterPeakWeight || prAnalytics.globalMaxWeight} kg
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2. Cumulative Volume */}
+                <div className="bg-white dark:bg-[#18191D] p-5 rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs flex flex-col justify-between">
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Zap size={14} className="text-emerald-500" />
+                    {isAr ? 'إجمالي الحمولة (Tonnage)' : 'Total Cumulative Tonnage'}
+                  </span>
+                  <div className="mt-2.5">
+                    <div className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 font-mono flex items-baseline gap-1.5">
+                      <span>{prAnalytics.selectedFilterTotalVolume.toLocaleString()}</span>
+                      <span className="text-xs font-bold text-slate-400">kg</span>
+                    </div>
+                    <p className="text-[10px] font-mono text-slate-500 dark:text-neutral-400 mt-1">
+                      ≈ {(prAnalytics.selectedFilterTotalVolume / 1000).toFixed(2)} {isAr ? 'طن مرفوع' : 'tonnes moved'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 3. Rep Intensity & Volume */}
+                <div className="bg-white dark:bg-[#18191D] p-5 rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs flex flex-col justify-between">
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Flame size={14} className="text-rose-500" />
+                    {isAr ? 'إجمالي التكرارات' : 'Total Reps Crushed'}
+                  </span>
+                  <div className="mt-2.5">
+                    <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono flex items-baseline gap-1.5">
+                      <span>{prAnalytics.totalRepsInSelected || 0}</span>
+                      <span className="text-xs font-bold text-slate-400">{isAr ? 'تكرار' : 'reps'}</span>
+                    </div>
+                    <p className="text-[10px] font-mono text-slate-500 dark:text-neutral-400 mt-1">
+                      {prAnalytics.totalWorkingSets} {isAr ? 'مجموعة فعالة' : 'working sets logged'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 4. Active Sessions in Filter */}
+                <div className="bg-white dark:bg-[#18191D] p-5 rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs flex flex-col justify-between">
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Calendar size={14} className="text-blue-500" />
+                    {isAr ? 'الحصص المطابقة' : 'Filtered Sessions'}
+                  </span>
+                  <div className="mt-2.5">
+                    <div className="text-2xl sm:text-3xl font-black text-blue-600 dark:text-blue-400 font-mono flex items-baseline gap-1.5">
+                      <span>{prAnalytics.filteredWorkouts.length}</span>
+                      <span className="text-xs font-bold text-slate-400">{isAr ? 'تمرين' : 'workouts'}</span>
+                    </div>
+                    <p className="text-[10px] font-mono text-slate-500 dark:text-neutral-400 mt-1 truncate">
+                      {selectedRoutineFilter === 'All' ? (isAr ? 'كل الروتينات' : 'All Routines') : selectedRoutineFilter}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Progressive Overload & Trajectory Chart Card */}
+              <div className="bg-white dark:bg-[#18191D] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs space-y-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-neutral-800/80">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
+                      <TrendingUp size={18} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                        {isAr ? 'منحنى زيادة الحمل التدريجي ومسار القوة' : 'Progressive Overload & Strength Trajectory'}
+                      </h3>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {isAr ? 'تحليل متكامل لأوزان الرفع، الـ 1RM التقديري، الحجم الكلي، والتكرارات' : 'Comprehensive multi-phase telemetry of load, estimated 1RM, volume, and reps'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Multi-Dimensional Filter Controls */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Routine Selector Dropdown */}
+                    <div className="flex items-center gap-1 bg-slate-50 dark:bg-neutral-900 p-1 rounded-xl border border-slate-200 dark:border-neutral-700 text-xs font-bold">
+                      {(['All', 'Routine A', 'Routine B'] as const).map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => setSelectedRoutineFilter(r)}
+                          className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                            selectedRoutineFilter === r
+                              ? 'bg-white dark:bg-neutral-800 text-slate-900 dark:text-white shadow-xs'
+                              : 'text-slate-500 hover:text-slate-800 dark:hover:text-neutral-200'
+                          }`}
+                        >
+                          {r === 'All' ? (isAr ? 'الكل' : 'All') : r}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Exercise Selector */}
+                    <select
+                      aria-label="Filter chart by exercise"
+                      value={selectedExerciseFilter}
+                      onChange={(e) => setSelectedExerciseFilter(e.target.value)}
+                      className="text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-700 text-slate-800 dark:text-slate-200 focus:outline-hidden cursor-pointer"
                     >
-                      {tf === 'all' ? (isAr ? 'الكل' : 'All') : `${tf}d`}
-                    </button>
-                  ))}
+                      <option value="All">{isAr ? 'جميع التمارين' : 'All Exercises'}</option>
+                      {allUniqueExercises.map((exName) => (
+                        <option key={exName} value={exName}>
+                          {exName}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Timeframe Selector */}
+                    <div className="flex items-center p-0.5 bg-slate-100 dark:bg-neutral-900 rounded-xl border border-slate-200 dark:border-neutral-700 text-[11px] font-bold">
+                      {(['7', '30', '90', 'all'] as const).map((tf) => (
+                        <button
+                          key={tf}
+                          onClick={() => setSelectedTimeframe(tf)}
+                          className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+                            selectedTimeframe === tf
+                              ? 'bg-white dark:bg-neutral-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          {tf === 'all' ? (isAr ? 'الكل' : 'All') : `${tf}d`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Metric Phase Switcher */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-bold">
+                  <button
+                    onClick={() => setAnalyticsMetric('load_1rm')}
+                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                      analyticsMetric === 'load_1rm'
+                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Trophy size={13} className="text-amber-500" />
+                    <span>{isAr ? 'مسار الأوزان و 1RM المتوقع' : 'Working Load & Est. 1RM (kg)'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setAnalyticsMetric('volume')}
+                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                      analyticsMetric === 'volume'
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Zap size={13} className="text-emerald-500" />
+                    <span>{isAr ? 'إجمالي الحجم التدريبي (Tonnage)' : 'Session Volume Load (kg)'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setAnalyticsMetric('reps')}
+                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                      analyticsMetric === 'reps'
+                        ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/30'
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Flame size={13} className="text-sky-500" />
+                    <span>{isAr ? 'كثافة التكرارات (Reps Density)' : 'Rep Intensity & Total Sets'}</span>
+                  </button>
+                </div>
+
+                {/* Graph Visualization */}
+                <div className="h-72 sm:h-84 w-full pt-2">
+                  {chartData.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2">
+                      <Activity size={32} className="opacity-40 animate-pulse" />
+                      <p className="text-xs">{isAr ? 'لا توجد بيانات كافية مطابقة لهذا الفلتر' : 'No workout data logged matching this filter'}</p>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      {analyticsMetric === 'load_1rm' ? (
+                        /* Dual Line: Working Weight & Estimated 1RM */
+                        <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#262626' : '#f1f5f9'} />
+                          <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                          <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} unit="kg" />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: isDark ? '#18191D' : '#ffffff',
+                              borderColor: isDark ? '#333333' : '#e2e8f0',
+                              borderRadius: '16px',
+                              fontSize: '12px',
+                              boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                            }}
+                            formatter={(val: any, name: any) => [
+                              `${val} kg`,
+                              name === 'maxWeight' ? (isAr ? 'أقصى وزن للرفع' : 'Peak Working Weight') : (isAr ? 'الحد الأقصى التقديري (1RM)' : 'Estimated 1RM')
+                            ]}
+                          />
+                          <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                          <Line
+                            type="monotone"
+                            dataKey="maxWeight"
+                            name={isAr ? 'الوزن الفعلي' : 'Peak Weight'}
+                            stroke="#F59E0B"
+                            strokeWidth={3}
+                            dot={{ r: 4 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="est1RM"
+                            name={isAr ? '1RM التقديري' : 'Estimated 1RM'}
+                            stroke="#10B981"
+                            strokeWidth={2.5}
+                            strokeDasharray="4 4"
+                            dot={{ r: 3 }}
+                          />
+                        </LineChart>
+                      ) : analyticsMetric === 'volume' ? (
+                        /* Area Chart for Cumulative Tonnage Volume */
+                        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="colorEmeraldVol" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10B981" stopOpacity={0.4}/>
+                              <stop offset="95%" stopColor="#10B981" stopOpacity={0.0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#262626' : '#f1f5f9'} />
+                          <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                          <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: isDark ? '#18191D' : '#ffffff',
+                              borderColor: isDark ? '#333333' : '#e2e8f0',
+                              borderRadius: '16px',
+                              fontSize: '12px',
+                              boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                            }}
+                            formatter={(val: any) => [`${val} kg`, isAr ? 'الحجم الكلي' : 'Total Volume']}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="volume"
+                            name={isAr ? 'الحجم التدريبي' : 'Session Volume'}
+                            stroke="#10B981"
+                            strokeWidth={3}
+                            fillOpacity={1}
+                            fill="url(#colorEmeraldVol)"
+                          />
+                        </AreaChart>
+                      ) : (
+                        /* Bar / Line Hybrid for Reps & Set Density */
+                        <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#262626' : '#f1f5f9'} />
+                          <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                          <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: isDark ? '#18191D' : '#ffffff',
+                              borderColor: isDark ? '#333333' : '#e2e8f0',
+                              borderRadius: '16px',
+                              fontSize: '12px',
+                              boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                            }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                          <Bar
+                            dataKey="totalReps"
+                            name={isAr ? 'إجمالي التكرارات' : 'Total Reps'}
+                            fill="#0284C7"
+                            radius={[6, 6, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="maxReps"
+                            name={isAr ? 'أعلى تكرار بمجموعة' : 'Peak Reps / Set'}
+                            fill="#38BDF8"
+                            radius={[6, 6, 0, 0]}
+                          />
+                        </BarChart>
+                      )}
+                    </ResponsiveContainer>
+                  )}
                 </div>
               </div>
             </div>
-
-            {/* Recharts Area Chart */}
-            <div className="h-64 sm:h-80 w-full pt-4">
-              {chartData.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2">
-                  <Activity size={32} className="opacity-40 animate-pulse" />
-                  <p className="text-xs">{isAr ? 'لا توجد بيانات كافية لرسم المنحنى في هذه الفترة' : 'No workout data logged in this timeframe'}</p>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorEmerald" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10B981" stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor="#10B981" stopOpacity={0.0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#262626' : '#f1f5f9'} />
-                    <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                    <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: isDark ? '#18191D' : '#ffffff',
-                        borderColor: isDark ? '#333333' : '#e2e8f0',
-                        borderRadius: '16px',
-                        fontSize: '12px',
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey={analyticsMetric === 'maxReps' ? 'maxReps' : 'totalReps'}
-                      stroke="#10B981"
-                      strokeWidth={3}
-                      fillOpacity={1}
-                      fill="url(#colorEmerald)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-        </div>
       )}
     </div>
   )}
@@ -2136,10 +2641,14 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       )}
 
       {/* Exercise Preview Modal Pop-up */}
-      {previewExerciseName && (
+      {previewModalData && (
         <ExercisePreviewModal
-          exerciseName={previewExerciseName}
-          onClose={() => setPreviewExerciseName(null)}
+          exerciseName={previewModalData.name}
+          targetWeightKg={previewModalData.targetWeightKg}
+          previousWeightKg={previewModalData.previousWeightKg}
+          previousRepsSummary={previewModalData.previousRepsSummary}
+          targetReps={previewModalData.targetReps}
+          onClose={() => setPreviewModalData(null)}
           lang={lang}
         />
       )}

@@ -53,6 +53,7 @@ import { StreakFreezeModal } from './StreakFreezeModal';
 import { RewardStoreModal } from './RewardStoreModal';
 import { EmojiPicker } from './EmojiPicker';
 import { BulkExcuseLoggerModal } from './BulkExcuseLoggerModal';
+import { HabitAnalyticsDashboard } from './HabitAnalyticsDashboard';
 import { calculateHabitStats, calculateHabitScoreHistory } from '../utils/habitAnalytics';
 import { soundManager } from '../utils/soundEffects';
 import confetti from 'canvas-confetti';
@@ -1848,124 +1849,21 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
           SUB-PAGE 2: STATS & ANALYTICS
           ======================================================== */}
       {activeTab === 'stats' && (
-        <div className="space-y-4 animate-fadeIn">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white dark:bg-neutral-900 p-4 rounded-3xl border border-neutral-200 dark:border-neutral-800 shadow-xs">
-              <span className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider block mb-1">
-                {isAr ? 'إنجاز اليوم' : 'Completed Today'}
-              </span>
-              <div className="text-2xl font-bold text-neutral-900 dark:text-white font-mono">
-                {completedTodayCount} / {activeHabits.length}
-              </div>
-              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">{overallTodayRate}% {isAr ? 'نسبة الالتزام اليومية' : 'daily adherence'}</p>
-            </div>
-
-            <div className="bg-white dark:bg-neutral-900 p-4 rounded-3xl border border-neutral-200 dark:border-neutral-800 shadow-xs">
-              <span className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider block mb-1">
-                {isAr ? 'أطول سلسلة حالية' : 'Best Active Streak'}
-              </span>
-              <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 font-mono flex items-center gap-1">
-                <Flame size={20} className="fill-amber-500" />
-                {bestOverallStreak}{isAr ? ' يوم' : 'd'}
-              </div>
-              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">{isAr ? 'أفضل استمرارية مستمرة' : 'Consistent momentum'}</p>
-            </div>
-
-            <div className="bg-white dark:bg-neutral-900 p-4 rounded-3xl border border-neutral-200 dark:border-neutral-800 shadow-xs">
-              <span className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider block mb-1">
-                {isAr ? 'إجمالي العادات النشطة' : 'Active Habits'}
-              </span>
-              <div className="text-2xl font-bold text-neutral-900 dark:text-white font-mono">
-                {activeHabits.length}
-              </div>
-              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">{isAr ? 'تحت التتبع اليومي' : 'Under daily tracking'}</p>
-            </div>
-
-            <div className="bg-white dark:bg-neutral-900 p-4 rounded-3xl border border-neutral-200 dark:border-neutral-800 shadow-xs">
-              <span className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider block mb-1">
-                {isAr ? 'الأعذار والسياق الموثق' : 'Excused Context Days'}
-              </span>
-              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono flex items-center gap-1">
-                <Shield size={20} className="text-blue-500" />
-                {allLoggedExcuses.length}
-              </div>
-              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">{isAr ? 'أيام محمية بسياق رسمي' : 'Protected streak days'}</p>
-            </div>
-          </div>
-
-          {/* Context & Excuse Audit Log (سجل الأعذار والسياق الاستثنائي الشهري) */}
-          <div className="bg-white dark:bg-neutral-900 p-5 rounded-3xl border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-neutral-200 dark:border-neutral-800">
-              <div>
-                <h3 className="text-base font-bold text-neutral-900 dark:text-white flex items-center gap-2">
-                  <Shield size={18} className="text-blue-500" />
-                  <span>{isAr ? 'سجل الأعذار والسياق الظرفي الشهري (Context Audit Log)' : 'Monthly Context & Excuse Audit Log'}</span>
-                </h3>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                  {isAr 
-                    ? 'تحليل موضوعي للأيام التي توقفت فيها لظروف طارئة، زيارات، أو تركيز استثنائي على مشاريع أخرى لراحة الذهن وعدم النسيان.' 
-                    : 'Objective review of missed habit days protected by formal context excuses.'}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowBulkExcuseModal(true)}
-                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-500 hover:bg-blue-600 text-white shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
-              >
-                <Plus size={14} />
-                <span>{isAr ? 'تسجيل عذر لأيام سابقة' : 'Log Context Excuse'}</span>
-              </button>
-            </div>
-
-            {allLoggedExcuses.length === 0 ? (
-              <div className="p-8 text-center text-xs text-neutral-400 font-medium">
-                {isAr ? 'لا توجد أعذار أو سياق استثنائي مسجل حالياً. انقر على "تسجيل عذر لأيام سابقة" لتوثيق أسباب التوقف.' : 'No context excuses logged yet. Click "Log Context Excuse" to record reasons for missed days.'}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[500px] text-xs">
-                  <thead>
-                    <tr className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/50 text-[11px] font-bold text-neutral-500">
-                      <th className={`py-2.5 px-3 ${isAr ? 'text-right' : 'text-left'}`}>{isAr ? 'العادة' : 'Habit'}</th>
-                      <th className="py-2.5 px-3 text-center">{isAr ? 'التاريخ' : 'Date'}</th>
-                      <th className={`py-2.5 px-3 ${isAr ? 'text-right' : 'text-left'}`}>{isAr ? 'العذر الموثق / السياق' : 'Logged Context Excuse'}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 font-medium">
-                    {allLoggedExcuses.slice(0, 15).map((item, idx) => (
-                      <tr key={`excuse-audit-${idx}`} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
-                        <td className={`py-2.5 px-3 font-bold text-neutral-900 dark:text-white ${isAr ? 'text-right' : 'text-left'}`}>
-                          <span className="mr-1 rtl:mr-0 rtl:ml-1">{item.habitIcon}</span>
-                          <span>{item.habitTitle}</span>
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-mono text-neutral-500">
-                          {item.dateKey}
-                        </td>
-                        <td className={`py-2.5 px-3 text-blue-700 dark:text-blue-300 font-bold ${isAr ? 'text-right' : 'text-left'}`}>
-                          {item.excuse}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <div className="flex justify-center pt-2">
-            <button
-              onClick={() => {
-                setActiveTab('tracker');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className="bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 hover:bg-black dark:hover:bg-neutral-200 px-5 py-2.5 rounded-xl text-xs font-bold shadow-xs flex items-center gap-2 cursor-pointer"
-            >
-              <Check size={14} />
-              <span>{isAr ? 'العودة لشبكة تسجيل العادات اليومية' : 'Back to Daily Check-in Matrix'}</span>
-            </button>
-          </div>
-        </div>
+        <HabitAnalyticsDashboard
+          habits={habits}
+          activeHabits={activeHabits}
+          allLoggedExcuses={allLoggedExcuses}
+          todayIso={todayIso}
+          isAr={isAr}
+          onOpenDetail={(habit) => setSelectedHabitForDetail(habit)}
+          onOpenBulkExcuse={() => setShowBulkExcuseModal(true)}
+          onBackToMatrix={() => {
+            setActiveTab('tracker');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          getCategoryLabel={getCategoryLabel}
+          getColorClasses={getColorClasses}
+        />
       )}
 
       {/* ========================================================

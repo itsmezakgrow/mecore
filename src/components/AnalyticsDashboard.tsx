@@ -1020,32 +1020,59 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
     });
     const exerciseNames = Array.from(exSet).sort();
 
-    // Selected Exercise Progressive Overload Trajectory
+    // Selected Exercise Progressive Overload Trajectory & Estimated 1RM
     const targetExName = (selectedIronExercise || exerciseNames[0] || '').trim().toLowerCase();
-    const exerciseTrajectory: { date: string; maxWeight: number; totalReps: number; volume: number }[] = [];
+    const exerciseTrajectory: { date: string; maxWeight: number; totalReps: number; volume: number; est1RM: number }[] = [];
+
+    // Muscle Group Breakdown accumulators
+    const muscleGroupVolumeMap: Record<string, number> = {
+      Legs: 0,
+      Chest: 0,
+      Back: 0,
+      Shoulders: 0,
+      Arms: 0,
+      Core: 0
+    };
 
     sorted.forEach((w) => {
       let maxWeightInSession = 0;
       let totalRepsInSession = 0;
       let exVolInSession = 0;
+      let maxRepsAtPeakWeight = 0;
 
       w.exercises?.forEach((ex) => {
-        if (ex.name.trim().toLowerCase() === targetExName) {
-          ex.sets?.forEach((s) => {
-            const reps = Number(s.reps) || 0;
+        const cleanExName = ex.name.trim().toLowerCase();
+        
+        // Categorize for Muscle Volume Breakdown
+        let categoryKey = 'Chest';
+        if (cleanExName.includes('leg') || cleanExName.includes('squat')) categoryKey = 'Legs';
+        else if (cleanExName.includes('lat') || cleanExName.includes('row') || cleanExName.includes('back')) categoryKey = 'Back';
+        else if (cleanExName.includes('shoulder') || cleanExName.includes('lateral')) categoryKey = 'Shoulders';
+        else if (cleanExName.includes('curl') || cleanExName.includes('tricep') || cleanExName.includes('arm')) categoryKey = 'Arms';
+
+        ex.sets?.forEach((s) => {
+          const reps = Number(s.reps) || 0;
+          let wVal = 0;
+          if (typeof s.weight === 'number') wVal = s.weight;
+          else if (typeof s.weight === 'string') {
+            const num = parseFloat(s.weight.replace(/[^0-9.]/g, ''));
+            if (!isNaN(num)) wVal = num;
+          }
+
+          const setVol = reps * (wVal > 0 ? wVal : 1);
+          muscleGroupVolumeMap[categoryKey] = (muscleGroupVolumeMap[categoryKey] || 0) + setVol;
+
+          if (cleanExName === targetExName) {
             totalRepsInSession += reps;
-
-            let wVal = 0;
-            if (typeof s.weight === 'number') wVal = s.weight;
-            else if (typeof s.weight === 'string') {
-              const num = parseFloat(s.weight.replace(/[^0-9.]/g, ''));
-              if (!isNaN(num)) wVal = num;
+            if (wVal > maxWeightInSession) {
+              maxWeightInSession = wVal;
+              maxRepsAtPeakWeight = reps;
+            } else if (wVal === maxWeightInSession && reps > maxRepsAtPeakWeight) {
+              maxRepsAtPeakWeight = reps;
             }
-
-            if (wVal > maxWeightInSession) maxWeightInSession = wVal;
-            exVolInSession += reps * (wVal > 0 ? wVal : 1);
-          });
-        }
+            exVolInSession += setVol;
+          }
+        });
       });
 
       if (totalRepsInSession > 0) {
@@ -1053,19 +1080,39 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         const dObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
         const formattedDate = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' });
 
+        // Epley 1RM Formula: 1RM = Weight * (1 + Reps / 30)
+        const est1RM = maxWeightInSession > 0
+          ? Math.round(maxWeightInSession * (1 + (Math.min(12, maxRepsAtPeakWeight || 8) / 30)))
+          : 0;
+
         exerciseTrajectory.push({
           date: formattedDate,
           maxWeight: maxWeightInSession,
           totalReps: totalRepsInSession,
-          volume: Math.round(exVolInSession)
+          volume: Math.round(exVolInSession),
+          est1RM
         });
       }
     });
+
+    // Format Muscle Group Distribution for Chart
+    const muscleCategoryDistribution = Object.entries(muscleGroupVolumeMap)
+      .filter(([_, vol]) => vol > 0)
+      .map(([group, vol]) => ({
+        name: group === 'Legs' ? (isAr ? 'الأرجل' : 'Legs')
+            : group === 'Chest' ? (isAr ? 'الصدر' : 'Chest')
+            : group === 'Back' ? (isAr ? 'الظهر' : 'Back')
+            : group === 'Shoulders' ? (isAr ? 'الكتف' : 'Shoulders')
+            : group === 'Arms' ? (isAr ? 'الذراعين' : 'Arms')
+            : (isAr ? 'الجذع' : 'Core'),
+        volume: Math.round(vol)
+      }));
 
     return {
       volumeChart,
       exerciseNames,
       exerciseTrajectory,
+      muscleCategoryDistribution,
       totalVolume: grandVolume,
       totalWorkouts: workouts.length,
       peakVolume: maxSessionVol
@@ -3106,9 +3153,44 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                         name === 'maxWeight' ? (isAr ? 'أقصى وزن' : 'Peak Weight') : (isAr ? 'التكرارات' : 'Total Reps')
                       ]}
                     />
-                    <Line type="monotone" dataKey="maxWeight" stroke="#F59E0B" strokeWidth={3} dot={{ r: 5 }} />
-                    <Line type="monotone" dataKey="totalReps" stroke="#3B82F6" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 4 }} />
+                    <Line type="monotone" dataKey="maxWeight" name="maxWeight" stroke="#F59E0B" strokeWidth={3} dot={{ r: 5 }} />
+                    <Line type="monotone" dataKey="est1RM" name="est1RM" stroke="#10B981" strokeWidth={2.5} dot={{ r: 4 }} />
+                    <Line type="monotone" dataKey="totalReps" name="totalReps" stroke="#3B82F6" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
                   </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {/* Graph 3: Muscle Group Tonnage Distribution */}
+          <div className="p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-4">
+            <div className="space-y-0.5">
+              <h4 className="text-sm font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                <BarChart3 size={16} className="text-indigo-500" />
+                <span>{isAr ? 'توزيع الحجم التدريبي حسب المجموعات العضلية (Muscle Tonnage)' : 'Muscle Category Tonnage Breakdown'}</span>
+              </h4>
+              <p className="text-xs text-neutral-500">
+                {isAr ? 'إجمالي الكيلوجرامات المرفوعة مقسمة على عضلات الصدر، الأرجل، الظهر، الكتف، والذراعين.' : 'Cumulative load volume lifted across key muscle groups.'}
+              </p>
+            </div>
+
+            {ironAnalyticsData.muscleCategoryDistribution.length === 0 ? (
+              <div className="p-8 text-center border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-2xl text-xs text-neutral-400">
+                {isAr ? 'لا توجد بيانات عضلات كافية بعد.' : 'No muscle volume logged yet.'}
+              </div>
+            ) : (
+              <div className="h-60 w-full pt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={ironAnalyticsData.muscleCategoryDistribution} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#18191D', borderColor: '#333', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                      formatter={(val: any) => [`${val} kg`, isAr ? 'الحجم' : 'Tonnage']}
+                    />
+                    <Bar dataKey="volume" fill="#6366F1" radius={[8, 8, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             )}

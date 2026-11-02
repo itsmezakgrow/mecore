@@ -37,11 +37,11 @@ const DEFAULT_PRESET_TEMPLATES: WorkoutRoutineTemplate[] = [
     category: 'Full Body',
     description: 'Leg Press, Flat DB Bench, Lat Pulldown, Shoulder Press, Hammer Curls',
     exercises: [
-      { name: 'Leg Press', targetSets: 3, targetReps: 12, defaultWeight: '60' },
-      { name: 'Flat Dumbbell Bench Press', targetSets: 3, targetReps: 10, defaultWeight: '20' },
-      { name: 'Wide Grip Lat Pulldown', targetSets: 3, targetReps: 12, defaultWeight: '45' },
-      { name: 'Seated Dumbbell Shoulder Press', targetSets: 3, targetReps: 10, defaultWeight: '14' },
-      { name: 'Cable Rope Hammer Curls', targetSets: 3, targetReps: 12, defaultWeight: '18' },
+      { name: 'Leg Press', targetSets: 3, targetReps: 12, defaultWeight: '20' },
+      { name: 'Flat Dumbbell Bench Press', targetSets: 3, targetReps: 10, defaultWeight: '7.5' },
+      { name: 'Wide Grip Lat Pulldown', targetSets: 3, targetReps: 12, defaultWeight: '25' },
+      { name: 'Seated Dumbbell Shoulder Press', targetSets: 3, targetReps: 10, defaultWeight: '7.5' },
+      { name: 'Cable Rope Hammer Curls', targetSets: 3, targetReps: 12, defaultWeight: '12.5' },
     ]
   },
   {
@@ -50,10 +50,10 @@ const DEFAULT_PRESET_TEMPLATES: WorkoutRoutineTemplate[] = [
     category: 'Full Body',
     description: 'Goblet Squat, Seated Cable Row, Incline DB Bench, Lateral Raises, Tricep Rope Pushdown',
     exercises: [
-      { name: 'Goblet Squat', targetSets: 3, targetReps: 12, defaultWeight: '24' },
-      { name: 'Seated Cable Row', targetSets: 3, targetReps: 12, defaultWeight: '45' },
-      { name: 'Incline Dumbbell Bench Press', targetSets: 3, targetReps: 10, defaultWeight: '18' },
-      { name: 'Dumbbell Lateral Raises', targetSets: 3, targetReps: 15, defaultWeight: '8' },
+      { name: 'Goblet Squat', targetSets: 3, targetReps: 12, defaultWeight: '7.5' },
+      { name: 'Seated Cable Row', targetSets: 3, targetReps: 12, defaultWeight: '20' },
+      { name: 'Incline Dumbbell Bench Press', targetSets: 3, targetReps: 10, defaultWeight: '7.5' },
+      { name: 'Dumbbell Lateral Raises', targetSets: 3, targetReps: 15, defaultWeight: '2.5' },
       { name: 'Tricep Rope Pushdown', targetSets: 3, targetReps: 12, defaultWeight: '20' },
     ]
   }

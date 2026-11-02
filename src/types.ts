@@ -25,6 +25,10 @@ export interface WorkoutSet {
   completed: boolean;
   rpe?: number; // Rate of Perceived Exertion (1-10) optional
   notes?: string;
+  previousWeight?: number | string;
+  previousReps?: number;
+  targetWeight?: number | string;
+  targetReps?: number;
 }
 
 export interface WorkoutExercise {
@@ -35,6 +39,12 @@ export interface WorkoutExercise {
   notes?: string;
   restSeconds?: number;
   isAutoFilled?: boolean;
+  previousPerformanceSummary?: string;
+  nextTargetSummary?: string;
+  previousWeight?: number | string;
+  previousReps?: number;
+  targetWeight?: number | string;
+  targetReps?: number;
 }
 
 export interface WorkoutSession {
