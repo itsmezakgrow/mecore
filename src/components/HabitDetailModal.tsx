@@ -27,7 +27,7 @@ import {
   Bar,
   Cell,
 } from 'recharts';
-import { HabitItem, HabitRoutineTime } from '../types';
+import { HabitItem, HabitRoutineTime, GoalItem, ProjectItem } from '../types';
 import {
   calculateHabitScoreHistory,
   calculateDayOfWeekStats,
@@ -39,6 +39,8 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 interface HabitDetailModalProps {
   habit: HabitItem;
   isOpen: boolean;
+  goals?: GoalItem[];
+  projects?: ProjectItem[];
   onClose: () => void;
   onToggleDate: (habit: HabitItem, dateKey: string) => Promise<any>;
   onUpdateHabit: (id: string, updates: Partial<HabitItem>) => Promise<any>;
@@ -49,6 +51,8 @@ interface HabitDetailModalProps {
 export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   habit,
   isOpen,
+  goals = [],
+  projects = [],
   onClose,
   onToggleDate,
   onUpdateHabit,
@@ -80,6 +84,8 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   const [editIsMeasurable, setEditIsMeasurable] = useState(Boolean(habit.isMeasurable));
   const [editTargetValue, setEditTargetValue] = useState(habit.targetValue || 10);
   const [editUnit, setEditUnit] = useState(habit.unit || 'pages');
+  const [editGoalId, setEditGoalId] = useState<string>(habit.goalId || '');
+  const [editProjectId, setEditProjectId] = useState<string>(habit.projectId || '');
   const [frequencyMode, setFrequencyMode] = useState<'weekly' | 'specific_days'>(
     habit.frequencyType || (habit.targetDays && habit.targetDays.length > 0 ? 'specific_days' : 'weekly')
   );
@@ -235,6 +241,8 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
         isMeasurable: editIsMeasurable,
         targetValue: editIsMeasurable ? editTargetValue : undefined,
         unit: editIsMeasurable ? editUnit.trim() : undefined,
+        goalId: editGoalId || undefined,
+        projectId: editProjectId || undefined,
       });
       setActiveTab('score');
     } catch (err) {
@@ -333,12 +341,24 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                   {isAr ? `يبدأ في: ${habit.startDate}` : `Starts: ${habit.startDate}`}
                 </span>
               )}
-              {habit.snoozeUntil && habit.snoozeUntil > Date.now() && (
-                <span className="text-xs font-semibold text-amber-800 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700/60 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                  <Clock size={12} />
-                  {isAr ? `متوقف مؤقتاً حتى: ${new Date(habit.snoozeUntil).toLocaleDateString()}` : `Paused until ${new Date(habit.snoozeUntil).toLocaleDateString()}`}
-                </span>
-              )}
+              {habit.goalId && (() => {
+                const g = goals.find((goal) => goal.id === habit.goalId);
+                return g ? (
+                  <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <Target size={12} className="text-indigo-500" />
+                    <span>{isAr ? 'الهدف:' : 'Goal:'} {g.title}</span>
+                  </span>
+                ) : null;
+              })()}
+              {habit.projectId && (() => {
+                const p = projects.find((proj) => proj.id === habit.projectId);
+                return p ? (
+                  <span className="text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/60 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <span>📁</span>
+                    <span>{isAr ? 'المشروع:' : 'Project:'} {p.title}</span>
+                  </span>
+                ) : null;
+              })()}
             </div>
             <div className="flex items-center gap-2">
               <span className="text-2xl">{habit.icon || '🔥'}</span>
@@ -893,6 +913,65 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                     onChange={(e) => setEditStartDate(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-[#D3D1CB] dark:border-neutral-700 text-xs bg-white dark:bg-[#1E2025] text-neutral-900 dark:text-white focus:border-amber-500 focus:outline-none cursor-pointer font-mono"
                   />
+                </div>
+              </div>
+
+              {/* STRATEGIC GOAL & PROJECT LINKING (Action-based Progress Driver) */}
+              <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/25 rounded-2xl border border-indigo-200/60 dark:border-indigo-800/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                    <Target size={14} className="text-indigo-600 dark:text-indigo-400" />
+                    <span>{isAr ? 'ربط العادة بالأهداف الاستراتيجية والمشاريع' : 'Strategic Goal & Project Action Alignment'}</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/60 px-2 py-0.5 rounded-full font-mono">
+                    {isAr ? 'محرك الأفعال' : 'Lead Action Driver'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-[#2F3437] dark:text-white mb-1">
+                      {isAr ? 'الهدف الاستراتيجي المرتبط:' : 'Linked Goal (Objective):'}
+                    </label>
+                    <select
+                      value={editGoalId}
+                      onChange={(e) => setEditGoalId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-[#D3D1CB] dark:border-neutral-700 text-xs bg-white dark:bg-[#1E2025] text-neutral-900 dark:text-white focus:border-indigo-500 focus:outline-none cursor-pointer font-semibold"
+                    >
+                      <option value="">{isAr ? '-- غير مربوط بهدف (مستقل) --' : '-- Standalone (No linked goal) --'}</option>
+                      {goals.map((g) => (
+                        <option key={g.id || g.title} value={g.id || g.title}>
+                          🎯 {g.title}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-1">
+                      {isAr
+                        ? 'كل إنجاز يومي لهذه العادة يساهم في مؤشر الأفعال (Action Progress) نحو هذا الهدف.'
+                        : 'Every daily check-in counts as an executed lead action advancing this goal.'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#2F3437] dark:text-white mb-1">
+                      {isAr ? 'المشروع المرتبط:' : 'Linked Project:'}
+                    </label>
+                    <select
+                      value={editProjectId}
+                      onChange={(e) => setEditProjectId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-[#D3D1CB] dark:border-neutral-700 text-xs bg-white dark:bg-[#1E2025] text-neutral-900 dark:text-white focus:border-indigo-500 focus:outline-none cursor-pointer font-semibold"
+                    >
+                      <option value="">{isAr ? '-- غير مربوط بمشروع --' : '-- No linked project --'}</option>
+                      {projects.map((p) => (
+                        <option key={p.id || p.title} value={p.id || p.title}>
+                          📁 {p.title}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-1">
+                      {isAr ? 'ربط الروتين اليومي بأحد مشاريعك التنفيذية.' : 'Associate this habit with one of your active projects.'}
+                    </p>
+                  </div>
                 </div>
               </div>
 

@@ -40,9 +40,12 @@ import {
   Moon,
   Archive,
   Dumbbell,
-  ArrowRight
+  ArrowRight,
+  Folder,
+  CheckSquare,
+  X
 } from 'lucide-react';
-import { HabitItem, HabitRoutineTime, RewardItem, DailySleepLog, SleepScheduleConfig, WorkoutSession } from '../types';
+import { HabitItem, HabitRoutineTime, RewardItem, DailySleepLog, SleepScheduleConfig, WorkoutSession, GoalItem, ProjectItem } from '../types';
 import { SleepWakeTracker } from './SleepWakeTracker';
 import { HabitDetailModal } from './HabitDetailModal';
 import { ConfirmModal } from './ConfirmModal';
@@ -63,6 +66,8 @@ interface HabitTrackerProps {
   rewards?: RewardItem[];
   sleepLogs?: DailySleepLog[];
   sleepConfig?: SleepScheduleConfig | null;
+  goals?: GoalItem[];
+  projects?: ProjectItem[];
   workouts?: WorkoutSession[];
   onNavigateModule?: (module: string) => void;
   onAddHabit: (habit: Omit<HabitItem, 'id'>) => Promise<any>;
@@ -76,6 +81,7 @@ interface HabitTrackerProps {
   onRemoveFreeze?: (habit: HabitItem, dateKey: string) => Promise<any>;
   onBulkUpdateHabits?: (ids: string[], updates: Partial<HabitItem>) => Promise<any>;
   onBulkDeleteHabits?: (ids: string[]) => Promise<any>;
+  onUpdateGoal?: (id: string, updates: Partial<GoalItem>) => Promise<any>;
   onOpenExportModal?: () => void;
   onAddReward?: (reward: Omit<RewardItem, 'id'>) => Promise<any>;
   onClaimReward?: (rewardId: string) => Promise<any>;
@@ -707,6 +713,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   rewards = [],
   sleepLogs = [],
   sleepConfig = null,
+  goals = [],
+  projects = [],
   onAddHabit,
   onToggleHabit,
   onUpdateHabit,
@@ -718,6 +726,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   onRemoveFreeze,
   onBulkUpdateHabits,
   onBulkDeleteHabits,
+  onUpdateGoal,
   onOpenExportModal,
   onAddReward,
   onClaimReward,
@@ -751,6 +760,12 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   const [selectedHabitIds, setSelectedHabitIds] = useState<string[]>([]);
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [showBulkGoalModal, setShowBulkGoalModal] = useState(false);
+  const [selectedBulkGoalId, setSelectedBulkGoalId] = useState('');
+  const [showBulkProjectModal, setShowBulkProjectModal] = useState(false);
+  const [selectedBulkProjectId, setSelectedBulkProjectId] = useState('');
+  const [newGoalId, setNewGoalId] = useState('');
+  const [newProjectId, setNewProjectId] = useState('');
   
   // Routine filter & modals
   const [selectedRoutineFilter, setSelectedRoutineFilter] = useState<'all' | 'morning' | 'afternoon' | 'evening'>('all');
@@ -887,12 +902,16 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
         isMeasurable: newIsMeasurable,
         targetValue: newIsMeasurable ? newTargetValue : undefined,
         unit: newIsMeasurable ? (newUnit.trim() || 'pages') : undefined,
+        goalId: newGoalId || undefined,
+        projectId: newProjectId || undefined,
       });
 
       setNewTitle('');
       setNewIcon('🔥');
       setNewRoutineTime('anytime');
       setNewQuestion('');
+      setNewGoalId('');
+      setNewProjectId('');
       setNewStartDate(new Date().toISOString().split('T')[0]);
       setNewFrequencyType('weekly');
       setNewIsMeasurable(false);
@@ -937,6 +956,43 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
           setPromptWorkoutModal({ habit, date: isoDate });
         }
       } catch {}
+    }
+
+    // 2-Way sync with Sleep & Wake station
+    if (onSaveSleepLog && sleepConfig) {
+      if (sleepConfig.wakeHabitId && habit.id === sleepConfig.wakeHabitId) {
+        const existingLog = (sleepLogs || []).find((l) => l.date === isoDate);
+        onSaveSleepLog({
+          date: isoDate,
+          targetBedtime: sleepConfig.targetBedtime,
+          targetWakeTime: sleepConfig.targetWakeTime,
+          actualBedtime: existingLog?.actualBedtime || sleepConfig.targetBedtime,
+          actualWakeTime: !isAlreadyDone ? sleepConfig.targetWakeTime : '09:00',
+          wokeOnTarget: !isAlreadyDone,
+          sleptOnTarget: existingLog ? existingLog.sleptOnTarget : true,
+          sleepDurationMinutes: existingLog?.sleepDurationMinutes || 480,
+          quality: existingLog?.quality || 'good',
+          energyLevel: existingLog?.energyLevel || (!isAlreadyDone ? 5 : 3),
+          createdAt: existingLog?.createdAt || Date.now(),
+          updatedAt: Date.now(),
+        }).catch(() => {});
+      } else if (sleepConfig.sleepHabitId && habit.id === sleepConfig.sleepHabitId) {
+        const existingLog = (sleepLogs || []).find((l) => l.date === isoDate);
+        onSaveSleepLog({
+          date: isoDate,
+          targetBedtime: sleepConfig.targetBedtime,
+          targetWakeTime: sleepConfig.targetWakeTime,
+          actualBedtime: !isAlreadyDone ? sleepConfig.targetBedtime : '01:30',
+          actualWakeTime: existingLog?.actualWakeTime || sleepConfig.targetWakeTime,
+          wokeOnTarget: existingLog ? existingLog.wokeOnTarget : true,
+          sleptOnTarget: !isAlreadyDone,
+          sleepDurationMinutes: existingLog?.sleepDurationMinutes || 480,
+          quality: existingLog?.quality || 'good',
+          energyLevel: existingLog?.energyLevel || (!isAlreadyDone ? 5 : 3),
+          createdAt: existingLog?.createdAt || Date.now(),
+          updatedAt: Date.now(),
+        }).catch(() => {});
+      }
     }
   };
 
@@ -1363,6 +1419,27 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
               </span>
             )}
           </button>
+
+          {isSelectMode && (
+            <button
+              onClick={() => {
+                if (selectedHabitIds.length === activeHabits.length) {
+                  setSelectedHabitIds([]);
+                } else {
+                  setSelectedHabitIds(activeHabits.map((h) => h.id!).filter(Boolean));
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700 cursor-pointer shadow-xs"
+              title={isAr ? 'تحديد كافة العادات النشطة بنقرة واحدة' : 'Select or deselect all active habits'}
+            >
+              <CheckCheck size={14} className={selectedHabitIds.length === activeHabits.length ? 'text-emerald-500' : ''} />
+              <span>
+                {selectedHabitIds.length === activeHabits.length
+                  ? (isAr ? 'إلغاء تحديد الكل' : 'Deselect All')
+                  : (isAr ? `تحديد الكل (${activeHabits.length})` : `Select All (${activeHabits.length})`)}
+              </span>
+            </button>
+          )}
 
           <button
             id="btn-add-habit-modal"
@@ -1837,6 +1914,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
           <SleepWakeTracker
             sleepLogs={sleepLogs || []}
             sleepConfig={sleepConfig || null}
+            habits={activeHabits}
+            onToggleHabit={handleToggle}
             onSaveSleepLog={onSaveSleepLog || (async () => {})}
             onSaveSleepConfig={onSaveSleepConfig || (async () => {})}
             onDeleteSleepLog={onDeleteSleepLog}
@@ -1852,6 +1931,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
         <HabitAnalyticsDashboard
           habits={habits}
           activeHabits={activeHabits}
+          goals={goals}
           allLoggedExcuses={allLoggedExcuses}
           todayIso={todayIso}
           isAr={isAr}
@@ -2239,6 +2319,46 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
+                  <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-200 mb-1 flex items-center gap-1">
+                    <Target size={13} className="text-emerald-500" />
+                    <span>{isAr ? 'ربط بهدف استراتيجي (Lead Action)' : 'Link to Goal (Lead Action)'}</span>
+                  </label>
+                  <select
+                    value={newGoalId}
+                    onChange={(e) => setNewGoalId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none text-xs cursor-pointer font-semibold"
+                  >
+                    <option value="">{isAr ? '-- غير مربوط بهدف مباشر --' : '-- Standalone (No Goal) --'}</option>
+                    {goals.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        🎯 {g.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-200 mb-1 flex items-center gap-1">
+                    <Folder size={13} className="text-blue-500" />
+                    <span>{isAr ? 'ربط بمشروع (Project)' : 'Link to Project'}</span>
+                  </label>
+                  <select
+                    value={newProjectId}
+                    onChange={(e) => setNewProjectId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none text-xs cursor-pointer font-semibold"
+                  >
+                    <option value="">{isAr ? '-- بدون مشروع --' : '-- Standalone (No Project) --'}</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        📁 {p.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
                   <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-200 mb-1">
                     {isAr ? 'اللون المميز' : 'Color Accent'}
                   </label>
@@ -2283,6 +2403,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
         <HabitDetailModal
           habit={selectedHabitForDetail}
           isOpen={Boolean(selectedHabitForDetail)}
+          goals={goals}
+          projects={projects}
           onClose={() => setSelectedHabitForDetail(null)}
           onToggleDate={onToggleHabit}
           onUpdateHabit={onUpdateHabit}
@@ -2323,12 +2445,178 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
         onSelectAll={handleSelectAll}
         onDeselectAll={handleDeselectAll}
         onBulkEdit={() => setShowBulkEditModal(true)}
+        onAddToGoal={() => {
+          setSelectedBulkGoalId(goals[0]?.id || '');
+          setShowBulkGoalModal(true);
+        }}
+        onAddToProject={() => {
+          setSelectedBulkProjectId(projects[0]?.id || '');
+          setShowBulkProjectModal(true);
+        }}
         onBulkDelete={() => setShowBulkDeleteModal(true)}
         onBulkExport={handleBulkExport}
         onMakeHighPriority={handleBulkMakeHighPriority}
         itemTypeLabel="habits"
         lang={lang}
       />
+
+      {/* Bulk Add to Goal Modal */}
+      {showBulkGoalModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-md p-5 sm:p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="flex items-center gap-2">
+                <Target size={18} className="text-indigo-600" />
+                <h3 className="text-sm sm:text-base font-bold text-neutral-900 dark:text-white">
+                  {isAr ? `ربط ${selectedHabitIds.length} عادات بهدف استراتيجي` : `Link ${selectedHabitIds.length} Habits to Goal`}
+                </h3>
+              </div>
+              <button onClick={() => setShowBulkGoalModal(false)} className="text-neutral-400 hover:text-neutral-600 cursor-pointer">
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-600 dark:text-neutral-400">
+              {isAr
+                ? 'اختر الهدف الذي ترغب في ربط هذه العادات به. سيتم احتساب إنجاز هذه العادات كأفعال تنفيذيّة يومية تقربك من تحقيق الهدف.'
+                : 'Select the goal to link these habits with. Check-ins will count as lead actions driving goal completion.'}
+            </p>
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-200 mb-1">
+                {isAr ? 'الهدف الاستراتيجي:' : 'Strategic Goal:'}
+              </label>
+              <select
+                value={selectedBulkGoalId}
+                onChange={(e) => setSelectedBulkGoalId(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-xs font-semibold text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                {goals.length === 0 ? (
+                  <option value="">{isAr ? 'لا توجد أهداف متاحة حالياً' : 'No active goals available'}</option>
+                ) : (
+                  goals.map((g) => (
+                    <option key={g.id || g.title} value={g.id || g.title}>
+                      🎯 {g.title} ({g.category})
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setShowBulkGoalModal(false)}
+                className="px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 text-xs font-semibold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 cursor-pointer"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                disabled={!selectedBulkGoalId}
+                onClick={async () => {
+                  if (!selectedBulkGoalId || selectedHabitIds.length === 0) return;
+                  if (onBulkUpdateHabits) {
+                    await onBulkUpdateHabits(selectedHabitIds, { goalId: selectedBulkGoalId });
+                  }
+                  if (onUpdateGoal) {
+                    const targetGoal = goals.find((g) => g.id === selectedBulkGoalId);
+                    if (targetGoal) {
+                      const currentLinked = targetGoal.linkedHabitIds || [];
+                      const combined = Array.from(new Set([...currentLinked, ...selectedHabitIds]));
+                      await onUpdateGoal(targetGoal.id!, { linkedHabitIds: combined });
+                    }
+                  }
+                  soundManager.play('check');
+                  confetti({ particleCount: 35, spread: 50 });
+                  setShowBulkGoalModal(false);
+                  setSelectedHabitIds([]);
+                  setIsSelectMode(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check size={14} />
+                <span>{isAr ? 'تأكيد الربط بالهدف' : 'Confirm Link to Goal'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Add to Project Modal */}
+      {showBulkProjectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-md p-5 sm:p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="flex items-center gap-2">
+                <Folder size={18} className="text-blue-500" />
+                <h3 className="text-sm sm:text-base font-bold text-neutral-900 dark:text-white">
+                  {isAr ? `ربط ${selectedHabitIds.length} عادات بمشروع` : `Link ${selectedHabitIds.length} Habits to Project`}
+                </h3>
+              </div>
+              <button onClick={() => setShowBulkProjectModal(false)} className="text-neutral-400 hover:text-neutral-600 cursor-pointer">
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-600 dark:text-neutral-400">
+              {isAr
+                ? 'اختر المشروع الذي ترغب في تعيين هذه العادات كإجراءات روتينية داعمة له.'
+                : 'Select the project to associate these habit routines with.'}
+            </p>
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-200 mb-1">
+                {isAr ? 'المشروع المستهدف:' : 'Target Project:'}
+              </label>
+              <select
+                value={selectedBulkProjectId}
+                onChange={(e) => setSelectedBulkProjectId(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-xs font-semibold text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              >
+                {projects.length === 0 ? (
+                  <option value="">{isAr ? 'لا توجد مشاريع متاحة حالياً' : 'No active projects available'}</option>
+                ) : (
+                  projects.map((p) => (
+                    <option key={p.id || p.title} value={p.id || p.title}>
+                      📁 {p.title}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setShowBulkProjectModal(false)}
+                className="px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 text-xs font-semibold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 cursor-pointer"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                disabled={!selectedBulkProjectId}
+                onClick={async () => {
+                  if (!selectedBulkProjectId || selectedHabitIds.length === 0) return;
+                  if (onBulkUpdateHabits) {
+                    await onBulkUpdateHabits(selectedHabitIds, { projectId: selectedBulkProjectId });
+                  }
+                  soundManager.play('check');
+                  confetti({ particleCount: 35, spread: 50 });
+                  setShowBulkProjectModal(false);
+                  setSelectedHabitIds([]);
+                  setIsSelectMode(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check size={14} />
+                <span>{isAr ? 'تأكيد الربط بالمشروع' : 'Confirm Link to Project'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bulk Edit Modal */}
       <BulkEditModal

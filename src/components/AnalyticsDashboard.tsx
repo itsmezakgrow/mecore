@@ -39,7 +39,14 @@ import {
   EyeOff,
   Filter,
   Check,
-  RotateCcw
+  RotateCcw,
+  Sun,
+  Sunrise,
+  Plus,
+  Minus,
+  Save,
+  Edit3,
+  Sliders
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -63,7 +70,7 @@ import {
   LineChart,
   Line,
 } from 'recharts';
-import { TaskItem, HabitItem, ProjectItem, WeeklyPlanSlot, ChecklistGroup, GoalItem, ModuleType, FocusSession, ReviewEntry, DailyBlockItem, WorkoutSession, ModuleLifecycleEvent, DailySleepLog } from '../types';
+import { TaskItem, HabitItem, ProjectItem, WeeklyPlanSlot, ChecklistGroup, GoalItem, ModuleType, FocusSession, ReviewEntry, DailyBlockItem, WorkoutSession, ModuleLifecycleEvent, DailySleepLog, SleepScheduleConfig } from '../types';
 import { deleteFocusSession } from '../services/firestoreService';
 import { getDisabledModules, getModuleLifecycleHistory, ALL_CONTROLLABLE_MODULES } from '../utils/moduleLifecycle';
 
@@ -79,6 +86,8 @@ interface AnalyticsDashboardProps {
   dailyBlocks?: DailyBlockItem[];
   workouts?: WorkoutSession[];
   sleepLogs?: DailySleepLog[];
+  sleepConfig?: SleepScheduleConfig | null;
+  onUpdateGoal?: (id: string, updates: Partial<GoalItem>) => Promise<any>;
   moduleLifecycleEvents?: ModuleLifecycleEvent[];
   appStartDate?: string;
   onOpenReviewModal?: (tab: 'weekly' | 'monthly' | 'archive') => void;
@@ -143,6 +152,8 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   dailyBlocks = [],
   workouts = [],
   sleepLogs = [],
+  sleepConfig = null,
+  onUpdateGoal,
   moduleLifecycleEvents = [],
   appStartDate,
   onOpenReviewModal,
@@ -155,6 +166,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'habits' | 'tasks' | 'focus' | 'sleep' | 'blocks' | 'reviews' | 'goals' | 'iron'>(initialTab as any);
   const [selectedIronExercise, setSelectedIronExercise] = useState<string>('Flat Dumbbell Bench Press');
   const [focusStatsPeriod, setFocusStatsPeriod] = useState<'day' | 'week' | 'month' | 'year'>('week');
+  const [sleepAnalyticsRange, setSleepAnalyticsRange] = useState<'7d' | '14d' | '30d'>('14d');
+  const [manualGoalProgress, setManualGoalProgress] = useState<Record<string, number>>({});
+  const [savingGoalId, setSavingGoalId] = useState<string | null>(null);
 
   // Executive Multi-Trend Scope & Timeframe controls
   const [timeScope, setTimeScope] = useState<'week' | 'month' | 'year' | 'all'>('week');
@@ -1118,6 +1132,172 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
       peakVolume: maxSessionVol
     };
   }, [workouts, selectedIronExercise, isAr]);
+
+  // ----------------------------------------------------
+  // Sleep & Rhythm Analytics Telemetry Data
+  // ----------------------------------------------------
+  const sleepAnalyticsData = useMemo(() => {
+    const sorted = [...(sleepLogs || [])].sort((a, b) => a.date.localeCompare(b.date));
+    const targetDurationMins = (sleepConfig?.targetDurationHours || 8) * 60;
+    
+    // Filter by sleepAnalyticsRange
+    const rangeDays = sleepAnalyticsRange === '7d' ? 7 : sleepAnalyticsRange === '14d' ? 14 : 30;
+    const baseDate = new Date();
+    const cutoffDate = new Date();
+    cutoffDate.setDate(baseDate.getDate() - rangeDays);
+    const cutoffIso = cutoffDate.toISOString().split('T')[0];
+    const filteredLogs = sorted.filter(l => l.date >= cutoffIso);
+    const activeLogSet = filteredLogs.length > 0 ? filteredLogs : sorted;
+
+    if (activeLogSet.length === 0) {
+      return {
+        total: 0,
+        avgDurationHours: 0,
+        avgDurationMins: 0,
+        bedtimeAdherencePct: 0,
+        wakeAdherencePct: 0,
+        avgEnergy: 0,
+        sleepDebtMinutes: 0,
+        qualityDistribution: [] as { name: string; value: number; color: string }[],
+        chartData: [] as any[],
+        logs: [] as DailySleepLog[]
+      };
+    }
+
+    let totalDuration = 0;
+    let sleptOnTargetCount = 0;
+    let wokeOnTargetCount = 0;
+    let totalEnergy = 0;
+    const qualityCounts: Record<string, number> = { excellent: 0, good: 0, fair: 0, poor: 0 };
+    let cumulativeDebtMins = 0;
+
+    const chartData = activeLogSet.map((log) => {
+      const dur = log.sleepDurationMinutes || 480;
+      totalDuration += dur;
+      if (log.sleptOnTarget) sleptOnTargetCount++;
+      if (log.wokeOnTarget) wokeOnTargetCount++;
+      totalEnergy += log.energyLevel || 3;
+      if (log.quality) qualityCounts[log.quality] = (qualityCounts[log.quality] || 0) + 1;
+
+      cumulativeDebtMins += (targetDurationMins - dur);
+
+      const parts = log.date.split('-');
+      const dObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      const formattedDate = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' });
+
+      return {
+        date: formattedDate,
+        rawDate: log.date,
+        durationHours: Math.round((dur / 60) * 10) / 10,
+        targetHours: Math.round((targetDurationMins / 60) * 10) / 10,
+        energy: log.energyLevel || 3,
+        quality: log.quality || 'good',
+        sleptOnTarget: log.sleptOnTarget,
+        wokeOnTarget: log.wokeOnTarget,
+        bedtime: log.actualBedtime,
+        wakeTime: log.actualWakeTime,
+      };
+    });
+
+    const setTotal = activeLogSet.length;
+    const avgDur = totalDuration / setTotal;
+    const qualityDistribution = [
+      { name: isAr ? 'ممتاز' : 'Excellent', value: qualityCounts['excellent'] || 0, color: '#10B981' },
+      { name: isAr ? 'جيد' : 'Good', value: qualityCounts['good'] || 0, color: '#3B82F6' },
+      { name: isAr ? 'مقبول' : 'Fair', value: qualityCounts['fair'] || 0, color: '#F59E0B' },
+      { name: isAr ? 'ضعيف' : 'Poor', value: qualityCounts['poor'] || 0, color: '#EF4444' },
+    ].filter(q => q.value > 0);
+
+    return {
+      total: setTotal,
+      avgDurationHours: Math.floor(avgDur / 60),
+      avgDurationMins: Math.round(avgDur % 60),
+      bedtimeAdherencePct: Math.round((sleptOnTargetCount / setTotal) * 100),
+      wakeAdherencePct: Math.round((wokeOnTargetCount / setTotal) * 100),
+      avgEnergy: Math.round((totalEnergy / setTotal) * 10) / 10,
+      sleepDebtMinutes: cumulativeDebtMins,
+      qualityDistribution,
+      chartData,
+      logs: activeLogSet.slice().reverse()
+    };
+  }, [sleepLogs, sleepConfig, sleepAnalyticsRange, isAr]);
+
+  // ----------------------------------------------------
+  // Strategic Goals & Habit Lead-Action Telemetry
+  // ----------------------------------------------------
+  const goalsAnalyticsData = useMemo(() => {
+    const activeGoals = goals.filter((g) => !g.archived);
+
+    // Calculate lead actions completed per goal from habit history
+    const goalLeadActions: Record<
+      string,
+      { totalExecutions: number; thisWeekExecutions: number; linkedHabits: HabitItem[] }
+    > = {};
+
+    // Last 7 days ISO list
+    const last7Days: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      last7Days.push(d.toISOString().split('T')[0]);
+    }
+
+    activeGoals.forEach((g) => {
+      goalLeadActions[g.id] = { totalExecutions: 0, thisWeekExecutions: 0, linkedHabits: [] };
+    });
+
+    habits.forEach((h) => {
+      const gId = h.goalId;
+      if (gId && goalLeadActions[gId]) {
+        goalLeadActions[gId].linkedHabits.push(h);
+        if (h.history) {
+          Object.entries(h.history).forEach(([dateKey, done]) => {
+            if (done) {
+              goalLeadActions[gId].totalExecutions++;
+              if (last7Days.includes(dateKey)) {
+                goalLeadActions[gId].thisWeekExecutions++;
+              }
+            }
+          });
+        }
+      }
+    });
+
+    const totalMilestones = activeGoals.reduce((acc, g) => acc + (g.milestones?.length || 0), 0);
+    const completedMilestones = activeGoals.reduce(
+      (acc, g) => acc + (g.milestones?.filter((m) => m.completed).length || 0),
+      0
+    );
+    const avgProgress =
+      activeGoals.length > 0
+        ? Math.round(activeGoals.reduce((acc, g) => acc + (g.progress || 0), 0) / activeGoals.length)
+        : 0;
+    const totalWeeklyLeadActions = Object.values(goalLeadActions).reduce(
+      (acc, val) => acc + val.thisWeekExecutions,
+      0
+    );
+
+    return {
+      activeGoals,
+      totalActive: activeGoals.length,
+      avgProgress,
+      totalMilestones,
+      completedMilestones,
+      totalWeeklyLeadActions,
+      goalLeadActions,
+    };
+  }, [goals, habits]);
+
+  const handleSaveGoalProgress = async (goalId: string) => {
+    const targetProgress = manualGoalProgress[goalId];
+    if (targetProgress === undefined || !onUpdateGoal) return;
+    setSavingGoalId(goalId);
+    try {
+      await onUpdateGoal(goalId, { progress: targetProgress });
+    } finally {
+      setSavingGoalId(null);
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
@@ -2861,6 +3041,570 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
       )}
 
       {/* ========================================================
+          TAB 5: SLEEP & CIRCADIAN RHYTHM TELEMETRY
+          ======================================================== */}
+      {activeTab === 'sleep' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header Card */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 flex items-center justify-center font-bold">
+                <Moon size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold text-neutral-900 dark:text-white">
+                  {isAr ? 'تحليلات النوم والإيقاع اليومي (Sleep & Circadian Rhythm)' : 'Sleep & Circadian Rhythm Telemetry'}
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  {isAr 
+                    ? 'تتبع ساعات النوم الفعلية مقابل المستهدفة، الالتزام بمواعيد النوم واليقظة، ومعدل الطاقة الصباحي.' 
+                    : 'Track actual vs target sleep duration, bedtime/wake adherence, and morning energy levels.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-xl text-xs font-bold border border-neutral-200 dark:border-neutral-700">
+                {(['7d', '14d', '30d'] as const).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setSleepAnalyticsRange(r)}
+                    className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                      sleepAnalyticsRange === r
+                        ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
+                        : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {r === '7d' ? (isAr ? '٧ أيام' : '7D') : r === '14d' ? (isAr ? '١٤ يوماً' : '14D') : (isAr ? '٣٠ يوماً' : '30D')}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => onNavigateModule('habits')}
+                className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-2xs"
+              >
+                <Moon size={13} />
+                <span>{isAr ? 'محطة تتبع النوم' : 'Open Sleep Tracker'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Cards Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase flex items-center gap-1">
+                <Clock size={11} className="text-purple-500" />
+                <span>{isAr ? 'متوسط مدة النوم' : 'Avg Sleep Duration'}</span>
+              </span>
+              <p className="text-xl font-black font-mono text-neutral-900 dark:text-white">
+                {sleepAnalyticsData.avgDurationHours}h {sleepAnalyticsData.avgDurationMins}m
+              </p>
+              <span className="text-[10px] text-neutral-500 font-mono">
+                {isAr ? `المستهدف: ${sleepConfig?.targetDurationHours || 8} ساعات` : `Target: ${sleepConfig?.targetDurationHours || 8} hrs`}
+              </span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase flex items-center gap-1">
+                <Moon size={11} className="text-indigo-500" />
+                <span>{isAr ? 'التزام موعد النوم' : 'Bedtime Adherence'}</span>
+              </span>
+              <p className="text-xl font-black font-mono text-indigo-600 dark:text-indigo-400">
+                {sleepAnalyticsData.bedtimeAdherencePct}%
+              </p>
+              <span className="text-[10px] text-neutral-500 font-mono">
+                {isAr ? `المستهدف: ${sleepConfig?.targetBedtime || '23:30'}` : `Target: ${sleepConfig?.targetBedtime || '23:30'}`}
+              </span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase flex items-center gap-1">
+                <Sun size={11} className="text-amber-500" />
+                <span>{isAr ? 'التزام موعد الاستيقاظ' : 'Wake Adherence'}</span>
+              </span>
+              <p className="text-xl font-black font-mono text-amber-500">
+                {sleepAnalyticsData.wakeAdherencePct}%
+              </p>
+              <span className="text-[10px] text-neutral-500 font-mono">
+                {isAr ? `المستهدف: ${sleepConfig?.targetWakeTime || '07:00'}` : `Target: ${sleepConfig?.targetWakeTime || '07:00'}`}
+              </span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase flex items-center gap-1">
+                <Zap size={11} className="text-emerald-500" />
+                <span>{isAr ? 'معدل الطاقة الصباحي' : 'Avg Morning Energy'}</span>
+              </span>
+              <p className="text-xl font-black font-mono text-emerald-600 dark:text-emerald-400">
+                {sleepAnalyticsData.avgEnergy} / 5
+              </p>
+              <span className="text-[10px] text-neutral-500 font-mono">
+                {sleepAnalyticsData.total} {isAr ? 'ليلة مسجلة' : 'nights logged'}
+              </span>
+            </div>
+          </div>
+
+          {/* Sync info banner */}
+          <div className="p-3.5 rounded-2xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 text-xs flex items-center justify-between gap-3 text-purple-900 dark:text-purple-200">
+            <div className="flex items-center gap-2">
+              <Sparkles size={16} className="text-purple-500 shrink-0" />
+              <span>
+                {isAr
+                  ? 'مزامنة ثنائية مفعلة: تسجيل النوم والاستيقاظ في Sleep & Wake يربط مباشرة مع عادات الاستيقاظ والنوم في مصفوفة العادات.'
+                  : 'Two-Way Sync Active: Logging sleep or wake events automatically checks off linked habits in your Habit matrix.'}
+              </span>
+            </div>
+            {sleepConfig?.wakeHabitId && sleepConfig?.sleepHabitId && (
+              <span className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-[10px] font-bold shrink-0">
+                {isAr ? 'عادات مربوطة ✓' : 'Habits Linked ✓'}
+              </span>
+            )}
+          </div>
+
+          {/* Graph: Duration vs Target */}
+          <div className="p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                  <TrendingUp size={16} className="text-purple-500" />
+                  <span>{isAr ? 'ساعات النوم الفعلية مقابل المستهدفة (Sleep Duration)' : 'Actual Sleep Duration vs Target'}</span>
+                </h4>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {isAr ? 'مقارنة ساعات النوم اليومية مع الحد المستهدف المبرمج' : 'Daily sleep hours plotted against your circadian target'}
+                </p>
+              </div>
+            </div>
+
+            {sleepAnalyticsData.chartData.length === 0 ? (
+              <div className="p-12 text-center border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-2xl text-xs text-neutral-400 space-y-2">
+                <Moon size={32} className="mx-auto text-neutral-300 dark:text-neutral-700" />
+                <p>{isAr ? 'لا توجد سجلات نوم كافية لرسم المنحنى البياني بعد.' : 'No sleep logs recorded yet to render chart.'}</p>
+              </div>
+            ) : (
+              <div className="h-64 sm:h-72 w-full pt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={sleepAnalyticsData.chartData}>
+                    <defs>
+                      <linearGradient id="sleepDurationGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                    <YAxis unit="h" domain={[0, 12]} tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#18191D', borderColor: '#333', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                      formatter={(val: any, name: any) => [
+                        `${val} ${isAr ? 'ساعات' : 'hours'}`,
+                        name === 'durationHours' ? (isAr ? 'ساعات النوم' : 'Actual Sleep') : (isAr ? 'المستهدف' : 'Target')
+                      ]}
+                    />
+                    <Area type="monotone" dataKey="durationHours" name="durationHours" stroke="#8B5CF6" strokeWidth={3} fillOpacity={1} fill="url(#sleepDurationGrad)" />
+                    <Line type="monotone" dataKey="targetHours" name="targetHours" stroke="#F59E0B" strokeWidth={2} strokeDasharray="4 4" dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {/* Recent Sleep Logs Table */}
+          <div className="bg-white dark:bg-[#18191D] p-5 sm:p-6 rounded-3xl border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
+              <h3 className="text-sm font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                <Moon size={16} className="text-purple-500" />
+                <span>{isAr ? 'سجل جلسات النوم الأخيرة' : 'Recent Sleep Log Chronicles'}</span>
+              </h3>
+              <span className="text-xs font-mono text-neutral-400">
+                {sleepAnalyticsData.logs.length} {isAr ? 'سجل' : 'entries'}
+              </span>
+            </div>
+
+            {sleepAnalyticsData.logs.length === 0 ? (
+              <div className="py-8 text-center text-xs text-neutral-400">
+                {isAr ? 'لم تسجل أي نوم بعد. توجه إلى متتبع العادات وسجل موعد نومك واستيقاظك!' : 'No sleep logs yet. Log your sleep from the Habit tracker!'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-start">
+                  <thead>
+                    <tr className="border-b border-neutral-100 dark:border-neutral-800 text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <th className="py-2.5 px-3 text-start">{isAr ? 'التاريخ' : 'Date'}</th>
+                      <th className="py-2.5 px-3 text-start">{isAr ? 'وقت النوم' : 'Bedtime'}</th>
+                      <th className="py-2.5 px-3 text-start">{isAr ? 'الاستيقاظ' : 'Wake-up'}</th>
+                      <th className="py-2.5 px-3 text-start">{isAr ? 'المدة' : 'Duration'}</th>
+                      <th className="py-2.5 px-3 text-center">{isAr ? 'طاقة الصباح' : 'Energy'}</th>
+                      <th className="py-2.5 px-3 text-end">{isAr ? 'حالة الالتزام' : 'Target Status'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/80">
+                    {sleepAnalyticsData.logs.slice(0, 10).map((log) => {
+                      const durH = Math.floor((log.sleepDurationMinutes || 0) / 60);
+                      const durM = (log.sleepDurationMinutes || 0) % 60;
+                      return (
+                        <tr key={log.id || log.date} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40 transition-colors">
+                          <td className="py-2.5 px-3 font-semibold text-neutral-900 dark:text-white font-mono">
+                            {log.date}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-neutral-600 dark:text-neutral-300">
+                            {log.actualBedtime || '--:--'}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-neutral-600 dark:text-neutral-300">
+                            {log.actualWakeTime || '--:--'}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono font-bold text-purple-600 dark:text-purple-400">
+                            {durH}h {durM}m
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-mono">
+                              ⚡ {log.energyLevel || 3}/5
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-end">
+                            <div className="inline-flex items-center gap-1.5">
+                              {log.sleptOnTarget && (
+                                <span className="px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold">
+                                  🌙 {isAr ? 'نوم بالوقت' : 'Bed OK'}
+                                </span>
+                              )}
+                              {log.wokeOnTarget && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] font-bold">
+                                  ☀️ {isAr ? 'يقظة بالوقت' : 'Wake OK'}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          TAB 6: STRATEGIC GOALS & LEAD ACTIONS TELEMETRY
+          ======================================================== */}
+      {activeTab === 'goals' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header Card */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center justify-center font-bold">
+                <Target size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold text-neutral-900 dark:text-white">
+                  {isAr ? 'تحليلات الأهداف الاستراتيجية والمؤشرات الرائدة (Lead Actions)' : 'Strategic Goals & Lead Actions Telemetry'}
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  {isAr 
+                    ? 'ربط العادات اليومية بالأهداف الاستراتيجية: كل عادة هي خطوة قيادية (Lead Measure) تدفع النتيجة الكبرى إلى الأمام.' 
+                    : 'Connect daily habits to high-level goals: habits act as daily lead actions driving lag goal results.'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigateModule('goals')}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-2xs self-start sm:self-auto"
+            >
+              <Target size={14} />
+              <span>{isAr ? 'فتح مركز الأهداف' : 'Open Goals Hub'}</span>
+            </button>
+          </div>
+
+          {/* Metric Cards Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase">{isAr ? 'الأهداف النشطة' : 'Active Goals'}</span>
+              <p className="text-xl font-black font-mono text-neutral-900 dark:text-white">{goalsAnalyticsData.totalActive}</p>
+              <span className="text-[10px] text-neutral-500 font-mono">{isAr ? 'تحت التنفيذ الاستراتيجي' : 'strategic targets'}</span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase">{isAr ? 'إجراءات قيادية هذا الأسبوع' : 'Lead Actions (Week)'}</span>
+              <p className="text-xl font-black font-mono text-emerald-600 dark:text-emerald-400">
+                {goalsAnalyticsData.totalWeeklyLeadActions}
+              </p>
+              <span className="text-[10px] text-neutral-500 font-mono">{isAr ? 'تكرار عادة مربوطة بهدف' : 'linked habit reps completed'}</span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase">{isAr ? 'متوسط التقدم الكلي' : 'Average Progress'}</span>
+              <p className="text-xl font-black font-mono text-indigo-600 dark:text-indigo-400">
+                {goalsAnalyticsData.avgProgress}%
+              </p>
+              <div className="w-full h-1 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden mt-1">
+                <div className="h-full bg-indigo-600 rounded-full" style={{ width: `${goalsAnalyticsData.avgProgress}%` }} />
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase">{isAr ? 'المحطات المنجزة' : 'Milestones Velocity'}</span>
+              <p className="text-xl font-black font-mono text-amber-500">
+                {goalsAnalyticsData.completedMilestones} / {goalsAnalyticsData.totalMilestones}
+              </p>
+              <span className="text-[10px] text-neutral-500 font-mono">
+                {goalsAnalyticsData.totalMilestones > 0 
+                  ? `${Math.round((goalsAnalyticsData.completedMilestones / goalsAnalyticsData.totalMilestones) * 100)}% ${isAr ? 'مكتملة' : 'done'}` 
+                  : (isAr ? 'لا محطات' : 'no milestones')}
+              </span>
+            </div>
+          </div>
+
+          {/* Interactive Goals Breakdown with Lead Action Telemetry & Manual Progress Stepper */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
+                <Target size={14} className="text-indigo-500" />
+                <span>{isAr ? 'الأهداف الاستراتيجية، العادات المربوطة والتحكم المباشر في التقدم' : 'Strategic Goals, Linked Lead Habits & Progress Controls'}</span>
+              </h4>
+            </div>
+
+            {goalsAnalyticsData.activeGoals.length === 0 ? (
+              <div className="p-12 text-center border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-2xl text-xs text-neutral-400 space-y-2">
+                <Target size={32} className="mx-auto text-neutral-300 dark:text-neutral-700" />
+                <p>{isAr ? 'لا توجد أهداف استراتيجية نشطة حالياً. أنشئ أهدافاً واربطها بالعادات اليومية!' : 'No active goals yet. Create goals and link daily habits as lead actions!'}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {goalsAnalyticsData.activeGoals.map((goal) => {
+                  const leadData = goalsAnalyticsData.goalLeadActions[goal.id] || { totalExecutions: 0, thisWeekExecutions: 0, linkedHabits: [] };
+                  const currentProg = manualGoalProgress[goal.id] !== undefined ? manualGoalProgress[goal.id] : (goal.progress || 0);
+                  const isModified = manualGoalProgress[goal.id] !== undefined && manualGoalProgress[goal.id] !== (goal.progress || 0);
+
+                  return (
+                    <div
+                      key={goal.id}
+                      className="p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-4"
+                    >
+                      {/* Top Row: Title, Category, Priority */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-neutral-100 dark:border-neutral-800">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-xl">🎯</span>
+                          <div>
+                            <h4 className="text-sm font-extrabold text-neutral-900 dark:text-white">
+                              {goal.title}
+                            </h4>
+                            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-neutral-500">
+                              <span className="px-2 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-800 font-semibold">
+                                {goal.category || 'General'}
+                              </span>
+                              {goal.targetDate && (
+                                <span className="font-mono">
+                                  {isAr ? 'تاريخ الهدف:' : 'Target:'} {goal.targetDate}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                          <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border ${
+                            goal.status === 'Achieved'
+                              ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 text-emerald-700 dark:text-emerald-300'
+                              : goal.status === 'On Track'
+                              ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 text-blue-700 dark:text-blue-300'
+                              : 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 text-amber-700 dark:text-amber-300'
+                          }`}>
+                            {goal.status || 'Active'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Interactive Manual Progress Control Row */}
+                      <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-neutral-900/60 border border-neutral-200 dark:border-neutral-800 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <Sliders size={15} className="text-indigo-500" />
+                            <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
+                              {isAr ? 'نسبة التقدم وإمكانية التعديل اليدوي:' : 'Goal Progress & Manual Adjustment:'}
+                            </span>
+                            <span className="text-xs font-mono font-black text-indigo-600 dark:text-indigo-400">
+                              {currentProg}%
+                            </span>
+                          </div>
+
+                          {/* Quick Stepper Buttons & Save */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = Math.max(0, currentProg - 10);
+                                setManualGoalProgress((prev) => ({ ...prev, [goal.id]: next }));
+                              }}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-xs font-bold hover:bg-neutral-100 cursor-pointer text-neutral-700 dark:text-neutral-300"
+                            >
+                              -10%
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = Math.max(0, currentProg - 5);
+                                setManualGoalProgress((prev) => ({ ...prev, [goal.id]: next }));
+                              }}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-xs font-bold hover:bg-neutral-100 cursor-pointer text-neutral-700 dark:text-neutral-300"
+                            >
+                              -5%
+                            </button>
+
+                            {/* Direct Number Input */}
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={currentProg}
+                              onChange={(e) => {
+                                const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                setManualGoalProgress((prev) => ({ ...prev, [goal.id]: val }));
+                              }}
+                              className="w-14 px-2 py-1 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-xs font-mono font-bold text-center text-neutral-900 dark:text-white"
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = Math.min(100, currentProg + 5);
+                                setManualGoalProgress((prev) => ({ ...prev, [goal.id]: next }));
+                              }}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-xs font-bold hover:bg-neutral-100 cursor-pointer text-neutral-700 dark:text-neutral-300"
+                            >
+                              +5%
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = Math.min(100, currentProg + 10);
+                                setManualGoalProgress((prev) => ({ ...prev, [goal.id]: next }));
+                              }}
+                              className="px-2 py-1 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-xs font-bold hover:bg-neutral-100 cursor-pointer text-neutral-700 dark:text-neutral-300"
+                            >
+                              +10%
+                            </button>
+
+                            {isModified && (
+                              <button
+                                type="button"
+                                disabled={savingGoalId === goal.id}
+                                onClick={() => handleSaveGoalProgress(goal.id)}
+                                className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer animate-pulse"
+                              >
+                                <Save size={12} />
+                                <span>{savingGoalId === goal.id ? (isAr ? 'حفظ...' : 'Saving...') : (isAr ? 'حفظ' : 'Save')}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="w-full h-2 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-300"
+                            style={{ width: `${currentProg}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Linked Habits (Lead Measures) */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
+                            <Zap size={13} className="text-amber-500" />
+                            <span>{isAr ? 'العادات اليومية المرتبطة بهذا الهدف (المقاييس القيادية Lead Actions):' : 'Linked Daily Habits (Lead Actions):'}</span>
+                          </span>
+                          <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                            {leadData.thisWeekExecutions} {isAr ? 'تنفيذ هذا الأسبوع' : 'actions completed this week'}
+                          </span>
+                        </div>
+
+                        {leadData.linkedHabits.length === 0 ? (
+                          <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-900/40 border border-dashed border-neutral-200 dark:border-neutral-800 text-xs text-neutral-400 flex items-center justify-between">
+                            <span>{isAr ? 'لا توجد عادة مربوطة بهذا الهدف بعد. يمكنك ربط العادات من إعدادات العادة أو شريط التحديد المتعدد!' : 'No habits linked to this goal yet. Link habits from habit settings or bulk select toolbar!'}</span>
+                            <button
+                              onClick={() => onNavigateModule('habits')}
+                              className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                            >
+                              {isAr ? 'ربط عادة الآن' : 'Link Habit'}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {leadData.linkedHabits.map((h) => {
+                              const isDoneToday = Boolean(h.history && h.history[todayStr]);
+                              const totalCompletions = h.history ? Object.values(h.history).filter(Boolean).length : 0;
+                              return (
+                                <div
+                                  key={h.id}
+                                  className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs ${
+                                    isDoneToday
+                                      ? 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800'
+                                      : 'bg-white dark:bg-neutral-800/80 border-neutral-200 dark:border-neutral-700'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-base">{h.icon || '🔥'}</span>
+                                    <div className="min-w-0">
+                                      <span className="font-bold block truncate text-neutral-900 dark:text-white">
+                                        {h.title}
+                                      </span>
+                                      <span className="text-[10px] text-neutral-500 font-mono">
+                                        🔥 {h.streak || 0}d streak • {totalCompletions} reps
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                                    isDoneToday
+                                      ? 'bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300'
+                                      : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-500'
+                                  }`}>
+                                    {isDoneToday ? (isAr ? 'مكتملة اليوم ✓' : 'Done Today ✓') : (isAr ? 'قيد الانتظار' : 'Pending')}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Milestones Checklist summary if present */}
+                      {goal.milestones && goal.milestones.length > 0 && (
+                        <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 text-xs">
+                          <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block mb-1.5">
+                            {isAr ? 'المحطات الرئيسية (Milestones):' : 'Key Milestones:'}
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            {goal.milestones.map((m, mIdx) => (
+                              <div
+                                key={m.id || mIdx}
+                                className="flex items-center gap-2 p-1.5 rounded-lg bg-neutral-50 dark:bg-neutral-900/50 text-[11px]"
+                              >
+                                <span className={m.completed ? 'text-emerald-500' : 'text-neutral-400'}>
+                                  {m.completed ? '✓' : '○'}
+                                </span>
+                                <span className={`truncate ${m.completed ? 'line-through text-neutral-400' : 'text-neutral-800 dark:text-neutral-200'}`}>
+                                  {m.title}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
           TAB 7: DAILY BLOCKS FLOW TELEMETRY
           ======================================================== */}
       {activeTab === 'blocks' && (
@@ -2999,6 +3743,183 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          TAB: AUDIT & PERIODIC REVIEWS HUB
+          ======================================================== */}
+      {activeTab === 'reviews' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header Card */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 flex items-center justify-center font-bold">
+                <BookOpen size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold text-neutral-900 dark:text-white">
+                  {isAr ? 'مركز التحليل والتدقيق الدوري (Executive Audit Hub)' : 'Executive Audit Hub & Periodic Reviews'}
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  {isAr 
+                    ? 'المراجعة الأسبوعية والشهرية المنظمة لتشريح الأداء، اكتشاف العقبات ومضاعفة الإنتاجية.' 
+                    : 'Systematic weekly and monthly reviews to audit performance, diagnose bottlenecks, and compound momentum.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <button
+                onClick={() => onOpenReviewModal ? onOpenReviewModal('weekly') : onNavigateModule('reflections')}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-2xs"
+              >
+                <BookOpen size={13} />
+                <span>{isAr ? 'إجراء المراجعة الأسبوعية' : 'Start Weekly Audit'}</span>
+              </button>
+              <button
+                onClick={() => onOpenReviewModal ? onOpenReviewModal('monthly') : onNavigateModule('reflections')}
+                className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-2xs"
+              >
+                <Award size={13} />
+                <span>{isAr ? 'المراجعة الشهرية' : 'Monthly Audit'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Review Status Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Weekly Audit Card */}
+            <div className="p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold">
+                    📅
+                  </span>
+                  <div>
+                    <h4 className="text-sm font-bold text-neutral-900 dark:text-white">
+                      {isAr ? 'المراجعة الأسبوعية' : 'Weekly Review'}
+                    </h4>
+                    <span className="text-[11px] text-neutral-500 font-mono">
+                      {reviewStatus.currentWeekKey}
+                    </span>
+                  </div>
+                </div>
+
+                <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border ${
+                  reviewStatus.hasCompletedWeekly
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 text-amber-700 dark:text-amber-300 animate-pulse'
+                }`}>
+                  {reviewStatus.hasCompletedWeekly ? (isAr ? 'مكتملة ✓' : 'Completed ✓') : (isAr ? 'مستحقة الآن' : 'Pending')}
+                </span>
+              </div>
+
+              <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                {isAr
+                  ? 'مراجعة أسبوعية سريعة لتقييم العادات المكتملة، نسب إنجاز المهام، وفلترة العقبات للأسبوع القادم.'
+                  : 'Synthesize last week performance across habits, tasks, focus sessions, and course-correct for next week.'}
+              </p>
+
+              <button
+                onClick={() => onOpenReviewModal ? onOpenReviewModal('weekly') : onNavigateModule('reflections')}
+                className="w-full py-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/40 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>{reviewStatus.hasCompletedWeekly ? (isAr ? 'عرض / تعديل المراجعة' : 'View / Edit Audit') : (isAr ? 'إجراء المراجعة الأسبوعية الآن' : 'Perform Audit Now')}</span>
+                <ArrowRight size={13} className="rtl:rotate-180" />
+              </button>
+            </div>
+
+            {/* Monthly Audit Card */}
+            <div className="p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="p-2 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 font-bold">
+                    🏆
+                  </span>
+                  <div>
+                    <h4 className="text-sm font-bold text-neutral-900 dark:text-white">
+                      {isAr ? 'المراجعة الشهرية الشاملة' : 'Monthly Strategic Review'}
+                    </h4>
+                    <span className="text-[11px] text-neutral-500 font-mono">
+                      {reviewStatus.currentMonthKey}
+                    </span>
+                  </div>
+                </div>
+
+                <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border ${
+                  reviewStatus.hasCompletedMonthly
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 text-amber-700 dark:text-amber-300'
+                }`}>
+                  {reviewStatus.hasCompletedMonthly ? (isAr ? 'مكتملة ✓' : 'Completed ✓') : (isAr ? 'مستحقة' : 'Pending')}
+                </span>
+              </div>
+
+              <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                {isAr
+                  ? 'تدقيق عميق في مسار الأهداف الكبرى، معدل التوالي التراكمي، وتقييم التحول الشامل.'
+                  : 'Deep executive reflection on high-level goal progress, compounding habits, and mindset recalibration.'}
+              </p>
+
+              <button
+                onClick={() => onOpenReviewModal ? onOpenReviewModal('monthly') : onNavigateModule('reflections')}
+                className="w-full py-2.5 rounded-xl border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/40 hover:bg-purple-100 text-purple-700 dark:text-purple-300 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>{reviewStatus.hasCompletedMonthly ? (isAr ? 'عرض / تعديل المراجعة' : 'View / Edit Audit') : (isAr ? 'إجراء المراجعة الشهرية الآن' : 'Perform Monthly Audit')}</span>
+                <ArrowRight size={13} className="rtl:rotate-180" />
+              </button>
+            </div>
+          </div>
+
+          {/* Past Review Chronicles Table */}
+          <div className="bg-white dark:bg-[#18191D] p-5 sm:p-6 rounded-3xl border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
+              <h3 className="text-sm font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                <History size={16} className="text-purple-500" />
+                <span>{isAr ? 'أرشيف وسجل المراجعات الدورية السابقة' : 'Past Review Chronicles & Archive'}</span>
+              </h3>
+              <span className="text-xs font-mono text-neutral-400">
+                {reviews.length} {isAr ? 'مراجعة' : 'audits'}
+              </span>
+            </div>
+
+            {reviews.length === 0 ? (
+              <div className="py-8 text-center text-xs text-neutral-400 space-y-2">
+                <BookOpen size={28} className="mx-auto text-neutral-300 dark:text-neutral-700" />
+                <p>{isAr ? 'لم تسجل أي مراجعات دورية بعد. ابدأ مراجعتك الأسبوعية الأولى!' : 'No periodic audits completed yet. Start your first weekly review!'}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {reviews.map((rev) => (
+                  <div
+                    key={rev.id || `${rev.type}-${rev.periodKey}`}
+                    className="p-3.5 rounded-2xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-lg">{rev.type === 'monthly' ? '🏆' : '📅'}</span>
+                      <div>
+                        <span className="font-bold text-neutral-900 dark:text-white block">
+                          {rev.type === 'monthly' ? (isAr ? 'المراجعة الشهرية' : 'Monthly Audit') : (isAr ? 'المراجعة الأسبوعية' : 'Weekly Audit')} ({rev.periodKey})
+                        </span>
+                        <span className="text-[10px] text-neutral-400 font-mono">
+                          {new Date(rev.createdAt).toLocaleDateString()}
+                          {rev.satisfactionRating && ` • ${isAr ? 'التقييم:' : 'Rating:'} ${rev.satisfactionRating}/5 ⭐`}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => onOpenReviewModal ? onOpenReviewModal(rev.type) : onNavigateModule('reflections')}
+                      className="px-3 py-1.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-xs font-bold hover:bg-neutral-100 cursor-pointer text-neutral-800 dark:text-neutral-200 self-start sm:self-auto"
+                    >
+                      {isAr ? 'عرض التفاصيل' : 'View Details'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

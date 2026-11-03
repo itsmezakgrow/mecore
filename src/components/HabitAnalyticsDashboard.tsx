@@ -35,12 +35,13 @@ import {
   ChevronRight,
   Sparkles,
 } from 'lucide-react';
-import { HabitItem, HabitRoutineTime } from '../types';
+import { HabitItem, HabitRoutineTime, GoalItem } from '../types';
 import { calculateHabitStats, isHabitDateFrozen } from '../utils/habitAnalytics';
 
 interface HabitAnalyticsDashboardProps {
   habits: HabitItem[];
   activeHabits: HabitItem[];
+  goals?: GoalItem[];
   allLoggedExcuses: { habitTitle: string; habitIcon: string; dateKey: string; excuse: string }[];
   todayIso: string;
   isAr: boolean;
@@ -68,6 +69,7 @@ interface DailyTrendPoint {
 export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = ({
   habits,
   activeHabits,
+  goals = [],
   allLoggedExcuses,
   todayIso,
   isAr,
@@ -82,6 +84,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedRoutine, setSelectedRoutine] = useState<string>('All');
   const [selectedHabitId, setSelectedHabitId] = useState<string>('All');
+  const [selectedGoalId, setSelectedGoalId] = useState<string>('All');
   const [metricMode, setMetricMode] = useState<'percentage' | 'count'>('percentage');
   const [showMovingAverage, setShowMovingAverage] = useState<boolean>(true);
 
@@ -119,7 +122,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
     return dates;
   }, [timeRange]);
 
-  // Filtered habits list based on Category, Routine, and Habit Selection
+  // Filtered habits list based on Category, Routine, Habit, and Goal Selection
   const filteredHabits = useMemo(() => {
     return activeHabits.filter((h) => {
       const matchesCategory = selectedCategory === 'All' || h.category === selectedCategory;
@@ -128,9 +131,10 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
         (selectedRoutine === 'anytime' && (!h.routineTime || h.routineTime === 'anytime')) ||
         h.routineTime === selectedRoutine;
       const matchesHabit = selectedHabitId === 'All' || h.id === selectedHabitId;
-      return matchesCategory && matchesRoutine && matchesHabit;
+      const matchesGoal = selectedGoalId === 'All' || h.goalId === selectedGoalId;
+      return matchesCategory && matchesRoutine && matchesHabit && matchesGoal;
     });
-  }, [activeHabits, selectedCategory, selectedRoutine, selectedHabitId]);
+  }, [activeHabits, selectedCategory, selectedRoutine, selectedHabitId, selectedGoalId]);
 
   // Trend data calculation for the primary line / area chart
   const trendData = useMemo(() => {
@@ -497,7 +501,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
         </div>
 
         {/* Dropdown Filters Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {/* Category Filter */}
           <div className="space-y-1">
             <label className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider flex items-center gap-1">
@@ -534,6 +538,26 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
               <option value="afternoon">🌤️ {isAr ? 'بعد الظهر' : 'Afternoon'}</option>
               <option value="evening">🌙 {isAr ? 'مسائي' : 'Evening'}</option>
               <option value="anytime">⚡ {isAr ? 'أي وقت خلال اليوم' : 'Anytime'}</option>
+            </select>
+          </div>
+
+          {/* Goal Filter */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider flex items-center gap-1">
+              <Target size={12} className="text-emerald-500" />
+              <span>{isAr ? 'الهدف الاستراتيجي' : 'Strategic Goal'}</span>
+            </label>
+            <select
+              value={selectedGoalId}
+              onChange={(e) => setSelectedGoalId(e.target.value)}
+              className="w-full bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white text-xs rounded-xl px-3 py-2 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer truncate"
+            >
+              <option value="All">{isAr ? 'كل الأهداف (بدون فلترة)' : 'All Goals (No Filter)'}</option>
+              {goals.map((g) => (
+                <option key={g.id} value={g.id}>
+                  🎯 {g.title}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -1119,6 +1143,12 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
                               {habit.routineTime && (
                                 <span className="text-[10px] text-neutral-500">
                                   {habit.routineTime === 'morning' ? '☀️' : habit.routineTime === 'afternoon' ? '🌤️' : habit.routineTime === 'evening' ? '🌙' : '⚡'}
+                                </span>
+                              )}
+                              {habit.goalId && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                                  <Target size={10} />
+                                  <span>{goals.find((g) => g.id === habit.goalId)?.title || (isAr ? 'هدف استراتيجي' : 'Goal')}</span>
                                 </span>
                               )}
                             </div>

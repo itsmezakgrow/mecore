@@ -2355,6 +2355,8 @@ export default function App() {
                   dailyBlocks={dailyBlocks}
                   workouts={workouts}
                   sleepLogs={sleepLogs}
+                  sleepConfig={sleepConfig}
+                  onUpdateGoal={handleUpdateGoal}
                   moduleLifecycleEvents={moduleLifecycleEvents}
                   appStartDate={appStartDate}
                   onOpenReviewModal={handleOpenReviewModal}
@@ -2383,6 +2385,8 @@ export default function App() {
               {activeModule === 'habits' && (
                 <HabitTracker
                   habits={habits}
+                  goals={goals.filter((g) => !g.archived)}
+                  projects={projects.filter((p) => !p.archived)}
                   rewards={rewards}
                   sleepLogs={sleepLogs}
                   sleepConfig={sleepConfig}
@@ -2399,6 +2403,7 @@ export default function App() {
                   onUpdateDailyValue={updateHabitDailyValue}
                   onBulkUpdateHabits={handleBulkUpdateHabits}
                   onBulkDeleteHabits={handleBulkDeleteHabits}
+                  onUpdateGoal={handleUpdateGoal}
                   onOpenExportModal={() => setShowExportModal(true)}
                   onAddReward={handleAddReward}
                   onClaimReward={handleClaimReward}

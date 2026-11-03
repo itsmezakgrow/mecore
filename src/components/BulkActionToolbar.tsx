@@ -11,7 +11,9 @@ import {
   Tag, 
   Calendar,
   AlertCircle,
-  Timer
+  Timer,
+  Target,
+  Folder
 } from 'lucide-react';
 
 interface BulkActionToolbarProps {
@@ -25,6 +27,8 @@ interface BulkActionToolbarProps {
   onMakeHighPriority?: () => void;
   onBulkSendToPomodoro?: () => void;
   onMoveToToday?: () => void;
+  onAddToGoal?: () => void;
+  onAddToProject?: () => void;
   itemTypeLabel?: string;
   lang?: 'en' | 'ar';
 }
@@ -40,6 +44,8 @@ export const BulkActionToolbar: React.FC<BulkActionToolbarProps> = ({
   onMakeHighPriority,
   onBulkSendToPomodoro,
   onMoveToToday,
+  onAddToGoal,
+  onAddToProject,
   itemTypeLabel = 'items',
   lang = 'en',
 }) => {
@@ -110,6 +116,30 @@ export const BulkActionToolbar: React.FC<BulkActionToolbarProps> = ({
             >
               <Flame size={13} className="text-rose-400" />
               <span>{isAr ? 'أولوية قصوى' : 'High Priority'}</span>
+            </button>
+          )}
+
+          {/* Add / Link to Goal */}
+          {onAddToGoal && (
+            <button
+              onClick={onAddToGoal}
+              className="px-3 py-1.5 rounded-xl bg-indigo-500/25 hover:bg-indigo-500/40 text-indigo-200 border border-indigo-400/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              title={isAr ? 'ربط كافة العناصر المحددة بهدف استراتيجي' : 'Link selected items to a strategic Goal'}
+            >
+              <Target size={13} className="text-indigo-400" />
+              <span>{isAr ? 'ربط بهدف 🎯' : 'Add to Goal 🎯'}</span>
+            </button>
+          )}
+
+          {/* Add / Link to Project */}
+          {onAddToProject && (
+            <button
+              onClick={onAddToProject}
+              className="px-3 py-1.5 rounded-xl bg-blue-500/25 hover:bg-blue-500/40 text-blue-200 border border-blue-400/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              title={isAr ? 'ربط كافة العناصر المحددة بمشروع' : 'Link selected items to a Project'}
+            >
+              <Folder size={13} className="text-blue-400" />
+              <span>{isAr ? 'ربط بمشروع 📁' : 'Add to Project 📁'}</span>
             </button>
           )}
 

@@ -19,14 +19,19 @@ import {
   Check,
   X,
   BatteryCharging,
-  Info
+  Info,
+  Target,
+  Flame,
+  ArrowRight
 } from 'lucide-react';
-import { DailySleepLog, SleepScheduleConfig } from '../types';
+import { DailySleepLog, SleepScheduleConfig, HabitItem } from '../types';
 import { soundManager } from '../utils/soundEffects';
 
 interface SleepWakeTrackerProps {
   sleepLogs: DailySleepLog[];
   sleepConfig: SleepScheduleConfig | null;
+  habits?: HabitItem[];
+  onToggleHabit?: (habit: HabitItem, dateKey: string) => Promise<any>;
   onSaveSleepLog: (log: Omit<DailySleepLog, 'id'>) => Promise<any>;
   onSaveSleepConfig: (config: Partial<SleepScheduleConfig>) => Promise<any>;
   onDeleteSleepLog?: (id: string) => Promise<any>;
@@ -37,6 +42,8 @@ interface SleepWakeTrackerProps {
 export const SleepWakeTracker: React.FC<SleepWakeTrackerProps> = ({
   sleepLogs,
   sleepConfig,
+  habits = [],
+  onToggleHabit,
   onSaveSleepLog,
   onSaveSleepConfig,
   onDeleteSleepLog,
@@ -84,6 +91,8 @@ export const SleepWakeTracker: React.FC<SleepWakeTrackerProps> = ({
   const [cfgBedtime, setCfgBedtime] = useState(currentConfig.targetBedtime);
   const [cfgWakeTime, setCfgWakeTime] = useState(currentConfig.targetWakeTime);
   const [cfgTargetHours, setCfgTargetHours] = useState(currentConfig.targetDurationHours);
+  const [cfgWakeHabitId, setCfgWakeHabitId] = useState(currentConfig.wakeHabitId || '');
+  const [cfgSleepHabitId, setCfgSleepHabitId] = useState(currentConfig.sleepHabitId || '');
 
   // Week offset for 7-day strip (0 = this week, -1 = last week)
   const [weekOffset, setWeekOffset] = useState(0);
@@ -142,6 +151,27 @@ export const SleepWakeTracker: React.FC<SleepWakeTrackerProps> = ({
     return `${h}h ${m}m`;
   };
 
+  // Helper to sync habit status when sleep/wake is updated
+  const syncWakeHabit = async (dateKey: string, onTarget: boolean) => {
+    if (!currentConfig.wakeHabitId || !onToggleHabit) return;
+    const habit = habits.find((h) => h.id === currentConfig.wakeHabitId);
+    if (!habit) return;
+    const isDone = Boolean(habit.history && habit.history[dateKey]);
+    if (onTarget !== isDone) {
+      await onToggleHabit(habit, dateKey);
+    }
+  };
+
+  const syncSleepHabit = async (dateKey: string, onTarget: boolean) => {
+    if (!currentConfig.sleepHabitId || !onToggleHabit) return;
+    const habit = habits.find((h) => h.id === currentConfig.sleepHabitId);
+    if (!habit) return;
+    const isDone = Boolean(habit.history && habit.history[dateKey]);
+    if (onTarget !== isDone) {
+      await onToggleHabit(habit, dateKey);
+    }
+  };
+
   // Quick 1-click check-ins
   const handleQuickWakeCheck = async (onTarget: boolean) => {
     soundManager.play('check');
@@ -163,6 +193,8 @@ export const SleepWakeTracker: React.FC<SleepWakeTrackerProps> = ({
       createdAt: todayLog ? todayLog.createdAt : Date.now(),
       updatedAt: Date.now(),
     });
+    // 2-Way sync with linked wake habit
+    await syncWakeHabit(todayIso, onTarget);
   };
 
   const handleQuickBedtimeCheck = async (onTarget: boolean) => {
@@ -185,6 +217,8 @@ export const SleepWakeTracker: React.FC<SleepWakeTrackerProps> = ({
       createdAt: todayLog ? todayLog.createdAt : Date.now(),
       updatedAt: Date.now(),
     });
+    // 2-Way sync with linked sleep habit
+    await syncSleepHabit(todayIso, onTarget);
   };
 
   const handleOpenLogModalForDate = (iso: string) => {
@@ -234,6 +268,10 @@ export const SleepWakeTracker: React.FC<SleepWakeTrackerProps> = ({
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
+      // 2-Way sync with linked wake & sleep habits
+      await syncWakeHabit(selectedDate, wokeOnTime);
+      await syncSleepHabit(selectedDate, sleptOnTime);
+
       soundManager.play('check');
       setShowLogModal(false);
     } catch (err) {
@@ -254,6 +292,8 @@ export const SleepWakeTracker: React.FC<SleepWakeTrackerProps> = ({
       targetDurationHours: targetHours,
       weeklyTargetHours: weeklyTarget,
       enabled: true,
+      wakeHabitId: cfgWakeHabitId || undefined,
+      sleepHabitId: cfgSleepHabitId || undefined,
       updatedAt: Date.now(),
     });
     soundManager.play('pop');
@@ -318,12 +358,14 @@ export const SleepWakeTracker: React.FC<SleepWakeTrackerProps> = ({
               onClick={() => {
                 setCfgBedtime(currentConfig.targetBedtime);
                 setCfgWakeTime(currentConfig.targetWakeTime);
+                setCfgWakeHabitId(currentConfig.wakeHabitId || '');
+                setCfgSleepHabitId(currentConfig.sleepHabitId || '');
                 setShowConfigModal(true);
               }}
               className="px-3 py-1.5 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] bg-neutral-50 dark:bg-[#202228] text-xs font-medium text-[#2F3437] dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#282B33] transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Settings size={13} className="text-neutral-500" />
-              <span>{isAr ? 'تعديل الهدف' : 'Edit Target'}</span>
+              <span>{isAr ? 'إعدادات وجدول النوم والربط' : 'Schedule & Habit Sync'}</span>
             </button>
             <button
               onClick={() => handleOpenLogModalForDate(todayIso)}
@@ -334,6 +376,64 @@ export const SleepWakeTracker: React.FC<SleepWakeTrackerProps> = ({
             </button>
           </div>
         </div>
+
+        {/* 2-Way Sync Active Habits Ribbon */}
+        {(currentConfig.wakeHabitId || currentConfig.sleepHabitId) && (
+          <div className="mt-3 p-3 bg-gradient-to-r from-indigo-50/60 via-purple-50/40 to-transparent dark:from-indigo-950/30 dark:via-purple-950/20 dark:to-transparent rounded-xl border border-indigo-200/50 dark:border-indigo-800/40 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <Zap size={14} className="text-indigo-500 shrink-0" />
+              <span className="font-bold text-neutral-800 dark:text-neutral-200 text-xs">
+                {isAr ? 'عادات النوم والاستيقاظ المتزامنة تلقائياً:' : 'Live Synced Sleep & Wake Habits:'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {currentConfig.wakeHabitId && (
+                (() => {
+                  const h = habits.find((hb) => hb.id === currentConfig.wakeHabitId);
+                  const isDone = Boolean(h?.history?.[todayIso]);
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => h && onToggleHabit && onToggleHabit(h, todayIso)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                        isDone
+                          ? 'bg-emerald-500 text-white shadow-xs'
+                          : 'bg-white dark:bg-[#202228] text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-neutral-700 hover:border-emerald-500'
+                      }`}
+                      title={isAr ? 'انقر لتسجيل/إلغاء إنجاز العادة اليوم' : 'Click to toggle habit check-in for today'}
+                    >
+                      <span>🌅</span>
+                      <span>{h?.title || (isAr ? 'عادة الاستيقاظ' : 'Wake Habit')}</span>
+                      {isDone ? <Check size={12} className="text-white" /> : <span className="text-[10px] opacity-70">({isAr ? 'غير منجز' : 'Not done'})</span>}
+                    </button>
+                  );
+                })()
+              )}
+              {currentConfig.sleepHabitId && (
+                (() => {
+                  const h = habits.find((hb) => hb.id === currentConfig.sleepHabitId);
+                  const isDone = Boolean(h?.history?.[todayIso]);
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => h && onToggleHabit && onToggleHabit(h, todayIso)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                        isDone
+                          ? 'bg-emerald-500 text-white shadow-xs'
+                          : 'bg-white dark:bg-[#202228] text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-neutral-700 hover:border-indigo-500'
+                      }`}
+                      title={isAr ? 'انقر لتسجيل/إلغاء إنجاز العادة اليوم' : 'Click to toggle habit check-in for today'}
+                    >
+                      <span>🌙</span>
+                      <span>{h?.title || (isAr ? 'عادة النوم' : 'Sleep Habit')}</span>
+                      {isDone ? <Check size={12} className="text-white" /> : <span className="text-[10px] opacity-70">({isAr ? 'غير منجز' : 'Not done'})</span>}
+                    </button>
+                  );
+                })()
+              )}
+            </div>
+          </div>
+        )}
 
         {/* TODAY'S QUICK CHECK-IN ACTION TILES */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-4">
@@ -828,6 +928,65 @@ export const SleepWakeTracker: React.FC<SleepWakeTrackerProps> = ({
                     {((calculateDurationMinutes(cfgBedtime, cfgWakeTime) / 60) * 7).toFixed(1)} س/أسبوع
                   </strong>
                 </div>
+              </div>
+
+              {/* 2-WAY HABIT LINKING SELECTORS */}
+              <div className="p-3.5 bg-indigo-50/50 dark:bg-indigo-950/25 rounded-xl border border-indigo-200/60 dark:border-indigo-800/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                    <Zap size={13} className="text-indigo-500" />
+                    <span>{isAr ? 'ربط العادات المتزامنة (2-Way Habit Sync)' : 'Linked Habits (2-Way Sync)'}</span>
+                  </span>
+                  <span className="text-[9px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded">
+                    Auto-Check
+                  </span>
+                </div>
+
+                {/* Wake-up habit */}
+                <div>
+                  <label className="text-[11px] font-bold text-[#2F3437] dark:text-white mb-1 flex items-center gap-1">
+                    <Sunrise size={11} className="text-amber-500" />
+                    <span>{isAr ? 'عادة الاستيقاظ في الموعد:' : 'Wake-up on time habit:'}</span>
+                  </label>
+                  <select
+                    value={cfgWakeHabitId}
+                    onChange={(e) => setCfgWakeHabitId(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAE9E6] dark:border-[#2A2C33] bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white font-medium cursor-pointer"
+                  >
+                    <option value="">{isAr ? '-- غير مربوط (بدون عادة) --' : '-- No linked habit --'}</option>
+                    {habits.map((h) => (
+                      <option key={h.id || h.title} value={h.id || h.title}>
+                        {h.icon || '🔥'} {h.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Bedtime habit */}
+                <div>
+                  <label className="text-[11px] font-bold text-[#2F3437] dark:text-white mb-1 flex items-center gap-1">
+                    <Moon size={11} className="text-indigo-500" />
+                    <span>{isAr ? 'عادة النوم في الموعد:' : 'Bedtime on schedule habit:'}</span>
+                  </label>
+                  <select
+                    value={cfgSleepHabitId}
+                    onChange={(e) => setCfgSleepHabitId(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAE9E6] dark:border-[#2A2C33] bg-white dark:bg-[#18191D] text-xs text-[#2F3437] dark:text-white font-medium cursor-pointer"
+                  >
+                    <option value="">{isAr ? '-- غير مربوط (بدون عادة) --' : '-- No linked habit --'}</option>
+                    {habits.map((h) => (
+                      <option key={h.id || h.title} value={h.id || h.title}>
+                        {h.icon || '🔥'} {h.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                  {isAr
+                    ? 'عند تفعيل هذا الخيار، سيتم تسجيل إنجاز العادة تلقائياً في شبكة العادات عند تسجيلك للنوم/الاستيقاظ، والعكس صحيح.'
+                    : 'When linked, checking off sleep/wake here automatically checks the habit in the Habit Matrix, and vice versa.'}
+                </p>
               </div>
             </div>
 

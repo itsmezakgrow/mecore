@@ -275,6 +275,10 @@ export interface HabitItem {
   targetValue?: number; // e.g. 10 (target per session / day)
   unit?: string; // e.g. 'pages', 'minutes', 'km', 'glasses', 'reps', 'pomodoros'
   dailyValues?: Record<string, number>; // date key: 'YYYY-MM-DD' -> numeric progress for that day
+  goalId?: string; // Linked Goal ID for action-based progress
+  goalIds?: string[]; // Multiple linked Goal IDs
+  projectId?: string; // Linked Project ID
+  projectIds?: string[]; // Multiple linked Project IDs
 }
 
 export interface LifePhase {
@@ -441,6 +445,8 @@ export interface SleepScheduleConfig {
   targetDurationHours: number; // e.g. 8.0
   weeklyTargetHours: number; // e.g. 56
   enabled: boolean;
+  wakeHabitId?: string; // Linked habit for waking up on time (2-way sync)
+  sleepHabitId?: string; // Linked habit for bedtime / sleeping on time (2-way sync)
   updatedAt?: number;
 }
 
