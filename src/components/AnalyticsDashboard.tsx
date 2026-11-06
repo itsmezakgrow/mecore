@@ -1988,7 +1988,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                     <CartesianGrid strokeDasharray="3 3" stroke="#EAE9E6" className="dark:opacity-15" />
                     <XAxis dataKey="label" stroke="#8C8B88" fontSize={11} tickLine={false} />
                     <YAxis domain={[0, 100]} stroke="#8C8B88" fontSize={11} tickLine={false} tickFormatter={(val) => `${val}%`} />
-                    <Tooltip content={<CustomCorrelationTooltip isAr={isAr} />} />
+                    <Tooltip content={<CustomCorrelationTooltip isAr={isAr} />} cursor={false} />
 
                     {visibleLines.habits && (
                       <Line
@@ -2542,6 +2542,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                       fillOpacity={0.35}
                     />
                     <Tooltip
+                      cursor={false}
                       contentStyle={{
                         backgroundColor: '#1E2025',
                         borderRadius: '12px',
@@ -2616,6 +2617,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                   <XAxis dataKey="display" tick={{ fontSize: 10, fill: '#787774' }} />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#787774' }} unit="%" />
                   <Tooltip
+                    cursor={false}
                     contentStyle={{
                       backgroundColor: '#2F3437',
                       borderRadius: '12px',
@@ -2709,6 +2711,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                     <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#787774' }} />
                     <YAxis tick={{ fontSize: 10, fill: '#787774' }} />
                     <Tooltip
+                      cursor={false}
                       contentStyle={{
                         backgroundColor: '#2F3437',
                         borderRadius: '12px',
@@ -2755,6 +2758,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                         ))}
                       </Pie>
                       <Tooltip
+                        cursor={false}
                         contentStyle={{
                           backgroundColor: '#2F3437',
                           borderRadius: '12px',
@@ -2904,6 +2908,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                       unit="h"
                     />
                     <Tooltip
+                      cursor={false}
                       contentStyle={{
                         backgroundColor: '#1E2025',
                         borderColor: '#2D3136',
@@ -4016,6 +4021,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                     <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip
+                      cursor={false}
                       contentStyle={{ backgroundColor: '#18191D', borderColor: '#333', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
                       formatter={(val: any) => [`${val} kg`, isAr ? 'الحجم' : 'Volume']}
                     />
@@ -4068,6 +4074,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                     <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip
+                      cursor={false}
                       contentStyle={{ backgroundColor: '#18191D', borderColor: '#333', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
                       formatter={(val: any, name: any) => [
                         `${val} ${name === 'maxWeight' ? 'kg' : 'reps'}`,
@@ -4107,6 +4114,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip
+                      cursor={false}
                       contentStyle={{ backgroundColor: '#18191D', borderColor: '#333', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
                       formatter={(val: any) => [`${val} kg`, isAr ? 'الحجم' : 'Tonnage']}
                     />

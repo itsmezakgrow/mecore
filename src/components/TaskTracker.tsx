@@ -35,11 +35,15 @@ import {
   Search,
   FolderKanban,
   MoreVertical,
-  Layers,
   ArrowUpRight,
   ArrowLeft,
   Play,
-  Archive
+  Archive,
+  Eye,
+  EyeOff,
+  ArrowUpDown,
+  CornerDownRight,
+  CalendarDays
 } from 'lucide-react';
 import { TaskItem, Priority, AppComment, HabitItem, NoteItem, ProjectItem, GoalItem, FocusSession, TaskSubtask } from '../types';
 import { ConfirmModal } from './ConfirmModal';
@@ -166,17 +170,39 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
   const [editCategory, setEditCategory] = useState('Business');
   const [editDueDate, setEditDueDate] = useState('');
 
-  // Filters & Search
-  const [smartFilter, setSmartFilter] = useState<'all' | 'today' | 'overdue' | 'high' | 'measurable' | 'completed'>('all');
+  // Filters, Sort & Search
+  const [smartFilter, setSmartFilter] = useState<'all' | 'today' | 'this_week' | 'overdue' | 'high' | 'measurable' | 'completed'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
   const [projectFilter, setProjectFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [prioritySort, setPrioritySort] = useState<'manual' | 'high_to_low' | 'low_to_high'>('manual');
+  const [hideCompleted, setHideCompleted] = useState<boolean>(true); // DEFAULT TRUE: Hide completed tasks by default
 
-  // Drag & Drop Reordering
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  // Drag & Drop (Reordering & Subtask nesting)
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
+  const [subtaskDropPrompt, setSubtaskDropPrompt] = useState<{ sourceTask: TaskItem; targetTask: TaskItem } | null>(null);
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  // Compute Current Week Bounds (Monday to Sunday)
+  const { startOfWeekStr, endOfWeekStr, startOfWeekTime, endOfWeekTime } = useMemo(() => {
+    const now = new Date();
+    const currentDay = now.getDay(); // 0 is Sunday, 1 is Monday
+    const diff = now.getDate() - currentDay + (currentDay === 0 ? -6 : 1);
+    const monday = new Date(now.getFullYear(), now.getMonth(), diff);
+    monday.setHours(0, 0, 0, 0);
+    const sunday = new Date(monday);
+    sunday.setDate(sunday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    return {
+      startOfWeekStr: monday.toISOString().split('T')[0],
+      endOfWeekStr: sunday.toISOString().split('T')[0],
+      startOfWeekTime: monday.getTime(),
+      endOfWeekTime: sunday.getTime(),
+    };
+  }, []);
 
   // Priority and Category Labels
   const getPriorityLabel = (p: Priority) => {
@@ -200,41 +226,10 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
     }
   };
 
-  // Add Task Handler
+  // Add Task Handler - open the full modal with the pre-filled title as requested
   const handleCreateTask = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!newTitle.trim() || isSubmitting) return;
-
-    setIsSubmitting(true);
-    try {
-      await onAddTask({
-        title: newTitle.trim(),
-        priority: newPriority,
-        category: newCategory,
-        projectId: newProjectId || undefined,
-        dueDate: newDueDate || undefined,
-        description: newDescription.trim() || undefined,
-        completed: false,
-        createdAt: Date.now(),
-        order: tasks.length,
-        isMeasurable: newIsMeasurable,
-        targetValue: newIsMeasurable ? newTargetValue : undefined,
-        currentValue: 0,
-        unit: newIsMeasurable ? (newUnit.trim() || 'units') : undefined,
-        kanbanStatus: 'todo',
-      });
-
-      soundManager.playCheck();
-      setNewTitle('');
-      setNewDescription('');
-      setShowAdvancedOptions(false);
-      setNewIsMeasurable(false);
-      if (inputRef.current) inputRef.current.focus();
-    } catch (err) {
-      console.error('Failed to create task:', err);
-    } finally {
-      setIsSubmitting(false);
-    }
+    setShowCreateModal(true);
   };
 
   // Toggle Completion
@@ -464,32 +459,107 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
   };
 
   // Drag & Drop Handlers for List view
-  const handleDragStartRow = (e: React.DragEvent, index: number) => {
-    setDraggedIndex(index);
+  const handleDragStartRow = (e: React.DragEvent, taskId: string) => {
+    setDraggedTaskId(taskId);
+    e.dataTransfer.setData('text/plain', taskId);
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDragOverRow = (e: React.DragEvent, index: number) => {
+  const handleDragOverRow = (e: React.DragEvent, taskId: string) => {
     e.preventDefault();
-    if (draggedIndex === null || draggedIndex === index) return;
-    setDragOverIndex(index);
+    if (!draggedTaskId || draggedTaskId === taskId) return;
+    setDragOverTaskId(taskId);
   };
 
-  const handleDropRow = async (e: React.DragEvent, dropIndex: number) => {
+  const handleDragLeaveRow = (e: React.DragEvent, taskId: string) => {
+    if (dragOverTaskId === taskId) {
+      setDragOverTaskId(null);
+    }
+  };
+
+  const handleDropRow = async (e: React.DragEvent, targetTaskId: string) => {
     e.preventDefault();
-    if (draggedIndex === null || draggedIndex === dropIndex) return;
-
-    const reordered = [...tasks];
-    const [movedTask] = reordered.splice(draggedIndex, 1);
-    reordered.splice(dropIndex, 0, movedTask);
-
-    if (onReorderTasks) {
-      const ids = reordered.map((t) => t.id!).filter(Boolean);
-      await onReorderTasks(ids);
+    if (!draggedTaskId || draggedTaskId === targetTaskId) {
+      setDraggedTaskId(null);
+      setDragOverTaskId(null);
+      return;
     }
 
-    setDraggedIndex(null);
-    setDragOverIndex(null);
+    const source = tasks.find((t) => t.id === draggedTaskId);
+    const target = tasks.find((t) => t.id === targetTaskId);
+
+    setDraggedTaskId(null);
+    setDragOverTaskId(null);
+
+    if (!source || !target) return;
+
+    // Prompt the user: Add as Subtask or Reorder?
+    setSubtaskDropPrompt({
+      sourceTask: source,
+      targetTask: target
+    });
+  };
+
+  // Convert Dragged Task to a Subtask of Target Task
+  const handleConfirmAddAsSubtask = async () => {
+    if (!subtaskDropPrompt) return;
+    const { sourceTask, targetTask } = subtaskDropPrompt;
+    if (!sourceTask.id || !targetTask.id) return;
+
+    const newSubtask: TaskSubtask = {
+      id: 'st_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      title: sourceTask.title,
+      completed: sourceTask.completed || false,
+      createdAt: Date.now()
+    };
+
+    const carriedSubtasks = (sourceTask.subtasks || []).map(st => ({
+      ...st,
+      id: 'st_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)
+    }));
+
+    const updatedSubtasks = [
+      ...(targetTask.subtasks || []),
+      newSubtask,
+      ...carriedSubtasks
+    ];
+
+    try {
+      await onUpdateTask(targetTask.id, {
+        subtasks: updatedSubtasks
+      });
+      await onDeleteTask(sourceTask.id);
+      soundManager.playCheck();
+      confetti({ particleCount: 25, spread: 45, origin: { y: 0.7 } });
+    } catch (err) {
+      console.error('Failed to convert task to subtask:', err);
+    } finally {
+      setSubtaskDropPrompt(null);
+    }
+  };
+
+  // Reorder Dragged Task Above Target Task
+  const handleConfirmReorderAbove = async () => {
+    if (!subtaskDropPrompt) return;
+    const { sourceTask, targetTask } = subtaskDropPrompt;
+    if (!sourceTask.id || !targetTask.id) return;
+
+    const currentTasks = [...tasks];
+    const sourceIdx = currentTasks.findIndex((t) => t.id === sourceTask.id);
+    const targetIdx = currentTasks.findIndex((t) => t.id === targetTask.id);
+
+    if (sourceIdx !== -1 && targetIdx !== -1) {
+      const [moved] = currentTasks.splice(sourceIdx, 1);
+      const newTargetIdx = currentTasks.findIndex((t) => t.id === targetTask.id);
+      currentTasks.splice(newTargetIdx, 0, moved);
+
+      if (onReorderTasks) {
+        const ids = currentTasks.map((t) => t.id!).filter(Boolean);
+        await onReorderTasks(ids);
+      }
+      soundManager.playCheck();
+    }
+    setSubtaskDropPrompt(null);
   };
 
   // Drag & Drop Handlers for Kanban Board
@@ -522,13 +592,39 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
   }, [allProjects]);
 
   const filteredTasks = useMemo(() => {
-    return tasks.filter((task) => {
+    const result = tasks.filter((task) => {
+      // Hide Completed Tasks by Default (unless user explicitly views 'completed' tab or toggles hideCompleted off)
+      if (hideCompleted && smartFilter !== 'completed') {
+        if (task.completed || task.kanbanStatus === 'completed') return false;
+      }
+
       // Smart Filter
-      if (smartFilter === 'today' && task.dueDate !== todayStr) return false;
-      if (smartFilter === 'overdue' && (!task.dueDate || task.dueDate >= todayStr || task.completed)) return false;
-      if (smartFilter === 'high' && task.priority !== 'High') return false;
-      if (smartFilter === 'measurable' && !task.isMeasurable) return false;
-      if (smartFilter === 'completed' && !task.completed) return false;
+      if (smartFilter === 'today') {
+        if (task.dueDate !== todayStr) return false;
+      } else if (smartFilter === 'this_week') {
+        const isDueThisWeek = task.dueDate && task.dueDate >= startOfWeekStr && task.dueDate <= endOfWeekStr;
+        const isCreatedThisWeek = task.createdAt && task.createdAt >= startOfWeekTime && task.createdAt <= endOfWeekTime;
+        const isCompletedThisWeek = task.completedAt && task.completedAt >= startOfWeekTime && task.completedAt <= endOfWeekTime;
+        if (!isDueThisWeek && !isCreatedThisWeek && !isCompletedThisWeek) return false;
+      } else if (smartFilter === 'overdue') {
+        if (!task.dueDate || task.dueDate >= todayStr || task.completed) return false;
+      } else if (smartFilter === 'high') {
+        if (task.priority !== 'High') return false;
+      } else if (smartFilter === 'measurable') {
+        if (!task.isMeasurable) return false;
+      } else if (smartFilter === 'completed') {
+        if (!task.completed && task.kanbanStatus !== 'completed') return false;
+      }
+
+      // Project Filter
+      if (projectFilter !== 'All') {
+        if (task.projectId !== projectFilter) return false;
+      }
+
+      // Category Filter
+      if (categoryFilter !== 'All') {
+        if (task.category !== categoryFilter) return false;
+      }
 
       // Search Query
       if (searchQuery.trim()) {
@@ -541,7 +637,39 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
 
       return true;
     });
-  }, [tasks, smartFilter, searchQuery, todayStr]);
+
+    // Priority Sort (High to Low, Low to High, or Manual Drag order)
+    if (prioritySort === 'high_to_low') {
+      const pWeight: Record<Priority, number> = { High: 3, Med: 2, Low: 1 };
+      return [...result].sort((a, b) => {
+        const diff = (pWeight[b.priority] || 2) - (pWeight[a.priority] || 2);
+        if (diff !== 0) return diff;
+        return (a.order ?? 0) - (b.order ?? 0);
+      });
+    } else if (prioritySort === 'low_to_high') {
+      const pWeight: Record<Priority, number> = { High: 3, Med: 2, Low: 1 };
+      return [...result].sort((a, b) => {
+        const diff = (pWeight[a.priority] || 2) - (pWeight[b.priority] || 2);
+        if (diff !== 0) return diff;
+        return (a.order ?? 0) - (b.order ?? 0);
+      });
+    }
+
+    return result;
+  }, [
+    tasks,
+    smartFilter,
+    projectFilter,
+    categoryFilter,
+    prioritySort,
+    hideCompleted,
+    searchQuery,
+    todayStr,
+    startOfWeekStr,
+    endOfWeekStr,
+    startOfWeekTime,
+    endOfWeekTime
+  ]);
 
   // Kanban Filtered Lists
   const todoKanbanTasks = useMemo(() => {
@@ -564,8 +692,19 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
 
   // Counts
   const totalCount = tasks.length;
-  const completedCount = tasks.filter((t) => t.completed).length;
-  const overdueCount = tasks.filter((t) => !t.completed && t.dueDate && t.dueDate < todayStr).length;
+  const completedCount = tasks.filter((t) => t.completed || t.kanbanStatus === 'completed').length;
+  const todayCount = tasks.filter((t) => t.dueDate === todayStr && (!hideCompleted || (!t.completed && t.kanbanStatus !== 'completed'))).length;
+  const thisWeekCount = tasks.filter((t) => {
+    const isDue = t.dueDate && t.dueDate >= startOfWeekStr && t.dueDate <= endOfWeekStr;
+    const isCreated = t.createdAt && t.createdAt >= startOfWeekTime && t.createdAt <= endOfWeekTime;
+    const isCompleted = t.completedAt && t.completedAt >= startOfWeekTime && t.completedAt <= endOfWeekTime;
+    if (!isDue && !isCreated && !isCompleted) return false;
+    if (hideCompleted && (t.completed || t.kanbanStatus === 'completed')) return false;
+    return true;
+  }).length;
+  const overdueCount = tasks.filter((t) => !t.completed && t.kanbanStatus !== 'completed' && t.dueDate && t.dueDate < todayStr).length;
+  const highCount = tasks.filter((t) => t.priority === 'High' && (!hideCompleted || (!t.completed && t.kanbanStatus !== 'completed'))).length;
+  const hiddenCompletedCount = tasks.filter((t) => (t.completed || t.kanbanStatus === 'completed') && (projectFilter === 'All' || t.projectId === projectFilter)).length;
 
   return (
     <div className="space-y-4 max-w-full">
@@ -838,10 +977,11 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
           SMART FILTER PILLS & SEARCH BAR
           ======================================================== */}
       {viewMode !== 'stats' && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-          {/* Smart Filter Pills */}
+        <div className="space-y-2.5">
+          {/* Row 1: Smart Filter Pills (All, Today, This Week, Overdue, High, Done) */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
             <button
+              type="button"
               onClick={() => setSmartFilter('all')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer border ${
                 smartFilter === 'all'
@@ -851,17 +991,38 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
             >
               {isAr ? `الكل (${totalCount})` : `All (${totalCount})`}
             </button>
+
+            {/* TODAY */}
             <button
+              type="button"
               onClick={() => setSmartFilter('today')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer border ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer border flex items-center gap-1.5 ${
                 smartFilter === 'today'
                   ? 'bg-emerald-600 text-white border-emerald-600 shadow-3xs'
                   : 'bg-white dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700/80 hover:text-emerald-600'
               }`}
             >
-              {isAr ? 'اليوم' : 'Today'}
+              <Calendar size={13} />
+              <span>{isAr ? `اليوم (${todayCount})` : `Today (${todayCount})`}</span>
             </button>
+
+            {/* THIS WEEK (New!) */}
             <button
+              type="button"
+              onClick={() => setSmartFilter('this_week')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer border flex items-center gap-1.5 ${
+                smartFilter === 'this_week'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-3xs'
+                  : 'bg-white dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700/80 hover:text-blue-600'
+              }`}
+            >
+              <CalendarDays size={13} />
+              <span>{isAr ? `هذا الأسبوع (${thisWeekCount})` : `This Week (${thisWeekCount})`}</span>
+            </button>
+
+            {/* OVERDUE */}
+            <button
+              type="button"
               onClick={() => setSmartFilter('overdue')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer border ${
                 smartFilter === 'overdue'
@@ -871,7 +1032,10 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
             >
               {isAr ? `المتأخرة (${overdueCount})` : `Overdue (${overdueCount})`}
             </button>
+
+            {/* HIGH PRIORITY */}
             <button
+              type="button"
               onClick={() => setSmartFilter('high')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer border ${
                 smartFilter === 'high'
@@ -879,9 +1043,12 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
                   : 'bg-white dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700/80 hover:text-amber-600'
               }`}
             >
-              {isAr ? 'عالية الأولوية' : 'High Priority'}
+              {isAr ? `عالية الأولوية (${highCount})` : `High Priority (${highCount})`}
             </button>
+
+            {/* COMPLETED / DONE */}
             <button
+              type="button"
               onClick={() => setSmartFilter('completed')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer border ${
                 smartFilter === 'completed'
@@ -893,37 +1060,99 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
             </button>
           </div>
 
-          {/* Search Box */}
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1 sm:w-56">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
-              <input
-                type="text"
-                placeholder={isAr ? 'بحث في المهام...' : 'Search tasks...'}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-8 py-1.5 bg-white dark:bg-neutral-800/80 rounded-xl border border-neutral-200 dark:border-neutral-700/80 text-xs font-medium text-neutral-900 dark:text-white focus:outline-none focus:border-emerald-500"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 dark:hover:text-white"
+          {/* Row 2: Secondary Toolbar (Project Filter, Priority Sort, Hide Completed Toggle, Search) */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Project Filter Dropdown */}
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700/80 bg-white dark:bg-neutral-800/80 text-xs font-bold text-neutral-800 dark:text-neutral-200 shadow-3xs">
+                <FolderKanban size={13} className="text-indigo-500 shrink-0" />
+                <select
+                  value={projectFilter}
+                  onChange={(e) => setProjectFilter(e.target.value)}
+                  className="bg-transparent border-none text-xs font-bold text-neutral-800 dark:text-neutral-200 focus:outline-none cursor-pointer"
+                  title={isAr ? 'تصفية حسب المشروع' : 'Filter by project'}
                 >
-                  <X size={12} />
+                  <option value="All">{isAr ? 'كل المشاريع' : 'All Projects'}</option>
+                  {allProjects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      📁 {p.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Priority Sort Dropdown */}
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700/80 bg-white dark:bg-neutral-800/80 text-xs font-bold text-neutral-800 dark:text-neutral-200 shadow-3xs">
+                <ArrowUpDown size={13} className="text-amber-500 shrink-0" />
+                <select
+                  value={prioritySort}
+                  onChange={(e) => setPrioritySort(e.target.value as any)}
+                  className="bg-transparent border-none text-xs font-bold text-neutral-800 dark:text-neutral-200 focus:outline-none cursor-pointer"
+                  title={isAr ? 'الترتيب حسب الأولوية' : 'Sort by Priority'}
+                >
+                  <option value="manual">{isAr ? 'ترتيب يدوي (سحب وإفلات)' : 'Manual Drag Order'}</option>
+                  <option value="high_to_low">{isAr ? '🔴 الأولوية: من الأهم للأقل' : 'Priority: High → Low'}</option>
+                  <option value="low_to_high">{isAr ? '🟢 الأولوية: من الأقل للأهم' : 'Priority: Low → High'}</option>
+                </select>
+              </div>
+
+              {/* Hide Completed Tasks Toggle (Default: TRUE) */}
+              <button
+                type="button"
+                onClick={() => setHideCompleted(!hideCompleted)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer shrink-0 shadow-3xs ${
+                  hideCompleted
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                    : 'bg-white dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700/80 hover:text-neutral-900'
+                }`}
+                title={
+                  isAr
+                    ? (hideCompleted ? 'المهام المكتملة مخفية (انقر لإظهارها)' : 'المهام المكتملة ظاهرة (انقر لإخفائها)')
+                    : (hideCompleted ? 'Completed tasks hidden (click to reveal)' : 'Completed tasks visible (click to hide)')
+                }
+              >
+                {hideCompleted ? <EyeOff size={13} className="text-emerald-600 dark:text-emerald-400" /> : <Eye size={13} className="text-neutral-400" />}
+                <span>{isAr ? (hideCompleted ? 'إخفاء المنجزة (مفعل)' : 'إظهار المنجزة') : (hideCompleted ? 'Hide Done (Active)' : 'Show Done')}</span>
+                {hiddenCompletedCount > 0 && hideCompleted && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-md font-mono bg-emerald-200/60 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">
+                    {hiddenCompletedCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Search Box & Clear Completed */}
+            <div className="flex items-center gap-2 flex-1 sm:flex-initial justify-end">
+              <div className="relative w-full sm:w-48">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder={isAr ? 'بحث في المهام...' : 'Search tasks...'}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-8 py-1.5 bg-white dark:bg-neutral-800/80 rounded-xl border border-neutral-200 dark:border-neutral-700/80 text-xs font-medium text-neutral-900 dark:text-white focus:outline-none focus:border-emerald-500"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 dark:hover:text-white"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+
+              {/* Clear Completed Action */}
+              {completedCount > 0 && (
+                <button
+                  onClick={() => setShowClearCompletedModal(true)}
+                  className="p-2 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer shrink-0"
+                  title={isAr ? 'مسح المهام المكتملة' : 'Clear completed tasks'}
+                >
+                  <Trash2 size={15} />
                 </button>
               )}
             </div>
-
-            {/* Clear Completed Action */}
-            {completedCount > 0 && (
-              <button
-                onClick={() => setShowClearCompletedModal(true)}
-                className="p-2 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer shrink-0"
-                title={isAr ? 'مسح المهام المكتملة' : 'Clear completed tasks'}
-              >
-                <Trash2 size={15} />
-              </button>
-            )}
           </div>
         </div>
       )}
@@ -1030,18 +1259,30 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
               return (
                 <div
                   key={task.id || index}
-                  draggable={!isSelectMode}
-                  onDragStart={(e) => handleDragStartRow(e, index)}
-                  onDragOver={(e) => handleDragOverRow(e, index)}
-                  onDrop={(e) => handleDropRow(e, index)}
+                  draggable={!isSelectMode && Boolean(task.id)}
+                  onDragStart={(e) => task.id && handleDragStartRow(e, task.id)}
+                  onDragOver={(e) => task.id && handleDragOverRow(e, task.id)}
+                  onDragLeave={(e) => task.id && handleDragLeaveRow(e, task.id)}
+                  onDrop={(e) => task.id && handleDropRow(e, task.id)}
                   className={`group relative bg-white dark:bg-neutral-900 rounded-2xl border transition-all flex flex-col ${
-                    draggedIndex === index ? 'opacity-40' : ''
+                    draggedTaskId === task.id ? 'opacity-40 scale-[0.99]' : ''
                   } ${
-                    dragOverIndex === index ? 'border-emerald-500 scale-[1.005]' : 'border-neutral-200/80 dark:border-neutral-800/80 hover:border-neutral-300 dark:hover:border-neutral-700'
+                    dragOverTaskId === task.id && draggedTaskId !== task.id
+                      ? 'border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/20 ring-2 ring-indigo-500/40 shadow-md'
+                      : 'border-neutral-200/80 dark:border-neutral-800/80 hover:border-neutral-300 dark:hover:border-neutral-700'
                   } ${
                     task.completed ? 'bg-neutral-50/60 dark:bg-neutral-900/40 opacity-75' : ''
                   }`}
                 >
+                  {/* Hover Drop Target Indicator */}
+                  {dragOverTaskId === task.id && draggedTaskId !== task.id && (
+                    <div className="absolute inset-x-0 -top-2.5 z-20 flex items-center justify-center pointer-events-none animate-bounce">
+                      <span className="px-3 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white shadow-md flex items-center gap-1 border border-indigo-400">
+                        <CornerDownRight size={11} />
+                        <span>{isAr ? 'أفلت للإضافة كـ Subtask أو ترتيب فوقها' : 'Drop to add as subtask or reorder'}</span>
+                      </span>
+                    </div>
+                  )}
                   {/* Top Main Task Row */}
                   <div className="p-3 sm:p-3.5 flex items-center justify-between gap-3">
                     {/* Left Controls & Checkbox */}
@@ -1802,8 +2043,19 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
       {/* Create New Task Dedicated Modal */}
       <CreateTaskModal
         isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onAddTask={onAddTask}
+        onClose={() => {
+          setShowCreateModal(false);
+          setNewTitle('');
+        }}
+        onAddTask={async (task) => {
+          const res = await onAddTask(task);
+          setNewTitle('');
+          return res;
+        }}
+        initialTitle={newTitle}
+        initialPriority={newPriority}
+        initialDueDate={newDueDate}
+        initialProjectId={newProjectId}
         allProjects={allProjects}
         allGoals={allGoals}
         tasksCount={tasks.length}
@@ -1943,6 +2195,75 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
               >
                 <Check size={16} />
                 <span>{isAr ? 'نعم، أكمل المهمة' : 'Yes, Complete Task'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pop-up confirmation when a task is dropped on another task (Add as Subtask vs Reorder) */}
+      {subtaskDropPrompt && (
+        <div className="fixed inset-0 z-50 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-neutral-900 w-full max-w-md rounded-3xl shadow-2xl border border-neutral-200/90 dark:border-neutral-800 p-6 space-y-5 text-center transform scale-100 my-auto animate-in zoom-in-95 duration-150">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-inner">
+              <CornerDownRight size={28} className="animate-pulse" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-base sm:text-lg font-black text-neutral-900 dark:text-white">
+                {isAr ? 'إضافة المهمة كمهمة فرعية (Subtask)؟' : 'Add Task as Subtask?'}
+              </h3>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                {isAr
+                  ? 'لقد أسقطت هذه المهمة فوق مهمة أخرى. هل تريد إضافتها كـ Subtask داخلها، أم تفضل فقط تغيير ترتيبها لتكون فوقها؟'
+                  : 'You dropped this task onto another task. Would you like to add it as a Subtask inside it, or just reorder it above?'}
+              </p>
+
+              <div className="p-3 bg-neutral-50 dark:bg-neutral-800/80 rounded-2xl border border-neutral-200/60 dark:border-neutral-700/60 space-y-2 text-left rtl:text-right">
+                <div className="text-xs">
+                  <span className="text-[10px] font-bold text-neutral-400 block uppercase">
+                    {isAr ? 'المهمة المنقولة:' : 'Moving Task:'}
+                  </span>
+                  <span className="font-bold text-neutral-900 dark:text-white truncate block">
+                    "{subtaskDropPrompt.sourceTask.title}"
+                  </span>
+                </div>
+                <div className="text-xs pt-1.5 border-t border-neutral-200/60 dark:border-neutral-700/60">
+                  <span className="text-[10px] font-bold text-indigo-500 block uppercase">
+                    {isAr ? 'المهمة المستهدفة:' : 'Target Task:'}
+                  </span>
+                  <span className="font-bold text-indigo-600 dark:text-indigo-400 truncate block">
+                    "{subtaskDropPrompt.targetTask.title}"
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setSubtaskDropPrompt(null)}
+                className="flex-1 px-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 text-xs font-bold text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmReorderAbove}
+                className="flex-1 px-3 py-2.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-900 dark:text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <ArrowUpDown size={13} />
+                <span>{isAr ? 'ترتيب فوقها فقط' : 'Reorder Above'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmAddAsSubtask}
+                className="flex-1 px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Check size={14} />
+                <span>{isAr ? 'نعم، أضف كـ Subtask' : 'Yes, Add as Subtask'}</span>
               </button>
             </div>
           </div>

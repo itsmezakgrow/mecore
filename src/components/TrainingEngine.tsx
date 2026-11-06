@@ -404,18 +404,21 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
         const pastSet = lastRecorded?.sets?.[sIdx] || lastRecorded?.sets?.[0];
         const sPastWeight = pastSet?.weight !== undefined ? pastSet.weight.toString() : pastWeightStr;
         const sPastReps = pastSet?.reps || pastRepsNum;
+        const sTargetReps = (prescription.targetSetReps && prescription.targetSetReps[sIdx] !== undefined)
+          ? prescription.targetSetReps[sIdx]
+          : targetRepsNum;
 
         return {
           id: `s-${Date.now()}-${idx}-${sIdx}`,
           setNumber: sIdx + 1,
-          reps: targetRepsNum, // PRE-FILLED WITH TARGET REPS!
+          reps: sTargetReps, // PRE-FILLED WITH EXACT TARGET REPS!
           weight: targetWeightStr, // PRE-FILLED WITH TARGET WEIGHT!
           weightUnit: 'kg' as const,
           completed: false,
           previousWeight: sPastWeight,
           previousReps: sPastReps,
           targetWeight: targetWeightStr,
-          targetReps: targetRepsNum
+          targetReps: sTargetReps
         };
       });
 
@@ -587,18 +590,30 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
   };
 
   // Apply Coach Target Prescription to an exercise
-  const handleApplyCoachTarget = (exerciseId: string, recommendedWeight: number, recommendedReps: number) => {
+  const handleApplyCoachTarget = (
+    exerciseId: string,
+    recommendedWeight: number,
+    recommendedReps: number,
+    targetSetReps?: number[]
+  ) => {
     setExercises((prev) =>
       prev.map((ex) => {
         if (ex.id !== exerciseId) return ex;
         return {
           ...ex,
-          sets: ex.sets.map((s) => {
+          targetWeight: recommendedWeight.toString(),
+          targetReps: recommendedReps,
+          sets: ex.sets.map((s, sIdx) => {
             if (s.completed) return s; // leave completed alone
+            const setRep = (targetSetReps && targetSetReps[sIdx] !== undefined)
+              ? targetSetReps[sIdx]
+              : recommendedReps;
             return {
               ...s,
               weight: recommendedWeight.toString(),
-              reps: recommendedReps
+              reps: setRep,
+              targetWeight: recommendedWeight.toString(),
+              targetReps: setRep
             };
           })
         };
@@ -1717,22 +1732,30 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
 
                             {/* Scientific Progressive Overload Coach Box */}
                             <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                              prescription.isReadyForOverload
+                              prescription.hasWarningFlag
+                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300'
+                                : prescription.isReadyForOverload
                                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
                                 : 'bg-slate-50 dark:bg-neutral-900/60 border-slate-200 dark:border-neutral-800 text-slate-700 dark:text-slate-300'
                             }`}>
                               <div className="flex items-center gap-2.5">
                                 <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                                  prescription.isReadyForOverload
+                                  prescription.hasWarningFlag
+                                    ? 'bg-amber-500 text-white'
+                                    : prescription.isReadyForOverload
                                     ? 'bg-emerald-500 text-white'
                                     : 'bg-slate-200 dark:bg-neutral-800 text-slate-600 dark:text-slate-400'
                                 }`}>
-                                  <TrendingUp size={16} />
+                                  {prescription.hasWarningFlag ? <AlertCircle size={16} /> : <TrendingUp size={16} />}
                                 </div>
                                 <div className="text-xs">
                                   <div className="flex items-center gap-1.5 font-black uppercase text-[10px]">
                                     <span>{isAr ? 'توجيه الكوتش (Double Progression):' : 'Iron Coach Target:'}</span>
-                                    <span className="px-1.5 py-0.2 rounded bg-black/10 dark:bg-white/10">
+                                    <span className={`px-1.5 py-0.2 rounded font-bold ${
+                                      prescription.hasWarningFlag
+                                        ? 'bg-amber-500/20 text-amber-900 dark:text-amber-200'
+                                        : 'bg-black/10 dark:bg-white/10'
+                                    }`}>
                                       {isAr ? prescription.headlineAr : prescription.headlineEn}
                                     </span>
                                   </div>
@@ -1742,8 +1765,12 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
 
                               <button
                                 type="button"
-                                onClick={() => handleApplyCoachTarget(exercise.id, prescription.suggestedWeight, prescription.suggestedReps)}
-                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all cursor-pointer shrink-0 shadow-xs flex items-center justify-center gap-1"
+                                onClick={() => handleApplyCoachTarget(exercise.id, prescription.suggestedWeight, prescription.suggestedReps, prescription.targetSetReps)}
+                                className={`px-3 py-1.5 rounded-xl text-white text-xs font-black transition-all cursor-pointer shrink-0 shadow-xs flex items-center justify-center gap-1 ${
+                                  prescription.hasWarningFlag
+                                    ? 'bg-amber-600 hover:bg-amber-500'
+                                    : 'bg-emerald-600 hover:bg-emerald-500'
+                                }`}
                               >
                                 <Zap size={12} className="fill-current" />
                                 <span>{isAr ? 'تطبيق هدف الكوتش' : 'Apply Targets'}</span>
@@ -2353,6 +2380,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                           <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
                           <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} unit="kg" />
                           <Tooltip
+                            cursor={false}
                             contentStyle={{
                               backgroundColor: isDark ? '#18191D' : '#ffffff',
                               borderColor: isDark ? '#333333' : '#e2e8f0',
@@ -2397,6 +2425,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                           <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
                           <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
                           <Tooltip
+                            cursor={false}
                             contentStyle={{
                               backgroundColor: isDark ? '#18191D' : '#ffffff',
                               borderColor: isDark ? '#333333' : '#e2e8f0',
@@ -2423,6 +2452,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                           <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
                           <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
                           <Tooltip
+                            cursor={false}
                             contentStyle={{
                               backgroundColor: isDark ? '#18191D' : '#ffffff',
                               borderColor: isDark ? '#333333' : '#e2e8f0',

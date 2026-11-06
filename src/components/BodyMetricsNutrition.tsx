@@ -992,6 +992,7 @@ export const BodyMetricsNutrition: React.FC<BodyMetricsNutritionProps> = ({
                       <XAxis dataKey="date" tick={{ fontSize: 10, fill: isDark ? '#a3a3a3' : '#64748b' }} />
                       <YAxis domain={['dataMin - 1', 'dataMax + 1']} tick={{ fontSize: 10, fill: isDark ? '#a3a3a3' : '#64748b' }} />
                       <Tooltip
+                        cursor={false}
                         contentStyle={{
                           backgroundColor: isDark ? '#18191D' : '#ffffff',
                           borderColor: isDark ? '#262626' : '#e2e8f0',

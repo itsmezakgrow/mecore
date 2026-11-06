@@ -540,6 +540,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                       unit="%"
                     />
                     <Tooltip
+                      cursor={false}
                       content={({ active, payload }) => {
                         if (active && payload && payload.length) {
                           const data = payload[0].payload;
@@ -780,6 +781,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                     <XAxis dataKey="shortName" tick={{ fontSize: 11, fill: '#787774' }} axisLine={{ stroke: '#2A2C33' }} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: '#787774' }} axisLine={{ stroke: '#2A2C33' }} tickLine={false} />
                     <Tooltip
+                      cursor={false}
                       content={({ active, payload }) => {
                         if (active && payload && payload.length) {
                           const data = payload[0].payload;

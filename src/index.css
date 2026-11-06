@@ -175,11 +175,21 @@
   background-color: #262830 !important;
 }
 
-.dark .bg-neutral-50 {
-  background-color: #1A1B20 !important;
+.dark .bg-neutral-50,
+.dark .bg-neutral-50\/50,
+.dark .bg-neutral-50\/60,
+.dark .bg-neutral-50\/70,
+.dark .bg-neutral-50\/80,
+.dark .bg-neutral-50\/90 {
+  background-color: #1E2025 !important;
 }
 
-.dark .bg-neutral-100 {
+.dark .bg-neutral-100,
+.dark .bg-neutral-100\/50,
+.dark .bg-neutral-100\/60,
+.dark .bg-neutral-100\/70,
+.dark .bg-neutral-100\/80,
+.dark .bg-neutral-100\/90 {
   background-color: #22242B !important;
 }
 
@@ -550,4 +560,81 @@ input[type="datetime-local"] {
 }
 .dark .to-amber-50\/80 {
   --tw-gradient-to: rgba(245, 158, 11, 0.12) var(--tw-gradient-to-position) !important;
+}
+
+/* ==========================================================================
+   Recharts Chart Interaction & Focus Fix (Desktop & Mobile)
+   1. Eliminates the white focus box/outline around charts when clicked or tapped
+   2. Eliminates vertical cursor lines and opaque rectangle overlays
+   ========================================================================== */
+
+/* Remove browser focus rings, outline boxes, and mobile tap highlight around charts & SVGs */
+svg:focus,
+svg:focus-visible,
+svg:active,
+.recharts-responsive-container,
+.recharts-responsive-container *,
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-surface,
+.recharts-surface *,
+svg.recharts-surface,
+svg.recharts-surface * {
+  outline: none !important;
+  outline-style: none !important;
+  outline-width: 0 !important;
+  outline-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-touch-callout: none !important;
+  user-select: none !important;
+}
+
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-wrapper:active,
+.recharts-surface:focus,
+.recharts-surface:focus-visible,
+.recharts-surface:active,
+svg.recharts-surface:focus,
+svg.recharts-surface:focus-visible,
+svg.recharts-surface:active,
+.recharts-responsive-container:focus,
+.recharts-responsive-container:focus-visible,
+.recharts-responsive-container:active {
+  outline: none !important;
+  outline-style: none !important;
+  outline-width: 0 !important;
+  outline-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Eliminate ALL cursor lines, rectangle bars, and background highlights completely */
+.recharts-tooltip-cursor,
+.recharts-bar-cursor,
+.recharts-rectangle.recharts-tooltip-cursor,
+line.recharts-tooltip-cursor,
+path.recharts-tooltip-cursor,
+rect.recharts-tooltip-cursor,
+svg line.recharts-tooltip-cursor,
+svg .recharts-tooltip-cursor,
+svg g.recharts-tooltip-cursor,
+svg path.recharts-tooltip-cursor,
+svg rect.recharts-tooltip-cursor,
+.recharts-cross.recharts-tooltip-cursor {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  fill: transparent !important;
+  stroke: transparent !important;
+  stroke-width: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Tooltip floating bubble styling and pointer pass-through */
+.recharts-tooltip-wrapper {
+  pointer-events: none !important;
+  z-index: 50 !important;
+  outline: none !important;
+  box-shadow: none !important;
 }

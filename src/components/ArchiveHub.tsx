@@ -322,14 +322,14 @@ export const ArchiveHub: React.FC<ArchiveHubProps> = ({
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl md:text-3xl font-extrabold text-[#2D3136] tracking-tight">
+                <h1 className="text-2xl md:text-3xl font-extrabold text-[#2D3136] dark:text-white tracking-tight">
                   {isAr ? 'مركز الأرشيف والمحفوظات' : 'Executive Archive Hub'}
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700">
                   {archivedItems.length} {isAr ? 'عنصر' : 'items'}
                 </span>
               </div>
-              <p className="text-sm text-neutral-500 max-w-2xl leading-relaxed">
+              <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-2xl leading-relaxed">
                 {isAr
                   ? 'مستودع آمن لإخفاء المهام والمشاريع المكتملة دون حذفها. يتيح لك الحفاظ على لوحة عمل يومية خفيفة وسريعة، مع إمكانية استرجاع أي عنصر في ثانية واحدة.'
                   : 'A secure repository to clear finished tasks and projects from your active views without permanently losing them. Keep your workspace lean, fast, and recover any item anytime.'}
@@ -358,22 +358,22 @@ export const ArchiveHub: React.FC<ArchiveHubProps> = ({
         </div>
 
         {/* Quick Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-neutral-100">
-          <div className="p-3.5 rounded-2xl bg-neutral-50/80 border border-neutral-100">
-            <span className="text-xs text-neutral-500 font-medium">{isAr ? 'المهام المؤرشفة' : 'Archived Tasks'}</span>
-            <div className="text-xl font-bold text-neutral-800 mt-1">{counts.task}</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-neutral-100 dark:border-neutral-800">
+          <div className="p-3.5 rounded-2xl bg-neutral-100/70 dark:bg-[#1E2025] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">{isAr ? 'المهام المؤرشفة' : 'Archived Tasks'}</span>
+            <div className="text-xl font-bold text-neutral-900 dark:text-white mt-1">{counts.task}</div>
           </div>
-          <div className="p-3.5 rounded-2xl bg-neutral-50/80 border border-neutral-100">
-            <span className="text-xs text-neutral-500 font-medium">{isAr ? 'المشاريع المحفوظة' : 'Archived Projects'}</span>
-            <div className="text-xl font-bold text-neutral-800 mt-1">{counts.project}</div>
+          <div className="p-3.5 rounded-2xl bg-neutral-100/70 dark:bg-[#1E2025] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">{isAr ? 'المشاريع المحفوظة' : 'Archived Projects'}</span>
+            <div className="text-xl font-bold text-neutral-900 dark:text-white mt-1">{counts.project}</div>
           </div>
-          <div className="p-3.5 rounded-2xl bg-neutral-50/80 border border-neutral-100">
-            <span className="text-xs text-neutral-500 font-medium">{isAr ? 'فترات الأيام السابقة' : 'Past Daily Blocks'}</span>
-            <div className="text-xl font-bold text-neutral-800 mt-1">{counts.dailyBlock}</div>
+          <div className="p-3.5 rounded-2xl bg-neutral-100/70 dark:bg-[#1E2025] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">{isAr ? 'فترات الأيام السابقة' : 'Past Daily Blocks'}</span>
+            <div className="text-xl font-bold text-neutral-900 dark:text-white mt-1">{counts.dailyBlock}</div>
           </div>
-          <div className="p-3.5 rounded-2xl bg-neutral-50/80 border border-neutral-100">
-            <span className="text-xs text-neutral-500 font-medium">{isAr ? 'الملاحظات والأفكار' : 'Archived Notes'}</span>
-            <div className="text-xl font-bold text-neutral-800 mt-1">{counts.note}</div>
+          <div className="p-3.5 rounded-2xl bg-neutral-100/70 dark:bg-[#1E2025] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">{isAr ? 'الملاحظات والأفكار' : 'Archived Notes'}</span>
+            <div className="text-xl font-bold text-neutral-900 dark:text-white mt-1">{counts.note}</div>
           </div>
         </div>
       </div>
@@ -391,15 +391,15 @@ export const ArchiveHub: React.FC<ArchiveHubProps> = ({
                 onClick={() => setSelectedTab(tab.id)}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                   isSelected
-                    ? 'bg-[#2D3136] text-white shadow-sm'
-                    : 'bg-white text-neutral-600 hover:bg-neutral-100 border border-neutral-200/80'
+                    ? 'bg-[#2D3136] dark:bg-neutral-700 text-white shadow-sm'
+                    : 'bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-800'
                 }`}
               >
                 <Icon size={14} className={isSelected ? 'text-amber-400' : 'text-neutral-400'} />
                 <span>{tab.label}</span>
                 <span
                   className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                    isSelected ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
+                    isSelected ? 'bg-white/20 text-white' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400'
                   }`}
                 >
                   {tab.count}
@@ -422,7 +422,7 @@ export const ArchiveHub: React.FC<ArchiveHubProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={isAr ? 'بحث في الأرشيف...' : 'Search archive...'}
-            className={`w-full py-2 bg-white border border-neutral-200/90 rounded-xl text-xs sm:text-sm text-neutral-800 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all ${
+            className={`w-full py-2 bg-white dark:bg-neutral-900 border border-neutral-200/90 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-neutral-800 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all ${
               isAr ? 'pr-9 pl-3' : 'pl-9 pr-3'
             }`}
           />
@@ -432,16 +432,16 @@ export const ArchiveHub: React.FC<ArchiveHubProps> = ({
       {/* Items List */}
       {filteredItems.length === 0 ? (
         <div className="bg-white dark:bg-neutral-900 rounded-3xl border border-dashed border-neutral-200 dark:border-neutral-800 p-12 text-center space-y-4">
-          <div className="w-16 h-16 mx-auto rounded-3xl bg-neutral-100 flex items-center justify-center text-neutral-400">
+          <div className="w-16 h-16 mx-auto rounded-3xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-400">
             <Archive size={32} />
           </div>
           <div className="space-y-1 max-w-md mx-auto">
-            <h3 className="text-base font-bold text-neutral-800">
+            <h3 className="text-base font-bold text-neutral-800 dark:text-white">
               {searchQuery.trim()
                 ? (isAr ? 'لا توجد نتائج مطابقة لبحثك' : 'No matching archived items found')
                 : (isAr ? 'الأرشيف فارغ حالياً' : 'Your Archive is Clean and Empty')}
             </h3>
-            <p className="text-xs sm:text-sm text-neutral-500">
+            <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">
               {isAr
                 ? 'عند إكمال مهمة أو إنهاء مشروع، يمكنك أرشفته لإبقائه محفوظاً دون أن يزاحم مساحة عملك اليومية النشطة.'
                 : 'Whenever you complete tasks, finish projects, or wrap up timeblocks, archive them to keep your primary dashboard clutter-free.'}
@@ -450,7 +450,7 @@ export const ArchiveHub: React.FC<ArchiveHubProps> = ({
           {onNavigateModule && (
             <button
               onClick={() => onNavigateModule('tasks')}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 text-xs font-semibold transition-all cursor-pointer"
             >
               <span>{isAr ? 'الانتقال إلى المهام' : 'Go to Tasks'}</span>
               <ArrowRight size={14} className={isAr ? 'rotate-180' : ''} />
@@ -485,18 +485,18 @@ export const ArchiveHub: React.FC<ArchiveHubProps> = ({
                   </div>
 
                   <div>
-                    <h4 className="text-sm font-bold text-neutral-800 line-clamp-1 group-hover:text-amber-700 transition-colors">
+                    <h4 className="text-sm font-bold text-neutral-800 dark:text-white line-clamp-1 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
                       {item.title}
                     </h4>
                     {item.subtitle && (
-                      <p className="text-xs text-neutral-500 mt-1 line-clamp-2 leading-relaxed">
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2 leading-relaxed">
                         {item.subtitle}
                       </p>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-3 border-t border-neutral-100 text-xs">
+                <div className="flex items-center justify-between pt-3 border-t border-neutral-100 dark:border-neutral-800 text-xs">
                   <span className="text-[11px] text-neutral-400 flex items-center gap-1">
                     <Calendar size={12} />
                     <span>

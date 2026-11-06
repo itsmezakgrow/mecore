@@ -863,13 +863,13 @@ export const InteractiveWalkthroughGuide: React.FC<InteractiveWalkthroughGuidePr
               </span>
             </div>
 
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-600">
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300">
               {isAr ? 'نموذج محاكاة تفاعلي' : 'Interactive Static Blueprint'}
             </span>
           </div>
 
           {/* The Static Mockup Card Display */}
-          <div className="bg-neutral-50/80 rounded-3xl border border-neutral-200/90 p-5 md:p-6 shadow-inner relative overflow-hidden space-y-5">
+          <div className="bg-neutral-50/80 dark:bg-[#1E2025] rounded-3xl border border-neutral-200/90 dark:border-neutral-800 p-5 md:p-6 shadow-inner relative overflow-hidden space-y-5">
             {/* Celebration Overlay if completed */}
             {showCelebration && (
               <div className="absolute inset-0 bg-emerald-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center p-6 text-center text-white animate-fadeIn space-y-3">
@@ -1367,9 +1367,9 @@ export const InteractiveWalkthroughGuide: React.FC<InteractiveWalkthroughGuidePr
 
             <div className="space-y-2">
               {currentModule.faq.map((item, idx) => (
-                <div key={idx} className="p-3.5 rounded-2xl bg-neutral-50/80 border border-neutral-100 space-y-1">
-                  <div className="text-xs font-bold text-neutral-800">{item.q}</div>
-                  <div className="text-xs text-neutral-600 leading-relaxed font-normal">{item.a}</div>
+                <div key={idx} className="p-3.5 rounded-2xl bg-neutral-50/80 dark:bg-[#1E2025] border border-neutral-100 dark:border-neutral-800 space-y-1">
+                  <div className="text-xs font-bold text-neutral-800 dark:text-neutral-100">{item.q}</div>
+                  <div className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed font-normal">{item.a}</div>
                 </div>
               ))}
             </div>

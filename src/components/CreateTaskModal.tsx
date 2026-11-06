@@ -25,6 +25,7 @@ interface CreateTaskModalProps {
   onAddTask: (task: Omit<TaskItem, 'id'>) => Promise<any>;
   allProjects?: ProjectItem[];
   allGoals?: GoalItem[];
+  initialTitle?: string;
   initialDueDate?: string;
   initialPriority?: Priority;
   initialProjectId?: string;
@@ -48,6 +49,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   onAddTask,
   allProjects = [],
   allGoals = [],
+  initialTitle = '',
   initialDueDate,
   initialPriority = 'Med',
   initialProjectId = '',
@@ -58,7 +60,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   // Form State
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(initialTitle || '');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority>(initialPriority);
   const [dueDate, setDueDate] = useState<string>(
@@ -78,7 +80,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   // Autofocus input when modal opens
   useEffect(() => {
     if (isOpen) {
-      setTitle('');
+      setTitle(initialTitle || '');
       setDescription('');
       setPriority(initialPriority);
       setDueDate(initialDueDate || new Date().toISOString().split('T')[0]);
@@ -92,10 +94,13 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       setTimeout(() => {
         if (titleInputRef.current) {
           titleInputRef.current.focus();
+          if (initialTitle) {
+            titleInputRef.current.setSelectionRange(initialTitle.length, initialTitle.length);
+          }
         }
       }, 50);
     }
-  }, [isOpen, initialDueDate, initialPriority, initialProjectId]);
+  }, [isOpen, initialTitle, initialDueDate, initialPriority, initialProjectId]);
 
   if (!isOpen) return null;
 

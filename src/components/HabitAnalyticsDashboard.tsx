@@ -829,6 +829,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
               />
 
               <Tooltip
+                cursor={false}
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const data: DailyTrendPoint = payload[0].payload;
@@ -939,6 +940,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
                 <XAxis dataKey="shortName" tick={{ fontSize: 11, fill: '#888888' }} tickLine={false} axisLine={false} />
                 <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: '#888888' }} tickLine={false} axisLine={false} unit="%" />
                 <Tooltip
+                  cursor={false}
                   content={({ active, payload }) => {
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;

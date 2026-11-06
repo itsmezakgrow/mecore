@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Sidebar 
 } from './components/Sidebar';
@@ -158,6 +158,7 @@ import {
   addSundayReset,
   subscribeToReviews,
   addReviewEntry,
+  updateReviewEntry,
   deleteReviewEntry,
   subscribeToDailyBlocks,
   addDailyBlock,
@@ -201,10 +202,11 @@ import { ReflectionsJournal } from './components/ReflectionsJournal';
 import { SleepWakeTracker } from './components/SleepWakeTracker';
 import { ReviewJournalModal } from './components/ReviewJournalModal';
 import { ReviewPromptBanner } from './components/ReviewPromptBanner';
+import { NotificationCenterDrawer } from './components/NotificationCenterDrawer';
 import { FocusTracker } from './components/FocusTracker';
 import { isSystemTrackingActive } from './utils/moduleLifecycle';
 import firebaseConfig from '../firebase-applet-config.json';
-import { RefreshCw, Wifi, WifiOff, Download, Monitor, Minimize2, Maximize2, Moon, Sun, Timer, MessageSquare, BarChart3, CheckSquare, Flame, CalendarDays, StickyNote, ChevronLeft, ChevronRight, RotateCcw, Archive, HelpCircle } from 'lucide-react';
+import { RefreshCw, Wifi, WifiOff, Download, Monitor, Minimize2, Maximize2, Moon, Sun, Timer, MessageSquare, BarChart3, CheckSquare, Flame, CalendarDays, StickyNote, ChevronLeft, ChevronRight, RotateCcw, Archive, HelpCircle, Bell } from 'lucide-react';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState<ModuleType>(() => {
@@ -464,6 +466,72 @@ export default function App() {
   const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
   const [reviewModalTab, setReviewModalTab] = useState<'weekly' | 'monthly' | 'archive'>('weekly');
 
+  // ----------------- Smart Action Notification Center State -----------------
+  const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+  const [reflectionsInitialTab, setReflectionsInitialTab] = useState<'journal' | 'blocks' | 'visions' | 'affirmations'>('journal');
+
+  const handleNotificationNavigate = (module: ModuleType, subContext?: { tab?: string; filter?: string }) => {
+    if (module === 'reflections' && subContext?.tab) {
+      setReflectionsInitialTab(subContext.tab as any);
+    }
+    changeModule(module);
+  };
+
+  const todayDateKey = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  const pendingNotificationCount = useMemo(() => {
+    let count = 0;
+    try {
+      const storageKey = `core_dismissed_notifications_${todayDateKey}`;
+      const dismissed: string[] = JSON.parse(localStorage.getItem(storageKey) || '[]');
+
+      // 1. Daily State Audit
+      const hasDailyReview = reviews.some(r => r.type === 'daily' && r.periodKey === todayDateKey && r.dayScore !== undefined);
+      if (!hasDailyReview && !dismissed.includes('daily-audit')) count++;
+
+      // 2. Weekend Sunday Reset
+      const now = new Date();
+      const currentDay = now.getDay();
+      const isWeekend = currentDay === 0 || (currentDay === 6 && now.getHours() >= 17);
+      if (isWeekend) {
+        const year = now.getFullYear();
+        const firstJan = new Date(year, 0, 1);
+        const dayNr = Math.ceil((now.getTime() - firstJan.getTime()) / 86400000);
+        const weekNr = Math.ceil((dayNr + firstJan.getDay()) / 7);
+        const currentWeekKey = `${year}-W${weekNr.toString().padStart(2, '0')}`;
+        const hasWeekly = reviews.some(r => r.type === 'weekly' && r.periodKey === currentWeekKey);
+        if (!hasWeekly && !dismissed.includes('sunday-reset')) count++;
+      }
+
+      // 3. Monthly Review
+      const dayOfMonth = now.getDate();
+      if (dayOfMonth >= 27 || dayOfMonth <= 2) {
+        const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const hasMonthly = reviews.some(r => r.type === 'monthly' && r.periodKey === currentMonthKey);
+        if (!hasMonthly && !dismissed.includes('monthly-review')) count++;
+      }
+
+      // 4. Tasks due today
+      const tasksDueToday = tasks.filter(t => !t.completed && !t.archived && t.dueDate === todayDateKey);
+      if (tasksDueToday.length > 0 && !dismissed.includes('tasks-today')) count++;
+
+      // 5. Habits pending today
+      const activeHabits = habits.filter(h => !h.archived);
+      const pendingHabits = activeHabits.filter(h => !h.history || !h.history[todayDateKey]);
+      if (pendingHabits.length > 0 && !dismissed.includes('habits-today')) count++;
+
+      // 6. Affirmations
+      if (affirmations.length > 0 && !dismissed.includes('affirmations-deck')) count++;
+
+      // 7. Visions
+      if (visions.length > 0 && !dismissed.includes('vision-story')) count++;
+    } catch {}
+    return count;
+  }, [reviews, tasks, habits, affirmations, visions, todayDateKey]);
+
   const handleSaveSleepLog = async (logData: Omit<DailySleepLog, 'id'>) => {
     await logDailySleep(logData);
     addToast(
@@ -494,7 +562,14 @@ export default function App() {
   };
 
   const handleSaveReview = async (reviewData: Omit<ReviewEntry, 'id'>) => {
-    await addReviewEntry(reviewData);
+    const existing = reviews.find(
+      (r) => r.type === reviewData.type && r.periodKey === reviewData.periodKey
+    );
+    if (existing && existing.id) {
+      await updateReviewEntry(existing.id, reviewData);
+    } else {
+      await addReviewEntry(reviewData);
+    }
     addToast(
       lang === 'ar' ? '✓ تم حفظ التقرير والتحليل بنجاح في السجل!' : '✓ Review entry archived successfully!',
       'success'
@@ -2226,6 +2301,21 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Action Notification Center Bell Button */}
+            <button
+              type="button"
+              onClick={() => setIsNotificationDrawerOpen(true)}
+              className="relative p-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-[#1E2022] dark:hover:bg-[#2D3136] text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white border border-neutral-200/80 dark:border-[#2D3136] shadow-3xs transition-all cursor-pointer select-none active:scale-95 flex items-center justify-center"
+              title={lang === 'ar' ? 'مركز التنبيهات والإجراءات اليومية' : 'Daily Action Center & Notifications'}
+            >
+              <Bell size={15} />
+              {pendingNotificationCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-black font-mono flex items-center justify-center shadow-xs animate-pulse">
+                  {pendingNotificationCount}
+                </span>
+              )}
+            </button>
+
             {/* Live Pomodoro Timer - Configurable in Pomodoro Settings */}
             {showTopBarTimer && (
               <button
@@ -2436,6 +2526,7 @@ export default function App() {
                   onDeleteVision={deleteVision}
                   onAddAffirmation={addAffirmation}
                   onDeleteAffirmation={deleteAffirmation}
+                  initialTab={reflectionsInitialTab}
                   isDark={isDark}
                   lang={lang}
                 />
@@ -2778,6 +2869,19 @@ export default function App() {
         onStop={handleStopFocus}
         onMinimize={() => setIsFocusMode(false)}
         onToggleAmbient={handleToggleAmbientAudio}
+      />
+
+      {/* Smart Daily Action Notification Center Drawer */}
+      <NotificationCenterDrawer
+        isOpen={isNotificationDrawerOpen}
+        onClose={() => setIsNotificationDrawerOpen(false)}
+        tasks={tasks}
+        habits={habits}
+        reviews={reviews}
+        visions={visions}
+        affirmations={affirmations}
+        onNavigate={handleNotificationNavigate}
+        lang={lang}
       />
 
       {/* Elegant Toast Notifications */}

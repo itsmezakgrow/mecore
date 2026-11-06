@@ -20,7 +20,8 @@ import {
   Layers,
   ChevronRight,
   ExternalLink,
-  Target
+  Target,
+  FolderKanban
 } from 'lucide-react';
 import { TaskItem, TaskSubtask, Priority, AppComment, CommentMention, HabitItem, NoteItem, ProjectItem, GoalItem } from '../types';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
@@ -70,6 +71,8 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [priority, setPriority] = useState<Priority>(task.priority);
   const [category, setCategory] = useState(task.category || 'Business');
   const [dueDate, setDueDate] = useState(task.dueDate || '');
+  const [projectId, setProjectId] = useState<string>(task.projectId || '');
+  const [goalId, setGoalId] = useState<string>(task.goalId || '');
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>(task.subtasks || []);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   
@@ -128,6 +131,8 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         priority,
         category,
         dueDate,
+        projectId: projectId || undefined,
+        goalId: goalId || undefined,
         subtasks,
         isMeasurable,
         targetValue: isMeasurable ? targetValue : undefined,
@@ -310,12 +315,13 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 />
               </div>
 
-              {/* Attributes Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Attributes Grid (Priority, Due Date, Project, Goal, Category) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {/* Priority */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#787774] dark:text-neutral-400">
-                    {isAr ? 'مستوى الأولوية' : 'Priority'}
+                  <label className="text-xs font-bold text-[#787774] dark:text-neutral-400 flex items-center gap-1.5">
+                    <Flame size={13} className={priority === 'High' ? 'text-rose-500' : priority === 'Med' ? 'text-amber-500' : 'text-emerald-500'} />
+                    <span>{isAr ? 'مستوى الأولوية' : 'Priority'}</span>
                   </label>
                   <select
                     value={priority}
@@ -328,29 +334,11 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   </select>
                 </div>
 
-                {/* Category */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#787774] dark:text-neutral-400">
-                    {isAr ? 'التصنيف' : 'Category'}
-                  </label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] text-xs font-semibold bg-[#FBFBFA] dark:bg-[#1E2025] text-[#2F3437] dark:text-white"
-                  >
-                    <option value="Business">{isAr ? 'العمل والأعمال' : 'Business'}</option>
-                    <option value="Personal">{isAr ? 'شخصي' : 'Personal'}</option>
-                    <option value="Finance">{isAr ? 'المالية والاستثمار' : 'Finance'}</option>
-                    <option value="Operations">{isAr ? 'العمليات والتشغيل' : 'Operations'}</option>
-                    <option value="Strategy">{isAr ? 'الاستراتيجية والتخطيط' : 'Strategy'}</option>
-                    <option value="Health">{isAr ? 'الصحة والعافية' : 'Health'}</option>
-                  </select>
-                </div>
-
                 {/* Due Date */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#787774] dark:text-neutral-400">
-                    {isAr ? 'تاريخ الاستحقاق' : 'Due Date'}
+                  <label className="text-xs font-bold text-[#787774] dark:text-neutral-400 flex items-center gap-1.5">
+                    <Calendar size={13} className="text-blue-500" />
+                    <span>{isAr ? 'تاريخ الاستحقاق' : 'Due Date'}</span>
                   </label>
                   <input
                     type="date"
@@ -358,6 +346,69 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                     onChange={(e) => setDueDate(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] text-xs font-mono bg-[#FBFBFA] dark:bg-[#1E2025] text-[#2F3437] dark:text-white"
                   />
+                </div>
+
+                {/* Category */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[#787774] dark:text-neutral-400 flex items-center gap-1.5">
+                    <Tag size={13} className="text-purple-500" />
+                    <span>{isAr ? 'التصنيف' : 'Category'}</span>
+                  </label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] text-xs font-semibold bg-[#FBFBFA] dark:bg-[#1E2025] text-[#2F3437] dark:text-white"
+                  >
+                    <option value="Business">{isAr ? 'العمل والأعمال (Business)' : 'Business'}</option>
+                    <option value="Personal">{isAr ? 'شخصي (Personal)' : 'Personal'}</option>
+                    <option value="Deep Work">{isAr ? 'عمل عميق (Deep Work)' : 'Deep Work'}</option>
+                    <option value="Finance">{isAr ? 'المالية والاستثمار (Finance)' : 'Finance'}</option>
+                    <option value="Operations">{isAr ? 'العمليات والتشغيل (Operations)' : 'Operations'}</option>
+                    <option value="Strategy">{isAr ? 'الاستراتيجية والتخطيط (Strategy)' : 'Strategy'}</option>
+                    <option value="Health">{isAr ? 'الصحة والعافية (Health)' : 'Health'}</option>
+                    <option value="Learning">{isAr ? 'تعلم وتطوير (Learning)' : 'Learning'}</option>
+                    <option value="Admin">{isAr ? 'إداريات وروتين (Admin)' : 'Admin / Routine'}</option>
+                  </select>
+                </div>
+
+                {/* Assigned Project */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[#787774] dark:text-neutral-400 flex items-center gap-1.5">
+                    <FolderKanban size={13} className="text-indigo-500" />
+                    <span>{isAr ? 'المشروع المعين' : 'Assigned Project'}</span>
+                  </label>
+                  <select
+                    value={projectId}
+                    onChange={(e) => setProjectId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] text-xs font-semibold bg-[#FBFBFA] dark:bg-[#1E2025] text-[#2F3437] dark:text-white"
+                  >
+                    <option value="">{isAr ? 'بدون مشروع (مستقل)' : 'No Project (Independent)'}</option>
+                    {allProjects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        📁 {p.title} {p.category ? `[${p.category}]` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Strategic Goal */}
+                <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
+                  <label className="text-xs font-bold text-[#787774] dark:text-neutral-400 flex items-center gap-1.5">
+                    <Target size={13} className="text-amber-500" />
+                    <span>{isAr ? 'الهدف الاستراتيجي المرتبط' : 'Assigned Strategic Goal'}</span>
+                  </label>
+                  <select
+                    value={goalId}
+                    onChange={(e) => setGoalId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] text-xs font-semibold bg-[#FBFBFA] dark:bg-[#1E2025] text-[#2F3437] dark:text-white"
+                  >
+                    <option value="">{isAr ? 'بدون هدف استراتيجي' : 'No Strategic Goal'}</option>
+                    {allGoals.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        🎯 {g.title} {g.targetDate ? `(by ${g.targetDate})` : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -373,7 +424,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                     />
                     <span className="font-bold text-xs text-[#2F3437] dark:text-white flex items-center gap-1.5">
                       <Target size={14} className="text-indigo-600 dark:text-indigo-400" />
-                      <span>{isAr ? 'نظام القياس والمستويات (Measurable Units / Level System)' : 'Measurable Units / Level System'}</span>
+                      <span>{isAr ? 'أرقام وقياسات قابلة للتتبع (Measurable Numerics)' : 'Measurable Numerics / Target Tracking'}</span>
                     </span>
                   </label>
                   {isMeasurable && (
@@ -490,26 +541,94 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 )}
               </div>
 
-              {/* Subtasks Quick Overview */}
-              {subtasks.length > 0 && (
-                <div className="bg-[#FAF9F7] dark:bg-[#151619] p-3.5 rounded-2xl border border-[#EAE9E6] dark:border-[#2A2C33] space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-[#2F3437] dark:text-white flex items-center gap-1.5">
-                      <ListTodo size={14} className="text-emerald-600 dark:text-emerald-400" />
-                      <span>{isAr ? 'المهام الفرعية المنجزة' : 'Subtask Progress'}</span>
-                    </span>
-                    <span className="font-mono font-bold text-neutral-600 dark:text-neutral-400">
-                      {completedSubtasks}/{subtasks.length} ({progressPercent}%)
-                    </span>
-                  </div>
-                  <div className="w-full bg-neutral-200 dark:bg-[#2A2C33] h-2 rounded-full overflow-hidden">
+              {/* Subtasks Section Embedded in Details View */}
+              <div className="bg-[#FAF9F7] dark:bg-[#151619] p-4 rounded-2xl border border-[#EAE9E6] dark:border-[#2A2C33] space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-[#2F3437] dark:text-white flex items-center gap-1.5">
+                    <ListTodo size={14} className="text-emerald-600 dark:text-emerald-400" />
+                    <span>{isAr ? 'المهام الفرعية (Subtasks)' : 'Subtasks Checklist'}</span>
+                  </span>
+                  <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md text-[11px]">
+                    {completedSubtasks} / {subtasks.length} ({progressPercent}%)
+                  </span>
+                </div>
+
+                {subtasks.length > 0 && (
+                  <div className="w-full bg-neutral-200 dark:bg-[#2A2C33] h-1.5 rounded-full overflow-hidden">
                     <div 
                       className="bg-emerald-500 h-full rounded-full transition-all duration-300"
                       style={{ width: `${progressPercent}%` }}
                     />
                   </div>
+                )}
+
+                {/* Subtask items list */}
+                {subtasks.length > 0 && (
+                  <div className="space-y-1.5 pt-1 max-h-48 overflow-y-auto">
+                    {subtasks.map((st) => (
+                      <div
+                        key={st.id}
+                        className={`flex items-center justify-between gap-2 p-2 rounded-xl border text-xs transition-colors ${
+                          st.completed
+                            ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40 text-neutral-400 dark:text-neutral-500 line-through'
+                            : 'bg-white dark:bg-[#18191D] border-[#EAE9E6] dark:border-[#2A2C33] text-[#2F3437] dark:text-neutral-200'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSubtask(st.id)}
+                          className="flex items-center gap-2 flex-1 text-left rtl:text-right cursor-pointer"
+                        >
+                          <div
+                            className={`w-4 h-4 rounded flex items-center justify-center border transition-colors shrink-0 ${
+                              st.completed
+                                ? 'bg-emerald-600 border-emerald-600 text-white'
+                                : 'border-neutral-300 dark:border-neutral-600 bg-transparent'
+                            }`}
+                          >
+                            {st.completed && <Check size={11} strokeWidth={3} />}
+                          </div>
+                          <span className="font-medium text-xs break-all">{st.title}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSubtask(st.id)}
+                          className="text-neutral-400 hover:text-rose-500 p-1 rounded transition-colors cursor-pointer shrink-0"
+                          title={isAr ? 'حذف المهمة الفرعية' : 'Delete subtask'}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Inline Add Subtask Input */}
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    placeholder={isAr ? 'أضف مهمة فرعية جديدة (اضغط Enter)...' : 'Add a new subtask (press Enter)...'}
+                    value={newSubtaskTitle}
+                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddSubtask();
+                      }
+                    }}
+                    className="flex-1 px-3 py-1.5 rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] text-xs text-[#2F3437] dark:text-white bg-white dark:bg-[#18191D] placeholder:text-neutral-400 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddSubtask}
+                    disabled={!newSubtaskTitle.trim()}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <Plus size={13} />
+                    <span>{isAr ? 'إضافة' : 'Add'}</span>
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
           )}
 

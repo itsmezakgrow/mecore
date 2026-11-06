@@ -26,7 +26,12 @@ import {
   Sun,
   ShieldCheck,
   Check,
-  Dumbbell
+  Dumbbell,
+  Shield,
+  X,
+  AlertCircle,
+  ArrowRight,
+  ArrowLeft
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -112,11 +117,13 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   focusSessions = [],
   rewards = [],
   workouts = [],
+  reviews = [],
   setActiveModule,
   onClaimReward,
   lang = 'en',
 }) => {
   const isAr = lang === 'ar';
+  const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
 
   // -------------------------------------------------------------------------
   // Executive Dashboard Controls
@@ -125,6 +132,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const [metricDomain, setMetricDomain] = useState<MetricDomain>('all');
   const [chartType, setChartType] = useState<'area' | 'bar'>('area');
   const [showRewardModal, setShowRewardModal] = useState<boolean>(false);
+  const [auditBannerDismissed, setAuditBannerDismissed] = useState<boolean>(false);
 
   // -------------------------------------------------------------------------
   // Date Intelligence & Timestamps
@@ -151,6 +159,54 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       return todayStr;
     }
   }, [now, isAr, todayStr]);
+
+  // -------------------------------------------------------------------------
+  // Daily State Audit & Day Mastery Intelligence
+  // -------------------------------------------------------------------------
+  const todayDailyReview = useMemo(() => {
+    return reviews.find(
+      (r) => r.type === 'daily' && r.periodKey === todayStr && r.dayScore !== undefined
+    );
+  }, [reviews, todayStr]);
+
+  const latestDailyReview = useMemo(() => {
+    const list = reviews
+      .filter((r) => r.type === 'daily' && r.dayScore !== undefined)
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return list[0] || null;
+  }, [reviews]);
+
+  const activeReviewForCard = todayDailyReview || latestDailyReview;
+  const isTodayScored = !!todayDailyReview;
+  const dayScore = activeReviewForCard?.dayScore ?? null;
+
+  const scoreTier = useMemo(() => {
+    if (dayScore === null) return null;
+    if (dayScore >= 90) return { label: isAr ? 'أداء أسطوري' : 'Legendary', color: 'text-amber-500 bg-amber-500/10 border-amber-500/30', icon: '🏆' };
+    if (dayScore >= 75) return { label: isAr ? 'تنفيذ عالي' : 'High Execution', color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/30', icon: '🟢' };
+    if (dayScore >= 55) return { label: isAr ? 'يوم متوازن' : 'Balanced', color: 'text-blue-500 bg-blue-500/10 border-blue-500/30', icon: '🟡' };
+    if (dayScore >= 40) return { label: isAr ? 'يوم صعب' : 'Challenging', color: 'text-orange-500 bg-orange-500/10 border-orange-500/30', icon: '🟠' };
+    return { label: isAr ? 'استرجاع طاقة' : 'Recovery Required', color: 'text-rose-500 bg-rose-500/10 border-rose-500/30', icon: '🔴' };
+  }, [dayScore, isAr]);
+
+  const boosterDisplayMap: Record<string, { label: string; icon: string }> = {
+    workout: { label: isAr ? 'تمرين مكثف' : 'Workout', icon: '🏋️‍♂️' },
+    clean_nutrition: { label: isAr ? 'أكل صحي' : 'Nutrition', icon: '🥗' },
+    deep_work: { label: isAr ? 'عمل عميق' : 'Deep Work', icon: '🎯' },
+    quality_sleep: { label: isAr ? 'نوم مريح' : 'Good Sleep', icon: '😴' },
+    sunlight_walk: { label: isAr ? 'شمس وتنفس' : 'Sunlight', icon: '☀️' },
+    connection: { label: isAr ? 'تواصل إيجابي' : 'Connection', icon: '🤝' },
+    reading: { label: isAr ? 'قراءة وتعلم' : 'Reading', icon: '📖' },
+  };
+
+  const drainDisplayMap: Record<string, { label: string; icon: string }> = {
+    work_pressure: { label: isAr ? 'ضغط عمل' : 'Work Stress', icon: '💼' },
+    screen_overload: { label: isAr ? 'سكرين تايم' : 'Screens', icon: '📱' },
+    poor_sleep: { label: isAr ? 'قلة نعاس' : 'Poor Sleep', icon: '🥱' },
+    junk_food: { label: isAr ? 'تخربيق ماكلة' : 'Junk Food', icon: '🍔' },
+    conflict_argument: { label: isAr ? 'خلاف/مشكل' : 'Conflict', icon: '⚡' },
+    procrastination: { label: isAr ? 'تسويف' : 'Procrastination', icon: '⏳' },
+  };
 
   // -------------------------------------------------------------------------
   // Focus Hours Analytics (Today, This Week, This Month)
@@ -688,6 +744,256 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       </div>
 
       {/* ---------------------------------------------------------------------
+          DAILY STATE AUDIT PENDING CALLOUT BANNER
+          Appears when today's audit is not yet logged
+          --------------------------------------------------------------------- */}
+      {!todayDailyReview && !auditBannerDismissed && (
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-orange-500/10 dark:from-amber-950/40 dark:via-neutral-900/60 dark:to-orange-950/30 border border-amber-500/30 dark:border-amber-500/20 p-4 transition-all duration-300 animate-fadeIn">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-2xl bg-amber-500 text-white shadow-md shadow-amber-500/20 animate-bounce shrink-0">
+                <Zap className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-xs font-black text-neutral-900 dark:text-white flex items-center gap-1.5">
+                    {isAr ? 'تنبيه التدقيق والسيطرة اليومية (Daily State Audit Pending)' : 'Daily State Audit Pending'}
+                  </h3>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500 text-white shadow-3xs animate-pulse">
+                    {isAr ? 'مطلوب اليوم' : 'Required Today'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-600 dark:text-neutral-300 mt-1 leading-relaxed">
+                  {isAr
+                    ? 'مازال ما سجلتيش تنقيط نهارك ومستويات الطاقة، التحكم بالتوتر والانضباط. تسجيلك اليومي كيمنحك Day Mastery Score وكيكشف العوامل اللي كتحفز طاقتك.'
+                    : 'You haven\'t logged today\'s state ratings yet. Audit your 5 dimensions and triggers to get your daily composite Day Mastery Score.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveModule('reflections')}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 shadow-sm transition-all active:scale-95 cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>{isAr ? 'تنقيط نهار اليوم دابا ⚡' : 'Audit Today Now ⚡'}</span>
+                <ArrowIcon className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuditBannerDismissed(true)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition cursor-pointer"
+                title={isAr ? 'إخفاء مؤقت' : 'Dismiss'}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------------------------
+          DAILY STATE AUDIT & DAY MASTERY SCORE WIDGET
+          Shows Composite Score (0-100), 5 Core Sliders, Boosters & Drains
+          --------------------------------------------------------------------- */}
+      <div className="bg-white dark:bg-[#181A20] rounded-2xl p-4 sm:p-5 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-100 dark:border-neutral-800 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500/20 to-emerald-500/20 border border-amber-500/30 flex items-center justify-center text-amber-500 shadow-3xs">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-black text-neutral-900 dark:text-white">
+                  {isAr ? 'مؤشر السيطرة والتدقيق اليومي' : 'Daily State Mastery & Audit'}
+                </h3>
+                {isTodayScored ? (
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>{isAr ? 'تم تقييم اليوم' : 'Today Logged'}</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    <span>{isAr ? 'بانتظار تقييم اليوم' : 'Pending for Today'}</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-neutral-500">
+                {isTodayScored
+                  ? (isAr ? 'تقييم اليوم المسجل مع المحفزات والمستنزفات' : 'Today\'s verified state telemetry and triggers')
+                  : activeReviewForCard
+                  ? (isAr ? `آخر تقييم مسجل (${activeReviewForCard.periodKey}) • اضغط لتقييم اليوم` : `Showing latest logged audit (${activeReviewForCard.periodKey})`)
+                  : (isAr ? 'ابدأ أول تقييم لمستويات الطاقة والانضباط' : 'Start your first daily state audit')}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setActiveModule('reflections')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white bg-neutral-100 hover:bg-neutral-200 dark:bg-[#20232B] dark:hover:bg-[#292D37] border border-neutral-200 dark:border-neutral-700/80 transition cursor-pointer"
+          >
+            <span>{isTodayScored ? (isAr ? 'تعديل أو استعراض المبيان الكامل' : 'View Full Analytics & Trend') : (isAr ? 'تنقيط نهار اليوم الآن ⚡' : 'Score Today\'s Day Now ⚡')}</span>
+            <ArrowIcon className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+          {/* Column 1: Composite Day Mastery Score (4 cols) */}
+          <div className="md:col-span-4 p-4 rounded-xl bg-neutral-50/80 dark:bg-[#14161C]/80 border border-neutral-200/60 dark:border-neutral-800 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 font-bold">
+                {isAr ? 'نقطة النهار الإجمالية' : 'Composite Day Score'}
+              </span>
+              {scoreTier && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${scoreTier.color} flex items-center gap-1`}>
+                  <span>{scoreTier.icon}</span>
+                  <span>{scoreTier.label}</span>
+                </span>
+              )}
+            </div>
+
+            <div className="my-3 flex items-baseline gap-2">
+              <span className="text-4xl sm:text-5xl font-black font-mono tracking-tight text-neutral-900 dark:text-white">
+                {dayScore !== null ? dayScore : '—'}
+              </span>
+              <span className="text-sm font-bold text-neutral-400">/ 100</span>
+            </div>
+
+            {/* Score progress bar */}
+            <div className="w-full bg-neutral-200 dark:bg-neutral-800 h-2 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-amber-500 via-emerald-500 to-sky-500 transition-all duration-500"
+                style={{ width: `${dayScore !== null ? Math.min(100, Math.max(0, dayScore)) : 0}%` }}
+              />
+            </div>
+
+            <p className="text-[10px] text-neutral-400 font-mono mt-2.5">
+              {isAr
+                ? 'مؤشر مركب مبني على الطاقة، التحكم بالتوتر، التركيز، والانضباط.'
+                : 'Weighted composite metric of energy, stress control, and discipline.'}
+            </p>
+          </div>
+
+          {/* Column 2: 5 State Sliders (5 cols) */}
+          <div className="md:col-span-5 space-y-2 p-3 rounded-xl bg-neutral-50/50 dark:bg-[#14161C]/50 border border-neutral-200/50 dark:border-neutral-800/80">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold block mb-1">
+              {isAr ? 'المؤشرات الحيوية الـ 5 (State Ratings)' : 'The 5 Core Dimensions (1-10)'}
+            </span>
+
+            {[
+              { 
+                label: isAr ? 'الطاقة والنشاط' : 'Energy & Vitality', 
+                val: activeReviewForCard?.stateRatings?.energy ?? (dayScore !== null ? 8 : 0), 
+                color: 'bg-amber-500', 
+                icon: '⚡' 
+              },
+              { 
+                label: isAr ? 'التحكم بالتوتر' : 'Stress Control', 
+                val: activeReviewForCard?.stateRatings?.stress ?? (dayScore !== null ? 8 : 0), 
+                color: 'bg-emerald-500', 
+                icon: '🛡️' 
+              },
+              { 
+                label: isAr ? 'الصفاء الذهني' : 'Mental Clarity', 
+                val: activeReviewForCard?.stateRatings?.clarity ?? (dayScore !== null ? 8 : 0), 
+                color: 'bg-sky-500', 
+                icon: '🎯' 
+              },
+              { 
+                label: isAr ? 'الانضباط والتنفيذ' : 'Discipline', 
+                val: activeReviewForCard?.stateRatings?.discipline ?? (dayScore !== null ? 8 : 0), 
+                color: 'bg-indigo-500', 
+                icon: '⚔️' 
+              },
+              { 
+                label: isAr ? 'الرضا والامتنان' : 'Fulfillment', 
+                val: activeReviewForCard?.stateRatings?.fulfillment ?? (dayScore !== null ? 8 : 0), 
+                color: 'bg-purple-500', 
+                icon: '🌟' 
+              },
+            ].map((m, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className="text-[11px] w-4">{m.icon}</span>
+                <span className="text-[11px] text-neutral-600 dark:text-neutral-400 font-medium w-28 truncate">
+                  {m.label}
+                </span>
+                <div className="flex-1 bg-neutral-200 dark:bg-neutral-800 h-1.5 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full ${m.color} transition-all duration-300`}
+                    style={{ width: `${(m.val / 10) * 100}%` }}
+                  />
+                </div>
+                <span className="text-[11px] font-mono font-bold text-neutral-800 dark:text-neutral-200 w-6 text-right">
+                  {m.val > 0 ? `${m.val}/10` : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Column 3: Boosters & Drains Tags (3 cols) */}
+          <div className="md:col-span-3 space-y-2.5 p-3 rounded-xl bg-neutral-50/50 dark:bg-[#14161C]/50 border border-neutral-200/50 dark:border-neutral-800/80 self-stretch flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 font-bold block mb-1.5">
+                {isAr ? 'المحفزات والمستنزفات' : 'Triggers & Environment'}
+              </span>
+
+              {/* Boosters list */}
+              <div className="space-y-1">
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold block">
+                  {isAr ? 'محفزات الطاقة (+2):' : 'Energy Boosters:'}
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {activeReviewForCard?.boosters && activeReviewForCard.boosters.length > 0 ? (
+                    activeReviewForCard.boosters.slice(0, 3).map((b) => (
+                      <span key={b} className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 font-bold">
+                        {boosterDisplayMap[b]?.icon || '✨'} {boosterDisplayMap[b]?.label || b}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[10px] text-neutral-400 font-mono">
+                      {isAr ? 'لم تسجل محفزات' : 'None logged'}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Drains list */}
+              <div className="space-y-1 mt-2">
+                <span className="text-[10px] text-rose-600 dark:text-rose-400 font-bold block">
+                  {isAr ? 'مستنزفات الطاقة (-3):' : 'Energy Drains:'}
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {activeReviewForCard?.drains && activeReviewForCard.drains.length > 0 ? (
+                    activeReviewForCard.drains.slice(0, 3).map((d) => (
+                      <span key={d} className="text-[10px] px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/20 font-bold">
+                        {drainDisplayMap[d]?.icon || '⚠️'} {drainDisplayMap[d]?.label || d}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[10px] text-neutral-400 font-mono">
+                      {isAr ? 'لا توجد مستنزفات مسجلة' : 'No drains recorded'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setActiveModule('reflections')}
+              className="w-full text-center py-1 rounded-lg text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition cursor-pointer"
+            >
+              {isTodayScored ? (isAr ? 'عرض التفاصيل الكاملة' : 'Details') : (isAr ? 'سجل محفزات نهار اليوم' : 'Log Today')}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ---------------------------------------------------------------------
           EXECUTIVE KPI METRIC ROW
           Dedicated focus hours (Today, Week, Month) + Delivery + Habits + Dominant Project
           --------------------------------------------------------------------- */}
@@ -956,6 +1262,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                     tickLine={false}
                   />
                   <Tooltip 
+                    cursor={false}
                     contentStyle={{ 
                       backgroundColor: '#1E2025', 
                       borderColor: '#374151',
@@ -999,6 +1306,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   />
                   <YAxis tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} />
                   <Tooltip 
+                    cursor={false}
                     contentStyle={{ 
                       backgroundColor: '#1E2025', 
                       borderColor: '#374151',
@@ -1087,6 +1395,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                         ))}
                       </Pie>
                       <Tooltip 
+                        cursor={false}
                         contentStyle={{ 
                           backgroundColor: '#1E2025', 
                           borderColor: '#374151',

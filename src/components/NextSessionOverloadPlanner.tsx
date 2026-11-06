@@ -44,6 +44,7 @@ interface TacticalExercisePrescription {
   lastRepsSummary: string;
   nextWeightKg: number;
   nextTargetReps: number;
+  targetSetReps?: number[];
   overloadStatus: 'increase_weight' | 'consolidate_reps' | 'form_recovery' | 'baseline';
   actionTagEn: string;
   actionTagAr: string;
@@ -230,10 +231,11 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
       const hitMinRepRangeAllSets = reps.length >= 3 && reps.every(r => r >= spec.repRangeMin);
 
       if (masteredAllSets) {
-        // SCENARIO A: Mastered the weight -> Increase TargetWeight by exact next available gym weight
+        // SCENARIO 1: WEIGHT INCREASE (Mastery): All sets reached maxReps -> Weight increases, Reps reset to minReps
         const { nextWeight, incrementStep } = getNextProgressionWeight(item.name, maxWeight);
         const actualStep = incrementStep > 0 ? incrementStep : spec.incrementStep;
         const nextTargetReps = spec.repRangeMin;
+        const targetSetReps = Array(3).fill(spec.repRangeMin);
 
         return {
           name: item.name,
@@ -246,18 +248,19 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
           lastRepsSummary: repsSummary,
           nextWeightKg: nextWeight,
           nextTargetReps,
+          targetSetReps,
           overloadStatus: 'increase_weight',
           actionTagEn: `🔥 Weight Increase ⬆️ (+${actualStep}kg)`,
           actionTagAr: `🔥 زيادة الوزن (+${actualStep} كجم)`,
-          executionCueEn: `Mastered ${maxWeight}kg! Increased to ${nextWeight}kg for ${nextTargetReps} reps. Explosive push, 3s negative.`,
-          executionCueAr: `أتقنت وزن ${maxWeight} كجم! تمت زيادة الوزن إلى ${nextWeight} كجم لـ ${nextTargetReps} تكرارات. دفع قوي ونزول بطيء.`,
+          executionCueEn: `Mastered ${maxWeight}kg on all sets (${reps.join(', ')} >= ${spec.repRangeMax} reps)! Increased to ${nextWeight}kg for ${nextTargetReps} reps. Explosive push, 3s negative.`,
+          executionCueAr: `أتقنت وزن ${maxWeight} كجم في كل المجموعات (${reps.join(', ')} >= ${spec.repRangeMax} تكرار)! تمت زيادة الوزن إلى ${nextWeight} كجم لـ ${nextTargetReps} تكرارات لجميع المجموعات.`,
           imagePath: imgPath,
           meta
         };
       } else if (hitMinRepRangeAllSets) {
-        // SCENARIO B: Hit min rep range -> Keep same weight, push reps towards repRangeMax
-        const maxRepRecorded = Math.max(...reps);
-        const nextTargetReps = Math.min(spec.repRangeMax, maxRepRecorded + 1);
+        // SCENARIO 2: REP INCREASE (Building Volume): Hit minReps on all sets -> Keep weight, +1 rep on sets that missed max
+        const targetSetReps = reps.map(r => Math.min(spec.repRangeMax, r + (r < spec.repRangeMax ? 1 : 0)));
+        const nextTargetReps = Math.max(...targetSetReps);
 
         return {
           name: item.name,
@@ -270,16 +273,18 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
           lastRepsSummary: repsSummary,
           nextWeightKg: maxWeight,
           nextTargetReps,
+          targetSetReps,
           overloadStatus: 'consolidate_reps',
-          actionTagEn: '🔄 Volume Increase',
-          actionTagAr: '🔄 زيادة عدد التكرارات',
-          executionCueEn: `Hold ${maxWeight}kg steady. Aim for ${nextTargetReps} reps per set before adding weight.`,
-          executionCueAr: `ثبّت الوزن عند ${maxWeight} كجم. اسعَ للوصول إلى ${nextTargetReps} تكراراً في كل مجموعة قبل زيادته.`,
+          actionTagEn: '🔄 Rep Increase (Build Volume)',
+          actionTagAr: '🔄 زيادة التكرارات (بناء الحجم)',
+          executionCueEn: `Hold ${maxWeight}kg steady (NO WEIGHT CHANGE). Target [${targetSetReps.join(', ')}] reps (+1 on missed sets) to build volume towards ${spec.repRangeMax}.`,
+          executionCueAr: `ثبّت الوزن عند ${maxWeight} كجم (دون زيادة في الوزن). الهدف القادم [${targetSetReps.join(', ')}] تكرار (+1 على المجموعات غير المكتملة) حتى تصل لـ ${spec.repRangeMax}.`,
           imagePath: imgPath,
           meta
         };
       } else {
-        // SCENARIO C: Failed to hit min rep range on one or more sets -> Focus on Form / CNS Recovery
+        // SCENARIO 3: DELOAD / SAFETY (Struggle): Missed minReps on one or more sets -> Keep weight, reset to minReps, warning flag
+        const targetSetReps = Array(3).fill(spec.repRangeMin);
         return {
           name: item.name,
           targetSets: 3,
@@ -291,11 +296,12 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
           lastRepsSummary: repsSummary,
           nextWeightKg: maxWeight,
           nextTargetReps: spec.repRangeMin,
+          targetSetReps,
           overloadStatus: 'form_recovery',
-          actionTagEn: '⚠️ Focus on Form / CNS Recovery',
-          actionTagAr: '⚠️ التركيز على التكنيك والاستشفاء',
-          executionCueEn: `Maintain ${maxWeight}kg with strict technique and full range of motion. Rest 90-120s between sets.`,
-          executionCueAr: `حافظ على ${maxWeight} كجم بتكنيك دقيق ومدى حركي كامل. خذ راحة 90-120 ثانية بين المجموعات.`,
+          actionTagEn: '⚠️ Maintain Weight & Focus on Form',
+          actionTagAr: '⚠️ حافظ على الوزن وركز على الأداء الحركي',
+          executionCueEn: `⚠️ Maintain Weight & Focus on Form. Missed minimum reps on previous session (${reps.join(', ')}). Hold ${maxWeight}kg steady and aim for ${spec.repRangeMin} clean reps.`,
+          executionCueAr: `⚠️ حافظ على الوزن وركز على الأداء الحركي. لم تحقق الحد الأدنى في الجلسة السابقة (${reps.join(', ')}). حافظ على ${maxWeight} كجم وركز على إتقان ${spec.repRangeMin} تكرارات نظيفة.`,
           imagePath: imgPath,
           meta
         };
@@ -365,17 +371,20 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
         targetSetsCount: p.targetSets || 3,
         sets: Array.from({ length: p.targetSets || 3 }).map((_, sIdx) => {
           const sPastReps = prevRepsArr[sIdx] !== undefined ? prevRepsArr[sIdx] : (prevRepsArr[0] || 0);
+          const sTargetReps = (p.targetSetReps && p.targetSetReps[sIdx] !== undefined)
+            ? p.targetSetReps[sIdx]
+            : targetRepsNum;
           return {
             id: `s-${Date.now()}-${idx}-${sIdx}`,
             setNumber: sIdx + 1,
-            reps: targetRepsNum, // PRE-FILLED WITH TARGET REPS!
+            reps: sTargetReps, // PRE-FILLED WITH TARGET REPS!
             weight: targetWeightStr, // PRE-FILLED WITH TARGET WEIGHT!
             weightUnit: 'kg' as const,
             completed: false,
             previousWeight: prevWeightStr,
             previousReps: sPastReps,
             targetWeight: targetWeightStr,
-            targetReps: targetRepsNum
+            targetReps: sTargetReps
           };
         })
       };

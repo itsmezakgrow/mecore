@@ -436,6 +436,17 @@ export interface ReviewEntry {
   isStarred?: boolean;
   excusesSummary?: { date: string; habitTitle: string; excuse: string }[];
   weeklyReviewIds?: string[]; // linked weekly review IDs if type is 'monthly'
+  // Daily State Audit & Composite Score (0-100)
+  dayScore?: number; // 0 to 100 calculated composite mastery score
+  stateRatings?: {
+    energy?: number; // 1-10 Physical Energy & Vitality
+    stress?: number; // 1-10 Stress & Pressure Control
+    clarity?: number; // 1-10 Mental Clarity & Focus
+    discipline?: number; // 1-10 Discipline & Execution
+    fulfillment?: number; // 1-10 Daily Fulfillment & Self-Pride
+  };
+  boosters?: string[]; // energy boosters e.g. workout, clean_nutrition, etc.
+  drains?: string[]; // energy drains / stressors e.g. work_stress, screen_overload, etc.
 }
 
 export interface SleepScheduleConfig {
