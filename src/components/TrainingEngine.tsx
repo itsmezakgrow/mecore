@@ -41,7 +41,8 @@ import {
   EyeOff,
   Camera,
   Filter,
-  ArrowUpRight
+  ArrowUpRight,
+  Sliders
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -89,6 +90,8 @@ import { BodyMetricsNutrition } from './BodyMetricsNutrition';
 import { NextSessionOverloadPlanner } from './NextSessionOverloadPlanner';
 import { ExercisePreviewModal } from './ExercisePreviewModal';
 import { getExerciseImagePath, getExerciseMeta } from '../utils/exerciseAssets';
+import { usePageViewSettings } from '../hooks/usePageViewSettings';
+import { PageViewSettingsModal, PageViewSettingItem } from './PageViewSettingsModal';
 
 interface TrainingEngineProps {
   workouts: WorkoutSession[];
@@ -277,6 +280,50 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
   
   // Toggle to show/hide previous performance and next targets
   const [showTargetsAndHistory, setShowTargetsAndHistory] = useState<boolean>(true);
+
+  // Page View Customization Settings (Show/Hide sections)
+  const [showViewSettingsModal, setShowViewSettingsModal] = useState(false);
+  const trainingViewSettingsItems: PageViewSettingItem[] = useMemo(() => [
+    {
+      id: 'routineLauncherHeader',
+      label: isAr ? 'شريط أدوات بدء التمرين' : 'Routine Launcher Bar',
+      description: isAr
+        ? 'شريط أزرار إظهار الأهداف وزر بدء جلسة فارغة مخصصة'
+        : 'Controls bar with Targets toggle and Custom Session button',
+      icon: <Play size={16} />,
+    },
+    {
+      id: 'primaryRoutines',
+      label: isAr ? 'بطاقات الروتينات الأساسية (Routine A & B)' : 'Primary Full-Body Routines',
+      description: isAr
+        ? 'البطاقات الرئيسية لتمارين الجسم كامل مع أهداف الزيادة التدريجية'
+        : 'Dual hero cards for Routine A & B with progressive overload targets',
+      icon: <Dumbbell size={16} />,
+    },
+    {
+      id: 'linkedHabitBanner',
+      label: isAr ? 'شريط ربط العادة الرياضية' : 'Linked Gym Habit Banner',
+      description: isAr
+        ? 'شريط ربط إنجاز جلسة التمرين أوتوماتيكياً بالعادة في جدول العادات'
+        : 'Banner linking workouts to auto-check habits in Habit Tracker',
+      icon: <Flame size={16} />,
+    },
+    {
+      id: 'specialistRoutines',
+      label: isAr ? 'الروتينات الإضافية والكاليسثينكس' : 'Specialist & Calisthenics Routines',
+      description: isAr
+        ? 'شبكة الروتينات الإضافية المتخصصة في القوة والحركة والجمباز'
+        : 'Grid of extra specialist workouts for calisthenics, mobility & strength',
+      icon: <Layers size={16} />,
+    },
+  ], [isAr]);
+
+  const { isVisible, toggleSetting, resetSettings } = usePageViewSettings('training', {
+    routineLauncherHeader: true,
+    primaryRoutines: true,
+    linkedHabitBanner: true,
+    specialistRoutines: true,
+  });
 
   // Duration & Stopwatch: DOES NOT auto-start as requested!
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
@@ -1056,6 +1103,17 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                 {workouts.length}
               </span>
             )}
+          </button>
+
+          {/* Page View Customization Button */}
+          <button
+            type="button"
+            onClick={() => setShowViewSettingsModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border-transparent hover:border-slate-200 dark:hover:border-neutral-700"
+            title={isAr ? 'تخصيص وإخفاء أقسام الصفحة' : 'Customize view sections'}
+          >
+            <Sliders size={13} className="text-slate-400" />
+            <span className="hidden sm:inline">{isAr ? 'تخصيص العرض' : 'View Settings'}</span>
           </button>
         </div>
       </div>

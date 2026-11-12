@@ -57,6 +57,8 @@ import { RewardStoreModal } from './RewardStoreModal';
 import { EmojiPicker } from './EmojiPicker';
 import { BulkExcuseLoggerModal } from './BulkExcuseLoggerModal';
 import { HabitAnalyticsDashboard } from './HabitAnalyticsDashboard';
+import { PageViewSettingsModal, PageViewSettingItem } from './PageViewSettingsModal';
+import { usePageViewSettings } from '../hooks/usePageViewSettings';
 import { calculateHabitStats, calculateHabitScoreHistory } from '../utils/habitAnalytics';
 import { soundManager } from '../utils/soundEffects';
 import confetti from 'canvas-confetti';
@@ -742,6 +744,68 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   const matrixTableContainerRef = useRef<HTMLDivElement>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showViewSettingsModal, setShowViewSettingsModal] = useState(false);
+
+  // Page view customization (allows user to show/hide sections like the today spotlight, sleep banner, etc.)
+  const {
+    settings: viewSettings,
+    toggleSetting,
+    resetSettings,
+    isVisible,
+  } = usePageViewSettings('habits', {
+    todaySpotlight: true,
+    sleepWakeBanner: true,
+    routineFilters: true,
+    categoryFilters: true,
+    archivedSection: true,
+  });
+
+  const habitViewSettingsItems: PageViewSettingItem[] = useMemo(
+    () => [
+      {
+        id: 'todaySpotlight',
+        labelAr: 'شريط روتين اليوم وقائمة الإنجاز السريع',
+        labelEn: "Today's Check-in & Routine Habits Strip",
+        descAr: 'الشريط الأسبوعي والشبكة المباشرة للعادات الخاصة باليوم ومواعيد الفترات (الموجودة في صورتك).',
+        descEn: 'The highlight box displaying today routines and 1-tap habit completion cards.',
+        icon: <Sun size={17} className="text-amber-500" />,
+      },
+      {
+        id: 'sleepWakeBanner',
+        labelAr: 'بطاقة مواعيد النوم والاستيقاظ السريع',
+        labelEn: "Today's Sleep & Wake Rhythm Banner",
+        descAr: 'متابعة ساعة النوم والاستيقاظ الفعلي وتسجيل الالتزام بالموعد بنقرة واحدة.',
+        descEn: 'Direct banner to check in morning wake-up time and sleep target consistency.',
+        icon: <Moon size={17} className="text-indigo-500" />,
+      },
+      {
+        id: 'routineFilters',
+        labelAr: 'فلاتر الفترات الزمنية (صباح / ظهيرة / مساء)',
+        labelEn: 'Time-of-Day Filter Tabs & 1-Tap Complete',
+        descAr: 'أزرار تصفية العادات حسب الفترة الزمنية وزر إنهاء روتين كامل بضغطة واحدة.',
+        descEn: 'Filter tabs by morning, afternoon, or evening and complete entire routine.',
+        icon: <Clock size={17} className="text-emerald-500" />,
+      },
+      {
+        id: 'categoryFilters',
+        labelAr: 'شريط البحث وتصنيفات العادات',
+        labelEn: 'Search & Category Filter Bar',
+        descAr: 'حقل البحث السريع وتصنيفات العادات (Health, Business, Mindset, etc.).',
+        descEn: 'Search input and category tag selector above the habits matrix.',
+        icon: <Folder size={17} className="text-blue-500" />,
+      },
+      {
+        id: 'archivedSection',
+        labelAr: 'قسم العادات المؤرشفة والمجمدة',
+        labelEn: 'Archived & Paused Habits Section',
+        descAr: 'إظهار أو إخفاء حاوية العادات المجمدة أو المؤرشفة في أسفل الصفحة.',
+        descEn: 'Toggle visibility of the paused/archived habits section at the bottom.',
+        icon: <Archive size={17} className="text-neutral-500" />,
+      },
+    ],
+    []
+  );
+
   const [selectedHabitForDetail, setSelectedHabitForDetail] = useState<HabitItem | null>(null);
   const [habitToDelete, setHabitToDelete] = useState<HabitItem | null>(null);
 
@@ -1441,6 +1505,17 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
             </button>
           )}
 
+          {/* View Customization Settings Button */}
+          <button
+            type="button"
+            onClick={() => setShowViewSettingsModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs font-bold cursor-pointer transition-all active:scale-95 shadow-3xs"
+            title={isAr ? 'تخصيص واجهة العادات وإخفاء/إظهار الأقسام' : 'Customize view & toggle sections'}
+          >
+            <Sliders size={14} className="text-emerald-500" />
+            <span className="hidden sm:inline">{isAr ? 'تخصيص العرض' : 'View Settings'}</span>
+          </button>
+
           <button
             id="btn-add-habit-modal"
             onClick={() => setShowAddModal(true)}
@@ -1457,8 +1532,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
           ======================================================== */}
       {activeTab === 'tracker' && (
         <div className="space-y-4 animate-fadeIn">
-          {/* TODAY SPOTLIGHT STRIP (Directly visible in matrix mode; hidden in snail view to eliminate duplicate routines) */}
-          {viewMode === 'matrix' && (
+          {/* TODAY SPOTLIGHT STRIP (User can show/hide from view settings) */}
+          {viewMode === 'matrix' && isVisible('todaySpotlight') && (
             <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent dark:from-amber-950/40 dark:via-neutral-900/60 dark:to-neutral-900/40 p-4 rounded-3xl border-2 border-amber-300/80 dark:border-amber-700/60 shadow-xs space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-amber-200/60 dark:border-amber-800/60">
                 <div className="flex items-center gap-2">
@@ -1488,137 +1563,141 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
               </div>
 
               {/* QUICK SLEEP & WAKE TODAY CHECK-IN BANNER */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/90 dark:border-indigo-800/60 shadow-3xs">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="p-2 rounded-xl bg-indigo-600 text-white shrink-0 shadow-xs">
-                    <Moon size={15} />
-                  </div>
-                  <div className="min-w-0">
-                    {todaySleepLog ? (
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                          {isAr ? 'نوم واستيقاظ اليوم:' : "Today's Sleep & Wake:"}
-                        </span>
-                        <span className="font-mono text-xs font-bold text-indigo-700 dark:text-indigo-300">
-                          🌙 {todaySleepLog.actualBedtime || (todaySleepLog as any).bedtime || '23:00'} ➔ ☀️ {todaySleepLog.actualWakeTime || (todaySleepLog as any).wakeTime || '07:00'} ({todaySleepLog.sleepDurationMinutes ? (todaySleepLog.sleepDurationMinutes / 60).toFixed(1) : ((todaySleepLog as any).durationHours || 8)}h)
-                        </span>
-                        {(todaySleepLog.wokeOnTarget || (todaySleepLog as any).metTargetSchedule) && (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
-                            {isAr ? '✓ التزام بالموعد' : '✓ Target Met'}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="flex items-center gap-1.5">
+              {isVisible('sleepWakeBanner') && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/90 dark:border-indigo-800/60 shadow-3xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="p-2 rounded-xl bg-indigo-600 text-white shrink-0 shadow-xs">
+                      <Moon size={15} />
+                    </div>
+                    <div className="min-w-0">
+                      {todaySleepLog ? (
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                           <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                            {isAr ? 'مزامنة موعد الاستيقاظ والنوم:' : 'Sleep & Wake Rhythm:'}
+                            {isAr ? 'نوم واستيقاظ اليوم:' : "Today's Sleep & Wake:"}
                           </span>
-                          <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
-                            {isAr ? `(الهدف: ${sleepConfig?.targetWakeTime || '07:00'})` : `(Target: ${sleepConfig?.targetWakeTime || '07:00'})`}
+                          <span className="font-mono text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                            🌙 {todaySleepLog.actualBedtime || (todaySleepLog as any).bedtime || '23:00'} ➔ ☀️ {todaySleepLog.actualWakeTime || (todaySleepLog as any).wakeTime || '07:00'} ({todaySleepLog.sleepDurationMinutes ? (todaySleepLog.sleepDurationMinutes / 60).toFixed(1) : ((todaySleepLog as any).durationHours || 8)}h)
                           </span>
+                          {(todaySleepLog.wokeOnTarget || (todaySleepLog as any).metTargetSchedule) && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
+                              {isAr ? '✓ التزام بالموعد' : '✓ Target Met'}
+                            </span>
+                          )}
                         </div>
-                        <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
-                          {isAr
-                            ? 'سجّل وقت استيقاظك اليوم لمقارنته بنهاية الأسبوع مع إنجاز المهام والعادات'
-                            : 'Log wake-up time to evaluate weekly energy and habit execution'}
-                        </p>
-                      </div>
-                    )}
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-neutral-900 dark:text-white">
+                              {isAr ? 'مزامنة موعد الاستيقاظ والنوم:' : 'Sleep & Wake Rhythm:'}
+                            </span>
+                            <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
+                              {isAr ? `(الهدف: ${sleepConfig?.targetWakeTime || '07:00'})` : `(Target: ${sleepConfig?.targetWakeTime || '07:00'})`}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                            {isAr
+                              ? 'سجّل وقت استيقاظك اليوم لمقارنته بنهاية الأسبوع مع إنجاز المهام والعادات'
+                              : 'Log wake-up time to evaluate weekly energy and habit execution'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
-                  {!todaySleepLog && (
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                    {!todaySleepLog && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (onSaveSleepLog) {
+                            const bt = sleepConfig?.targetBedtime || '23:00';
+                            const wt = sleepConfig?.targetWakeTime || '07:00';
+                            const [bH, bM] = bt.split(':').map(Number);
+                            const [wH, wM] = wt.split(':').map(Number);
+                            let bMin = bH * 60 + bM;
+                            let wMin = wH * 60 + wM;
+                            if (wMin <= bMin) wMin += 24 * 60;
+                            const durMinutes = wMin - bMin;
+                            await onSaveSleepLog({
+                              date: todayIso,
+                              targetBedtime: bt,
+                              targetWakeTime: wt,
+                              actualBedtime: bt,
+                              actualWakeTime: wt,
+                              wokeOnTarget: true,
+                              sleptOnTarget: true,
+                              sleepDurationMinutes: durMinutes,
+                              quality: 'good',
+                              energyLevel: 4,
+                              notes: isAr ? 'تسجيل سريع مباشر للالتزام بالموعد' : 'Quick check-in on target schedule',
+                              createdAt: Date.now(),
+                              updatedAt: Date.now()
+                            });
+                            soundManager.play('celebrate');
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-3xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <Check size={13} />
+                        <span>{isAr ? `فقت مع ${sleepConfig?.targetWakeTime || '07:00'} (1-Tap)` : `Woke at ${sleepConfig?.targetWakeTime || '07:00'}`}</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
-                      onClick={async () => {
-                        if (onSaveSleepLog) {
-                          const bt = sleepConfig?.targetBedtime || '23:00';
-                          const wt = sleepConfig?.targetWakeTime || '07:00';
-                          const [bH, bM] = bt.split(':').map(Number);
-                          const [wH, wM] = wt.split(':').map(Number);
-                          let bMin = bH * 60 + bM;
-                          let wMin = wH * 60 + wM;
-                          if (wMin <= bMin) wMin += 24 * 60;
-                          const durMinutes = wMin - bMin;
-                          await onSaveSleepLog({
-                            date: todayIso,
-                            targetBedtime: bt,
-                            targetWakeTime: wt,
-                            actualBedtime: bt,
-                            actualWakeTime: wt,
-                            wokeOnTarget: true,
-                            sleptOnTarget: true,
-                            sleepDurationMinutes: durMinutes,
-                            quality: 'good',
-                            energyLevel: 4,
-                            notes: isAr ? 'تسجيل سريع مباشر للالتزام بالموعد' : 'Quick check-in on target schedule',
-                            createdAt: Date.now(),
-                            updatedAt: Date.now()
-                          });
-                          soundManager.play('celebrate');
-                        }
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-3xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      onClick={() => setActiveTab('sleep')}
+                      className="px-3 py-1.5 rounded-xl bg-white dark:bg-neutral-800 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-xs hover:bg-indigo-50 dark:hover:bg-neutral-700 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs"
                     >
-                      <Check size={13} />
-                      <span>{isAr ? `فقت مع ${sleepConfig?.targetWakeTime || '07:00'} (1-Tap)` : `Woke at ${sleepConfig?.targetWakeTime || '07:00'}`}</span>
+                      <Clock size={12} />
+                      <span>{todaySleepLog ? (isAr ? 'تعديل أو تفاصيل' : 'Edit / Details') : (isAr ? 'وقت آخر أو ملاحظة' : 'Custom Time')}</span>
                     </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('sleep')}
-                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-neutral-800 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-xs hover:bg-indigo-50 dark:hover:bg-neutral-700 transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs"
-                  >
-                    <Clock size={12} />
-                    <span>{todaySleepLog ? (isAr ? 'تعديل أو تفاصيل' : 'Edit / Details') : (isAr ? 'وقت آخر أو ملاحظة' : 'Custom Time')}</span>
-                  </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Time-of-Day Routine Filter Tabs & 1-Tap Complete Buttons */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 pb-1">
-                <div className="flex items-center gap-1 bg-white/80 dark:bg-neutral-800/80 p-1 rounded-xl border border-amber-200/60 dark:border-neutral-700 overflow-x-auto whitespace-nowrap scrollbar-none max-w-full">
-                  {[
-                    { id: 'all', label: isAr ? 'كافة الفترات' : 'All Routines', icon: '🌟' },
-                    { id: 'morning', label: isAr ? 'الصباح' : 'Morning', icon: '☀️' },
-                    { id: 'afternoon', label: isAr ? 'الظهيرة' : 'Afternoon', icon: '🌤️' },
-                    { id: 'evening', label: isAr ? 'المساء' : 'Evening', icon: '🌙' },
-                  ].map((routine) => (
-                    <button
-                      key={routine.id}
-                      type="button"
-                      onClick={() => setSelectedRoutineFilter(routine.id as any)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
-                        selectedRoutineFilter === routine.id
-                          ? 'bg-amber-500 text-white shadow-xs'
-                          : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <span>{routine.icon}</span>
-                      <span>{routine.label}</span>
-                    </button>
-                  ))}
-                </div>
+              {isVisible('routineFilters') && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 pb-1">
+                  <div className="flex items-center gap-1 bg-white/80 dark:bg-neutral-800/80 p-1 rounded-xl border border-amber-200/60 dark:border-neutral-700 overflow-x-auto whitespace-nowrap scrollbar-none max-w-full">
+                    {[
+                      { id: 'all', label: isAr ? 'كافة الفترات' : 'All Routines', icon: '🌟' },
+                      { id: 'morning', label: isAr ? 'الصباح' : 'Morning', icon: '☀️' },
+                      { id: 'afternoon', label: isAr ? 'الظهيرة' : 'Afternoon', icon: '🌤️' },
+                      { id: 'evening', label: isAr ? 'المساء' : 'Evening', icon: '🌙' },
+                    ].map((routine) => (
+                      <button
+                        key={routine.id}
+                        type="button"
+                        onClick={() => setSelectedRoutineFilter(routine.id as any)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                          selectedRoutineFilter === routine.id
+                            ? 'bg-amber-500 text-white shadow-xs'
+                            : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <span>{routine.icon}</span>
+                        <span>{routine.label}</span>
+                      </button>
+                    ))}
+                  </div>
 
-                {/* 1-Tap Complete Routine Button */}
-                {selectedRoutineFilter !== 'all' && (
-                  <button
-                    type="button"
-                    onClick={() => handleCompleteEntireRoutine(selectedRoutineFilter as HabitRoutineTime)}
-                    className="px-3 py-1 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-3xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
-                  >
-                    <Sparkles size={13} />
-                    <span>
-                      {isAr 
-                        ? `إنجاز كامل روتين ${selectedRoutineFilter === 'morning' ? 'الصباح' : selectedRoutineFilter === 'afternoon' ? 'الظهيرة' : 'المساء'} بنقرة واحدة!` 
-                        : `Complete Entire ${selectedRoutineFilter.toUpperCase()} Routine (1-Tap)!`}
-                    </span>
-                  </button>
-                )}
-              </div>
+                  {/* 1-Tap Complete Routine Button */}
+                  {selectedRoutineFilter !== 'all' && (
+                    <button
+                      type="button"
+                      onClick={() => handleCompleteEntireRoutine(selectedRoutineFilter as HabitRoutineTime)}
+                      className="px-3 py-1 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-3xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                    >
+                      <Sparkles size={13} />
+                      <span>
+                        {isAr 
+                          ? `إنجاز كامل روتين ${selectedRoutineFilter === 'morning' ? 'الصباح' : selectedRoutineFilter === 'afternoon' ? 'الظهيرة' : 'المساء'} بنقرة واحدة!` 
+                          : `Complete Entire ${selectedRoutineFilter.toUpperCase()} Routine (1-Tap)!`}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Quick 1-Tap Actions for Today */}
               {activeHabits.length === 0 ? (
@@ -2728,6 +2807,19 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Page View Customization Settings Modal */}
+      <PageViewSettingsModal
+        isOpen={showViewSettingsModal}
+        onClose={() => setShowViewSettingsModal(false)}
+        pageTitleAr="متتبع العادات"
+        pageTitleEn="Habits Tracker"
+        items={habitViewSettingsItems}
+        isVisible={isVisible}
+        onToggle={toggleSetting}
+        onReset={resetSettings}
+        lang={lang}
+      />
     </div>
   );
 };

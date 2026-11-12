@@ -31,7 +31,8 @@ import {
   X,
   AlertCircle,
   ArrowRight,
-  ArrowLeft
+  ArrowLeft,
+  Sliders
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -67,6 +68,8 @@ import {
 } from '../types';
 import { translations } from '../utils/translations';
 import { RewardStoreModal } from './RewardStoreModal';
+import { usePageViewSettings } from '../hooks/usePageViewSettings';
+import { PageViewSettingsModal, PageViewSettingItem } from './PageViewSettingsModal';
 
 interface DashboardOverviewProps {
   tasks: TaskItem[];
@@ -133,6 +136,59 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const [chartType, setChartType] = useState<'area' | 'bar'>('area');
   const [showRewardModal, setShowRewardModal] = useState<boolean>(false);
   const [auditBannerDismissed, setAuditBannerDismissed] = useState<boolean>(false);
+
+  // Page View Customization Settings (Show/Hide sections)
+  const [showViewSettingsModal, setShowViewSettingsModal] = useState(false);
+  const overviewViewSettingsItems: PageViewSettingItem[] = useMemo(() => [
+    {
+      id: 'stateAuditPendingBanner',
+      label: isAr ? 'تنبيه التدقيق المعلق' : 'State Audit Pending Banner',
+      description: isAr
+        ? 'تنبيه يحث على إجراء التقييم اليومي'
+        : 'Banner prompting you to complete your daily state audit',
+      icon: <AlertCircle size={16} />,
+    },
+    {
+      id: 'stateAuditWidget',
+      label: isAr ? 'مؤشر التدقيق والحالة' : 'State Audit Widget',
+      description: isAr
+        ? 'مؤشر يوضح نتائج آخر تدقيق للحالة الذهنية'
+        : 'Widget showing results from your latest mental state audit',
+      icon: <Activity size={16} />,
+    },
+    {
+      id: 'habitsWidget',
+      label: isAr ? 'مؤشر العادات' : 'Habits Widget',
+      description: isAr
+        ? 'ملخص أداء العادات'
+        : 'Summary of habit adherence and streaks',
+      icon: <Flame size={16} />,
+    },
+    {
+      id: 'tasksWidget',
+      label: isAr ? 'مؤشر المهام' : 'Tasks Widget',
+      description: isAr
+        ? 'نظرة عامة على المهام المنجزة والمهام المتبقية'
+        : 'Overview of completed vs pending tasks',
+      icon: <CheckSquare size={16} />,
+    },
+    {
+      id: 'focusWidget',
+      label: isAr ? 'مؤشر التركيز' : 'Focus Sessions Widget',
+      description: isAr
+        ? 'إحصائيات جلسات التركيز'
+        : 'Statistics on your deep work focus sessions',
+      icon: <Timer size={16} />,
+    },
+  ], [isAr]);
+
+  const { isVisible, toggleSetting, resetSettings } = usePageViewSettings('overview', {
+    stateAuditPendingBanner: true,
+    stateAuditWidget: true,
+    habitsWidget: true,
+    tasksWidget: true,
+    focusWidget: true,
+  });
 
   // -------------------------------------------------------------------------
   // Date Intelligence & Timestamps

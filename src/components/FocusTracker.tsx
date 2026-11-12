@@ -21,11 +21,21 @@ import {
   Zap,
   BookOpen,
   Target,
-  Award
+  Award,
+  Wifi,
+  WifiOff,
+  RefreshCw,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { TaskItem, HabitItem, ProjectItem, FocusSession } from '../types';
-import { addFocusSession } from '../services/firestoreService';
+import {
+  getStoredTimerState,
+  saveStoredTimerState,
+  clearStoredTimerState,
+  recordCompletedFocusSessionOfflineFirst,
+  getPendingSyncSessions,
+  syncPendingFocusSessions,
+} from '../utils/pomodoroOfflineStorage';
 import {
   playCelebrationChime,
   playTickSound,
@@ -192,6 +202,48 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   // Quick focus goal text
   const [quickGoalText, setQuickGoalText] = useState<string>('');
 
+  // Network online state & sync queue tracking
+  const [isOnline, setIsOnline] = useState<boolean>(() => {
+    return typeof navigator !== 'undefined' ? navigator.onLine : true;
+  });
+  const [pendingSessionsCount, setPendingSessionsCount] = useState<number>(() => {
+    return getPendingSyncSessions().length;
+  });
+
+  useEffect(() => {
+    const handleNetChange = () => {
+      const online = typeof navigator !== 'undefined' ? navigator.onLine : true;
+      setIsOnline(online);
+      if (online) {
+        syncPendingFocusSessions().then(() => {
+          setPendingSessionsCount(getPendingSyncSessions().length);
+        });
+      }
+    };
+    const handleLocalSession = () => {
+      setPendingSessionsCount(getPendingSyncSessions().length);
+    };
+
+    window.addEventListener('online', handleNetChange);
+    window.addEventListener('offline', handleNetChange);
+    window.addEventListener('pomodoro_session_completed_locally', handleLocalSession);
+
+    return () => {
+      window.removeEventListener('online', handleNetChange);
+      window.removeEventListener('offline', handleNetChange);
+      window.removeEventListener('pomodoro_session_completed_locally', handleLocalSession);
+    };
+  }, []);
+
+  const handleTriggerManualSync = async () => {
+    try {
+      await syncPendingFocusSessions();
+      setPendingSessionsCount(getPendingSyncSessions().length);
+    } catch (err) {
+      console.warn('Manual sync error:', err);
+    }
+  };
+
   // Precise timing refs
   const targetEndTimeRef = useRef<number | null>(null);
   const totalDurationRef = useRef<number>(focusDuration * 60);
@@ -219,11 +271,29 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   }, []);
 
   // ----------------------------------------------------
-  // Precision Timestamp Delta Timing Loop (Tab Throttling Proof)
+  // Precision Timestamp Delta Timing Loop (Tab Throttling & Offline Proof)
   // ----------------------------------------------------
   useEffect(() => {
     if (isActive) {
-      targetEndTimeRef.current = Date.now() + timeRemaining * 1000;
+      const stored = getStoredTimerState();
+      let targetEndTime = stored?.targetEndTime;
+      if (!targetEndTime) {
+        targetEndTime = Date.now() + timeRemaining * 1000;
+        targetEndTimeRef.current = targetEndTime;
+        saveStoredTimerState({
+          isActive: true,
+          timerMode,
+          targetEndTime,
+          pausedTimeRemaining: timeRemaining,
+          totalDurationSeconds: totalDurationRef.current,
+          activeTaskId: activeTask?.id || null,
+          activeTaskTitle: activeTask?.title || quickGoalText || null,
+          selectedProjectId: selectedProjectId !== 'none' ? selectedProjectId : null,
+          startedAt: Date.now(),
+        });
+      } else {
+        targetEndTimeRef.current = targetEndTime;
+      }
 
       const reconcileTimer = () => {
         if (!targetEndTimeRef.current) return;
@@ -255,15 +325,32 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
         }
       }, 500);
 
+      const handleVisibilityOrFocus = () => {
+        if (!document.hidden && targetEndTimeRef.current) {
+          const now = Date.now();
+          const diffMs = targetEndTimeRef.current - now;
+          const secsLeft = Math.max(0, Math.ceil(diffMs / 1000));
+          setTimeRemaining(secsLeft);
+          if (secsLeft <= 0) {
+            targetEndTimeRef.current = null;
+            handleSessionComplete();
+          }
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.addEventListener('focus', handleVisibilityOrFocus);
+
       return () => {
         if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
         clearInterval(fallbackInterval);
+        document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+        window.removeEventListener('focus', handleVisibilityOrFocus);
       };
     } else {
       targetEndTimeRef.current = null;
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     }
-  }, [isActive]);
+  }, [isActive, timerMode]);
 
   // Document Title Synchronization
   useEffect(() => {
@@ -344,26 +431,62 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   }, [totalTargetMinutes, totalMinutesToday]);
 
   // ----------------------------------------------------
-  // Timer Actions
+  // Timer Actions (Offline-First Persistent)
   // ----------------------------------------------------
   const handleTogglePlayPause = () => {
     if (!isActive) {
       if (soundAlertsEnabled) playStartSound();
+      const now = Date.now();
+      const targetEndTime = now + timeRemaining * 1000;
+      targetEndTimeRef.current = targetEndTime;
+      saveStoredTimerState({
+        isActive: true,
+        timerMode,
+        targetEndTime,
+        pausedTimeRemaining: timeRemaining,
+        totalDurationSeconds: totalDurationRef.current,
+        activeTaskId: activeTask?.id || null,
+        activeTaskTitle: activeTask?.title || quickGoalText || null,
+        selectedProjectId: selectedProjectId !== 'none' ? selectedProjectId : null,
+        startedAt: now,
+      });
       setIsActive(true);
     } else {
       if (soundAlertsEnabled) playPauseSound();
+      targetEndTimeRef.current = null;
+      saveStoredTimerState({
+        isActive: false,
+        timerMode,
+        targetEndTime: null,
+        pausedTimeRemaining: timeRemaining,
+        totalDurationSeconds: totalDurationRef.current,
+        activeTaskId: activeTask?.id || null,
+        activeTaskTitle: activeTask?.title || quickGoalText || null,
+        selectedProjectId: selectedProjectId !== 'none' ? selectedProjectId : null,
+      });
       setIsActive(false);
     }
   };
 
   const handleResetTimer = () => {
     setIsActive(false);
+    targetEndTimeRef.current = null;
     let durMins = focusDuration;
     if (timerMode === 'short-break') durMins = shortBreakDuration;
     if (timerMode === 'long-break') durMins = longBreakDuration;
 
-    setTimeRemaining(durMins * 60);
-    totalDurationRef.current = durMins * 60;
+    const resetSecs = durMins * 60;
+    setTimeRemaining(resetSecs);
+    totalDurationRef.current = resetSecs;
+    saveStoredTimerState({
+      isActive: false,
+      timerMode,
+      targetEndTime: null,
+      pausedTimeRemaining: resetSecs,
+      totalDurationSeconds: resetSecs,
+      activeTaskId: activeTask?.id || null,
+      activeTaskTitle: activeTask?.title || quickGoalText || null,
+    });
   };
 
   const handleSkipTimer = () => {
@@ -373,13 +496,23 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   const handleSelectMode = (mode: 'focus' | 'short-break' | 'long-break') => {
     setTimerMode(mode);
     setIsActive(false);
+    targetEndTimeRef.current = null;
 
     let durMins = focusDuration;
     if (mode === 'short-break') durMins = shortBreakDuration;
     if (mode === 'long-break') durMins = longBreakDuration;
 
-    setTimeRemaining(durMins * 60);
-    totalDurationRef.current = durMins * 60;
+    const resetSecs = durMins * 60;
+    setTimeRemaining(resetSecs);
+    totalDurationRef.current = resetSecs;
+    saveStoredTimerState({
+      isActive: false,
+      timerMode: mode,
+      targetEndTime: null,
+      pausedTimeRemaining: resetSecs,
+      totalDurationSeconds: resetSecs,
+      activeTaskId: activeTask?.id || null,
+    });
   };
 
   const handleSetQuickGoal = async (e?: React.FormEvent) => {
@@ -412,10 +545,12 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   };
 
   // ----------------------------------------------------
-  // Session Complete Lifecycle Handler
+  // Session Complete Lifecycle Handler (Offline-First)
   // ----------------------------------------------------
   const handleSessionComplete = async () => {
     setIsActive(false);
+    targetEndTimeRef.current = null;
+    clearStoredTimerState();
 
     if (soundAlertsEnabled) {
       playCelebrationChime();
@@ -445,9 +580,9 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
 
       const sessionDurationMins = Math.round(totalDurationRef.current / 60) || focusDuration;
 
-      // 1. Log to Firestore
+      // 1. Log Offline-First (Immediate local cache + pending sync queue)
       try {
-        await addFocusSession({
+        await recordCompletedFocusSessionOfflineFirst({
           title: activeTask?.title || quickGoalText || (isAr ? 'جلسة تركيز بومودورو' : 'Pomodoro Focus Session'),
           duration: sessionDurationMins,
           type: 'focus',
@@ -456,8 +591,9 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
           associatedTitle: activeTask?.title || activeProject?.title || quickGoalText,
           createdAt: Date.now(),
         });
+        setPendingSessionsCount(getPendingSyncSessions().length);
       } catch (err) {
-        console.warn('Error saving focus session:', err);
+        console.warn('Error saving offline focus session:', err);
       }
 
       // 2. Increment Task Progress
@@ -517,8 +653,37 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
           </div>
         </div>
 
-        {/* Right: Sound Alert, Statistics & Settings */}
+        {/* Right: Sound Alert, Statistics, Offline Indicator & Settings */}
         <div className="flex items-center gap-1.5">
+          {/* Offline / Cloud Sync Indicator */}
+          {!isOnline ? (
+            <div
+              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[10px] font-bold shadow-2xs"
+              title={isAr ? 'أنت في وضع عدم الاتصال. يتم تسجيل الحصص محلياً بأمان وستتم المزامنة تلقائياً عند عودة الإنترنت' : 'Offline Mode. Sessions are saved locally and will auto-sync when reconnected.'}
+            >
+              <WifiOff size={12} className="shrink-0 animate-pulse text-amber-500" />
+              <span className="hidden xs:inline">{isAr ? 'أوفلاين (محفوظ)' : 'Offline'}</span>
+            </div>
+          ) : pendingSessionsCount > 0 ? (
+            <button
+              type="button"
+              onClick={handleTriggerManualSync}
+              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/25 text-[10px] font-bold transition-all cursor-pointer shadow-2xs"
+              title={isAr ? 'اضغط للمزامنة الفورية مع السحابة' : 'Click to sync pending sessions now'}
+            >
+              <RefreshCw size={12} className="shrink-0 animate-spin text-blue-500" />
+              <span>{isAr ? `مزامنة (${pendingSessionsCount})` : `Sync (${pendingSessionsCount})`}</span>
+            </button>
+          ) : (
+            <div
+              className="hidden lg:flex items-center gap-1 px-2 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-medium"
+              title={isAr ? 'متصل بالسحابة ومتزامن' : 'Online & in sync'}
+            >
+              <Wifi size={12} className="shrink-0" />
+              <span>{isAr ? 'متصل' : 'Synced'}</span>
+            </div>
+          )}
+
           {/* Sound Alarm Toggle */}
           <button
             type="button"

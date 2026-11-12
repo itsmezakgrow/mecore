@@ -55,6 +55,8 @@ import { BulkEditModal } from './BulkEditModal';
 import { QuickLevelLoggerModal } from './QuickLevelLoggerModal';
 import { soundManager } from '../utils/soundEffects';
 import confetti from 'canvas-confetti';
+import { usePageViewSettings } from '../hooks/usePageViewSettings';
+import { PageViewSettingsModal, PageViewSettingItem } from './PageViewSettingsModal';
 
 interface TaskTrackerProps {
   tasks: TaskItem[];
@@ -169,6 +171,44 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
   const [editPriority, setEditPriority] = useState<Priority>('Med');
   const [editCategory, setEditCategory] = useState('Business');
   const [editDueDate, setEditDueDate] = useState('');
+
+  // Page View Customization Settings (Show/Hide sections)
+  const [showViewSettingsModal, setShowViewSettingsModal] = useState(false);
+  const taskViewSettingsItems: PageViewSettingItem[] = useMemo(() => [
+    {
+      id: 'quickAddBar',
+      label: isAr ? 'شريط إضافة المهام السريع' : 'Quick Add Task Bar',
+      description: isAr
+        ? 'حقل الإدخال السريع بالأعلى لإضافة مهمة فورية في القائمة'
+        : 'Quick input field at the top to rapidly add tasks without full modal',
+      icon: <Plus size={16} />,
+      defaultVisible: true,
+    },
+    {
+      id: 'filterToolbar',
+      label: isAr ? 'شريط الفلاتر والبحث' : 'Filter & Search Toolbar',
+      description: isAr
+        ? 'أزرار تصفية المهام (اليوم، الأسبوع، المتأخرة، حسب المشروع ومربع البحث)'
+        : 'Smart filters (Today, This Week, Overdue, Project filter & Search box)',
+      icon: <Sliders size={16} />,
+      defaultVisible: true,
+    },
+    {
+      id: 'morningRollover',
+      label: isAr ? 'شريط انطلاقة الصباح (ترحيل المهام)' : 'Morning Rollover Banner',
+      description: isAr
+        ? 'تنبيه المهام غير المنجزة من الأمس مع زر ترحيلها ليومك الحالي بضغطة واحدة'
+        : 'Prompt to roll over yesterday\'s pending tasks to today with 1 click',
+      icon: <RotateCcw size={16} />,
+      defaultVisible: true,
+    },
+  ], [isAr]);
+
+  const { isVisible, toggleSetting, resetSettings } = usePageViewSettings('tasks', {
+    quickAddBar: true,
+    filterToolbar: true,
+    morningRollover: true,
+  });
 
   // Filters, Sort & Search
   const [smartFilter, setSmartFilter] = useState<'all' | 'today' | 'this_week' | 'overdue' | 'high' | 'measurable' | 'completed'>('all');
@@ -755,6 +795,17 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
             {isSelectMode ? (isAr ? 'إلغاء التحديد' : 'Done Selecting') : (isAr ? 'تحديد متعدد' : 'Select Mode')}
           </button>
 
+          {/* Page View Customization Button */}
+          <button
+            type="button"
+            onClick={() => setShowViewSettingsModal(true)}
+            className="px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5 bg-neutral-50 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:text-neutral-900 dark:hover:text-white"
+            title={isAr ? 'تخصيص وإخفاء أقسام الصفحة' : 'Customize view sections'}
+          >
+            <Sliders size={13} className="text-neutral-500" />
+            <span className="hidden sm:inline">{isAr ? 'تخصيص العرض' : 'View Settings'}</span>
+          </button>
+
           {/* View Switcher Pills */}
           <div className="flex items-center p-1 bg-neutral-100 dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700">
             <button
@@ -797,8 +848,10 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
       {/* ========================================================
           STREAMLINED TASK CREATOR (MOBILE LAUNCHER + DESKTOP QUICK BAR)
           ======================================================== */}
-      {/* MOBILE TRIGGER (Dedicated, spacious, opens CreateTaskModal) */}
-      <div className="block sm:hidden bg-white dark:bg-neutral-900 p-3 rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs">
+      {isVisible('quickAddBar') && (
+        <>
+          {/* MOBILE TRIGGER (Dedicated, spacious, opens CreateTaskModal) */}
+          <div className="block sm:hidden bg-white dark:bg-neutral-900 p-3 rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs">
         <button
           type="button"
           onClick={() => setShowCreateModal(true)}
@@ -972,11 +1025,13 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
           )}
         </form>
       </div>
+      </>
+      )}
 
       {/* ========================================================
           SMART FILTER PILLS & SEARCH BAR
           ======================================================== */}
-      {viewMode !== 'stats' && (
+      {viewMode !== 'stats' && isVisible('filterToolbar') && (
         <div className="space-y-2.5">
           {/* Row 1: Smart Filter Pills (All, Today, This Week, Overdue, High, Done) */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
@@ -1160,7 +1215,7 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
       {/* ========================================================
           MORNING KICKOFF & YESTERDAY'S TASKS ROLLOVER BANNER
           ======================================================== */}
-      {overdueCount > 0 && viewMode !== 'stats' && (
+      {overdueCount > 0 && viewMode !== 'stats' && isVisible('morningRollover') && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent dark:from-emerald-500/20 dark:via-emerald-500/10 border border-emerald-500/30 rounded-2xl animate-fadeIn">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -2269,6 +2324,18 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Page View Customization Settings Modal */}
+      <PageViewSettingsModal
+        isOpen={showViewSettingsModal}
+        onClose={() => setShowViewSettingsModal(false)}
+        pageTitle={isAr ? 'تخصيص عرض صفحة المهام' : 'Tasks Page View Settings'}
+        items={taskViewSettingsItems}
+        isSectionVisible={isVisible}
+        onToggle={toggleSetting}
+        onReset={resetSettings}
+        lang={lang}
+      />
     </div>
   );
 };

@@ -148,7 +148,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       case 'training': return 'PRO';
       case 'comments': return '💬';
       case 'focus': return 'PC';
-      case 'mentor': return 'AI';
+      case 'mentor': return 'AI ⚡';
       case 'sunday-reset': return 'Today';
       case 'planner': return '7d';
       case 'guide': return 'NEW';

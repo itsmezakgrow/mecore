@@ -48,6 +48,9 @@ import {
   Atlas
 } from './components/Atlas';
 import {
+  ContextualAdvisorModal
+} from './components/ContextualAdvisorModal';
+import {
   SettingsManager
 } from './components/SettingsManager';
 import {
@@ -103,7 +106,8 @@ import {
   AccessControlData,
   CognitiveReflection,
   VisualizationStory,
-  Affirmation
+  Affirmation,
+  ChatSessionSource
 } from './types';
 import {
   subscribeToTasks,
@@ -205,8 +209,19 @@ import { ReviewPromptBanner } from './components/ReviewPromptBanner';
 import { NotificationCenterDrawer } from './components/NotificationCenterDrawer';
 import { FocusTracker } from './components/FocusTracker';
 import { isSystemTrackingActive } from './utils/moduleLifecycle';
+import {
+  getStoredTimerState,
+  saveStoredTimerState,
+  clearStoredTimerState,
+  reconcileTimerRemaining,
+  getOfflineFocusSessions,
+  setOfflineFocusSessionsCache,
+  getPendingSyncSessions,
+  recordCompletedFocusSessionOfflineFirst,
+  initOfflineFocusSyncListeners,
+} from './utils/pomodoroOfflineStorage';
 import firebaseConfig from '../firebase-applet-config.json';
-import { RefreshCw, Wifi, WifiOff, Download, Monitor, Minimize2, Maximize2, Moon, Sun, Timer, MessageSquare, BarChart3, CheckSquare, Flame, CalendarDays, StickyNote, ChevronLeft, ChevronRight, RotateCcw, Archive, HelpCircle, Bell } from 'lucide-react';
+import { RefreshCw, Wifi, WifiOff, Download, Monitor, Minimize2, Maximize2, Moon, Sun, Timer, MessageSquare, BarChart3, CheckSquare, Flame, CalendarDays, StickyNote, ChevronLeft, ChevronRight, RotateCcw, Archive, HelpCircle, Bell, Sparkles } from 'lucide-react';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState<ModuleType>(() => {
@@ -334,6 +349,11 @@ export default function App() {
       return false;
     }
   });
+
+  // In-Context Quick Advisor State (available on every page)
+  const [advisorModalOpen, setAdvisorModalOpen] = useState(false);
+  const [advisorSource, setAdvisorSource] = useState<ChatSessionSource>('dashboard');
+
   const [appStartDate, setAppStartDate] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('app_start_date');
@@ -450,7 +470,9 @@ export default function App() {
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [plans, setPlans] = useState<WeeklyPlanSlot[]>([]);
   const [goals, setGoals] = useState<GoalItem[]>([]);
-  const [focusSessions, setFocusSessions] = useState<FocusSession[]>([]);
+  const [focusSessions, setFocusSessions] = useState<FocusSession[]>(() => {
+    return getOfflineFocusSessions();
+  });
   const [comments, setComments] = useState<AppComment[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutSession[]>([]);
   const [sundayResets, setSundayResets] = useState<SundayReset[]>([]);
@@ -742,10 +764,26 @@ export default function App() {
   };
 
   // Pomodoro & Deep Focus System States (Unified and shared with FocusTracker)
-  const [sharedTimeRemaining, setSharedTimeRemaining] = useState<number>(25 * 60);
-  const [sharedIsActive, setSharedIsActive] = useState<boolean>(false);
-  const [sharedTimerMode, setSharedTimerMode] = useState<'focus' | 'short-break' | 'long-break'>('focus');
-  const [activeFocusTaskId, setActiveFocusTaskId] = useState<string | null>(null);
+  const [sharedTimerMode, setSharedTimerMode] = useState<'focus' | 'short-break' | 'long-break'>(() => {
+    const saved = getStoredTimerState();
+    return saved?.timerMode || 'focus';
+  });
+  const [activeFocusTaskId, setActiveFocusTaskId] = useState<string | null>(() => {
+    const saved = getStoredTimerState();
+    return saved?.activeTaskId || null;
+  });
+  const [sharedIsActive, setSharedIsActive] = useState<boolean>(() => {
+    const saved = getStoredTimerState();
+    if (!saved || !saved.isActive || !saved.targetEndTime) return false;
+    const { isFinished } = reconcileTimerRemaining(saved);
+    return !isFinished;
+  });
+  const [sharedTimeRemaining, setSharedTimeRemaining] = useState<number>(() => {
+    const saved = getStoredTimerState();
+    if (!saved) return 25 * 60;
+    const { remainingSeconds } = reconcileTimerRemaining(saved);
+    return remainingSeconds > 0 ? remainingSeconds : (saved.pausedTimeRemaining || 25 * 60);
+  });
   const [focusQueueTaskIds, setFocusQueueTaskIds] = useState<string[]>([]);
   const [analyticsTab, setAnalyticsTab] = useState<'overview' | 'habits' | 'tasks' | 'goals' | 'focus'>('overview');
 
@@ -753,6 +791,16 @@ export default function App() {
     if (task.id) {
       setActiveFocusTaskId(task.id);
       setFocusQueueTaskIds((prev) => Array.from(new Set([task.id!, ...prev])));
+      const stored = getStoredTimerState();
+      saveStoredTimerState({
+        isActive: sharedIsActive,
+        timerMode: sharedTimerMode,
+        targetEndTime: stored?.targetEndTime || null,
+        pausedTimeRemaining: sharedTimeRemaining,
+        totalDurationSeconds: stored?.totalDurationSeconds || 25 * 60,
+        activeTaskId: task.id,
+        activeTaskTitle: task.title,
+      });
     }
     setActiveModule('focus');
     addToast(
@@ -780,9 +828,15 @@ export default function App() {
     }
   };
 
-  const [pomodoroTime, setPomodoroTime] = useState<number>(25 * 60);
-  const [pomodoroActive, setPomodoroActive] = useState<boolean>(false);
-  const [pomodoroTarget, setPomodoroTarget] = useState<{ id?: string; type: 'task' | 'plan' | 'custom'; title: string } | null>(null);
+  const [pomodoroTime, setPomodoroTime] = useState<number>(() => sharedTimeRemaining);
+  const [pomodoroActive, setPomodoroActive] = useState<boolean>(() => sharedIsActive);
+  const [pomodoroTarget, setPomodoroTarget] = useState<{ id?: string; type: 'task' | 'plan' | 'custom'; title: string } | null>(() => {
+    const saved = getStoredTimerState();
+    if (saved?.activeTaskId && saved?.activeTaskTitle) {
+      return { id: saved.activeTaskId, type: 'task', title: saved.activeTaskTitle };
+    }
+    return null;
+  });
   const [showFocusSelectModal, setShowFocusSelectModal] = useState<boolean>(false);
   const [isFocusMode, setIsFocusMode] = useState<boolean>(false);
   const [ambientAudio, setAmbientAudio] = useState<'none' | 'lofi' | 'white-noise'>('none');
@@ -822,107 +876,120 @@ export default function App() {
     };
   }, []);
 
-  // Background countdown for the shared Focus Station timer (only when NOT on focus page)
-  useEffect(() => {
-    if (activeModule === 'focus') {
-      // FocusTracker is mounted and will handle its own timer loop + logging!
-      return;
+  // Unified Session Completion Handler (Offline-First)
+  const handleUnifiedPomodoroCompleted = async () => {
+    try {
+      playCelebrationChime();
+    } catch {}
+
+    const stored = getStoredTimerState();
+    const durationMins = stored?.totalDurationSeconds ? Math.round(stored.totalDurationSeconds / 60) : 25;
+    const taskId = stored?.activeTaskId || activeFocusTaskId || (pomodoroTarget?.type === 'task' ? pomodoroTarget.id : null);
+    const targetTask = taskId ? tasks.find((t) => t.id === taskId) : null;
+    const title = targetTask?.title || stored?.activeTaskTitle || pomodoroTarget?.title || (lang === 'ar' ? 'جلسة تركيز بومودورو' : 'Pomodoro Focus Session');
+
+    // 1. Record Offline-First (saved to localStorage cache immediately + queued for sync)
+    try {
+      await recordCompletedFocusSessionOfflineFirst({
+        title,
+        duration: durationMins,
+        type: 'focus',
+        associatedType: targetTask ? 'task' : 'none',
+        associatedId: targetTask?.id,
+        associatedTitle: targetTask?.title,
+        createdAt: Date.now(),
+      });
+    } catch (e) {
+      console.warn('Failed to record completed focus session offline:', e);
     }
 
-    let interval: any = null;
-    if (sharedIsActive && sharedTimeRemaining > 0) {
-      interval = setInterval(() => {
-        setSharedTimeRemaining((prev) => prev - 1);
-      }, 1000);
-    } else if (sharedIsActive && sharedTimeRemaining === 0) {
-      setSharedIsActive(false);
+    // 2. Increment Task Progress immediately
+    if (targetTask?.id) {
       try {
-        playCelebrationChime();
-      } catch (e) {}
-
-      // Auto-save a general session when completing in the background
-      const logBackgroundSession = async () => {
-        try {
-          await addFocusSession({
-            title: lang === 'ar' ? 'جلسة تركيز عامة' : 'General Focus Sprint',
-            duration: 25, // default focus duration
-            type: 'focus',
-            associatedType: 'none',
-            createdAt: Date.now(),
-          });
-        } catch (e) {
-          console.warn('Failed to log background focus session:', e);
-        }
-      };
-      logBackgroundSession();
-
-      addToast(
-        lang === 'ar'
-          ? '✓ رائع! اكتملت فترة التركيز بنجاح (٢٥ دقيقة تم تسجيلها).'
-          : '✓ Focus period completed successfully (25 mins logged).',
-        'success'
-      );
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [sharedIsActive, sharedTimeRemaining, activeModule, lang]);
-
-  // Legacy countdown loop
-  useEffect(() => {
-    let interval: any = null;
-    if (pomodoroActive && pomodoroTime > 0) {
-      interval = setInterval(() => {
-        setPomodoroTime((prev) => prev - 1);
-      }, 1000);
-    } else if (pomodoroActive && pomodoroTime === 0) {
-      setPomodoroActive(false);
-      handlePomodoroCompleted();
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [pomodoroActive, pomodoroTime]);
-
-  const handlePomodoroCompleted = async () => {
-    playCelebrationChime();
-
-    if (pomodoroTarget?.type === 'task' && pomodoroTarget.id) {
-      const targetTask = tasks.find((t) => t.id === pomodoroTarget.id);
-      if (targetTask) {
         const currentFocused = targetTask.focusedMinutes || 0;
-        await handleUpdateTask(targetTask.id!, { focusedMinutes: currentFocused + 25 });
+        const currentVal = targetTask.currentValue || 0;
+        await handleUpdateTask(targetTask.id, {
+          focusedMinutes: currentFocused + durationMins,
+          currentValue: targetTask.isMeasurable ? currentVal + 1 : currentVal,
+        });
+      } catch (e) {
+        console.warn('Failed to update task focus minutes:', e);
       }
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    try {
-      const savedTelemetry = localStorage.getItem('core_daily_focus_telemetry');
-      const telemetry = savedTelemetry ? JSON.parse(savedTelemetry) : {};
-      telemetry[todayStr] = (telemetry[todayStr] || 0) + 25;
-      localStorage.setItem('core_daily_focus_telemetry', JSON.stringify(telemetry));
-    } catch (e) {
-      console.warn('Failed to save focus telemetry:', e);
-    }
+    // 3. Reset states & storage
+    setSharedIsActive(false);
+    setSharedTimeRemaining(25 * 60);
+    setPomodoroActive(false);
+    setPomodoroTime(25 * 60);
+    setPomodoroTarget(null);
+    clearStoredTimerState();
 
     addToast(
       lang === 'ar'
-        ? '✓ رائع! اكتملت فترة التركيز بنجاح (٢٥ دقيقة تم تسجيلها).'
-        : '✓ Spectacular! Focus sprint accomplished (25 mins logged).',
+        ? `✓ رائع! اكتملت فترة التركيز بنجاح (${durationMins} دقيقة تم تسجيلها وحفظها محلياً).`
+        : `✓ Spectacular! Focus sprint accomplished (${durationMins} mins logged & saved locally).`,
       'success'
     );
-
-    setIsFocusMode(false);
-    setAmbientAudio('none');
-    stopAmbientSound();
-    setPomodoroTime(25 * 60);
-    setPomodoroTarget(null);
   };
 
+  // Precision background countdown for the shared Focus Station timer
+  useEffect(() => {
+    if (!sharedIsActive) return;
+
+    const reconcile = () => {
+      const stored = getStoredTimerState();
+      if (!stored || !stored.targetEndTime) return;
+      const { isFinished, remainingSeconds } = reconcileTimerRemaining(stored);
+      setSharedTimeRemaining(remainingSeconds);
+      setPomodoroTime(remainingSeconds);
+
+      if (isFinished) {
+        setSharedIsActive(false);
+        setPomodoroActive(false);
+        handleUnifiedPomodoroCompleted();
+      }
+    };
+
+    // Fast check every 500ms
+    const interval = setInterval(reconcile, 500);
+
+    const handleVisibilityOrFocus = () => {
+      reconcile();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
+  }, [sharedIsActive, activeFocusTaskId, pomodoroTarget, lang]);
+
   const handleStartFocus = (target: { id?: string; type: 'task' | 'plan' | 'custom'; title: string }) => {
+    const duration = 25 * 60;
+    const targetEndTime = Date.now() + duration * 1000;
     setPomodoroTarget(target);
-    setPomodoroTime(25 * 60);
+    setPomodoroTime(duration);
     setPomodoroActive(true);
+    setSharedTimerMode('focus');
+    setSharedTimeRemaining(duration);
+    setSharedIsActive(true);
+    if (target.type === 'task' && target.id) {
+      setActiveFocusTaskId(target.id);
+    }
+    saveStoredTimerState({
+      isActive: true,
+      timerMode: 'focus',
+      targetEndTime,
+      pausedTimeRemaining: duration,
+      totalDurationSeconds: duration,
+      activeTaskId: target.id || null,
+      activeTaskTitle: target.title,
+      startedAt: Date.now(),
+    });
     setIsFocusMode(true);
     setSidebarCollapsed(true);
     setShowFocusSelectModal(false);
@@ -934,6 +1001,17 @@ export default function App() {
 
   const handlePauseFocus = () => {
     setPomodoroActive(false);
+    setSharedIsActive(false);
+    const stored = getStoredTimerState();
+    saveStoredTimerState({
+      isActive: false,
+      timerMode: stored?.timerMode || 'focus',
+      targetEndTime: null,
+      pausedTimeRemaining: sharedTimeRemaining,
+      totalDurationSeconds: stored?.totalDurationSeconds || 25 * 60,
+      activeTaskId: stored?.activeTaskId || activeFocusTaskId,
+      activeTaskTitle: stored?.activeTaskTitle,
+    });
     addToast(
       lang === 'ar' ? 'تم تعليق المؤقت' : 'Timer paused',
       'info'
@@ -942,6 +1020,19 @@ export default function App() {
 
   const handleResumeFocus = () => {
     setPomodoroActive(true);
+    setSharedIsActive(true);
+    const stored = getStoredTimerState();
+    const remaining = sharedTimeRemaining > 0 ? sharedTimeRemaining : 25 * 60;
+    const targetEndTime = Date.now() + remaining * 1000;
+    saveStoredTimerState({
+      isActive: true,
+      timerMode: stored?.timerMode || 'focus',
+      targetEndTime,
+      pausedTimeRemaining: remaining,
+      totalDurationSeconds: stored?.totalDurationSeconds || 25 * 60,
+      activeTaskId: stored?.activeTaskId || activeFocusTaskId,
+      activeTaskTitle: stored?.activeTaskTitle,
+    });
     addToast(
       lang === 'ar' ? 'استئناف التركيز' : 'Focus resumed',
       'info'
@@ -950,11 +1041,14 @@ export default function App() {
 
   const handleStopFocus = () => {
     setPomodoroActive(false);
+    setSharedIsActive(false);
     setIsFocusMode(false);
     setAmbientAudio('none');
     stopAmbientSound();
     setPomodoroTime(25 * 60);
+    setSharedTimeRemaining(25 * 60);
     setPomodoroTarget(null);
+    clearStoredTimerState();
     addToast(
       lang === 'ar' ? 'تم إنهاء الجلسة وإعادة الضبط' : 'Session terminated and timer reset',
       'info'
@@ -1061,11 +1155,34 @@ export default function App() {
 
     const unsubFocusSessions = subscribeToFocusSessions(
       (data) => {
-        setFocusSessions(data);
+        const pending = getPendingSyncSessions();
+        const combined = [...data];
+        for (const p of pending) {
+          const exists = combined.some(
+            (c) => c.id === p.id || (Math.abs(c.createdAt - p.createdAt) < 5000 && c.title === p.title)
+          );
+          if (!exists) {
+            combined.unshift(p);
+          }
+        }
+        setFocusSessions(combined);
+        setOfflineFocusSessionsCache(combined);
         checkInitialLoad();
       },
       () => checkInitialLoad()
     );
+
+    const cleanupOfflineSync = initOfflineFocusSyncListeners();
+    const handleLocalSessionAdded = (e: any) => {
+      const sess = e.detail?.session;
+      if (sess) {
+        setFocusSessions((prev) => {
+          if (prev.some((s) => s.id === sess.id)) return prev;
+          return [sess, ...prev];
+        });
+      }
+    };
+    window.addEventListener('pomodoro_session_completed_locally', handleLocalSessionAdded);
 
     const unsubComments = subscribeToComments(
       (data) => {
@@ -1184,6 +1301,8 @@ export default function App() {
           }
         }
       });
+      cleanupOfflineSync();
+      window.removeEventListener('pomodoro_session_completed_locally', handleLocalSessionAdded);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -2376,7 +2495,7 @@ export default function App() {
                   appStartDate={appStartDate}
                   onOpenWeekly={() => handleOpenReviewModal('weekly')}
                   onOpenMonthly={() => handleOpenReviewModal('monthly')}
-                  onOpenArchive={() => handleOpenReviewModal('archive')}
+                  onOpenArchive={() => changeModule('archive')}
                   lang={lang}
                 />
               )}
@@ -2707,9 +2826,12 @@ export default function App() {
                   checklists={checklists}
                   dailyBlocks={dailyBlocks}
                   goals={goals}
+                  reviews={reviews}
                   onUnarchiveItem={handleUnarchiveItem}
                   onPermanentDeleteItem={handlePermanentDeleteItem}
                   onArchiveCompletedTasks={handleArchiveCompletedTasks}
+                  onOpenReviewModal={handleOpenReviewModal}
+                  onDeleteReview={handleDeleteReview}
                   lang={lang}
                   onNavigateModule={(mod) => changeModule(mod)}
                 />
@@ -2724,6 +2846,12 @@ export default function App() {
 
               {activeModule === 'mentor' && (
                 <Atlas
+                  tasks={tasks}
+                  habits={habits}
+                  dailyBlocks={dailyBlocks}
+                  projects={projects}
+                  goals={goals}
+                  reviews={reviews}
                   habitsCount={habits.length}
                   tasksCount={tasks.length}
                   goalsCount={goals.length}
@@ -2816,6 +2944,7 @@ export default function App() {
         focusSessions={focusSessions}
         workouts={workouts}
         reviews={reviews}
+        sleepLogs={sleepLogs}
         onSaveReview={handleSaveReview}
         onDeleteReview={handleDeleteReview}
         initialType={reviewModalTab}
@@ -2882,6 +3011,57 @@ export default function App() {
         affirmations={affirmations}
         onNavigate={handleNotificationNavigate}
         lang={lang}
+      />
+
+      {/* Universal Floating In-Context Executive Advisor Button (Visible on all pages except full Core Chat) */}
+      {activeModule !== 'mentor' && (
+        <button
+          id="floating-executive-advisor-btn"
+          onClick={() => {
+            const currentSource: ChatSessionSource =
+              activeModule === 'daily-blocks' ? 'daily-blocks'
+              : activeModule === 'training' ? 'training'
+              : activeModule === 'tasks' ? 'tasks'
+              : activeModule === 'habits' ? 'habits'
+              : activeModule === 'reflections' ? 'reflections'
+              : activeModule === 'planner' ? 'planner'
+              : activeModule === 'projects' ? 'projects'
+              : activeModule === 'goals' ? 'goals'
+              : 'dashboard';
+            setAdvisorSource(currentSource);
+            setAdvisorModalOpen(true);
+          }}
+          className="fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-50 flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-[#2D3136] hover:bg-black text-white text-xs font-bold shadow-lg hover:shadow-xl transition-all duration-200 border border-[#34D399]/40 hover:border-[#34D399] cursor-pointer group active:scale-95"
+          title={lang === 'ar' ? 'استشارة تنفيذية سريعة وتحليل الصفحة الحالية' : 'Quick Executive Advisor & Page Audit'}
+        >
+          <div className="w-5 h-5 rounded-lg bg-[#34D399]/20 text-[#34D399] flex items-center justify-center shrink-0">
+            <Sparkles size={13} className="animate-pulse" />
+          </div>
+          <span className="hidden sm:inline font-sans">
+            {lang === 'ar' ? 'المستشار التنفيذي' : 'Executive Advisor'}
+          </span>
+          <span className="sm:hidden font-mono text-[10px] text-[#34D399]">AI</span>
+        </button>
+      )}
+
+      {/* In-Context Executive Advisor Modal (Popup accessible from every page) */}
+      <ContextualAdvisorModal
+        isOpen={advisorModalOpen}
+        onClose={() => setAdvisorModalOpen(false)}
+        source={advisorSource}
+        onNavigateToCoreChat={() => {
+          setAdvisorModalOpen(false);
+          setActiveModule('mentor');
+        }}
+        tasks={tasks}
+        habits={habits}
+        dailyBlocks={dailyBlocks}
+        projects={projects}
+        goals={goals}
+        reviews={reviews}
+        lang={lang}
+        onAddTask={handleAddTask}
+        onAddHabit={handleAddHabit}
       />
 
       {/* Elegant Toast Notifications */}

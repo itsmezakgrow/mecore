@@ -61,7 +61,10 @@ import {
   KeyRound,
   Users,
   Mail,
-  Activity
+  Activity,
+  Zap,
+  Cpu,
+  Bot
 } from 'lucide-react';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { 
@@ -228,14 +231,39 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
     }
   });
 
-  // AI Config State
-  const [apiKey, setApiKey] = useState<string>(() => {
+  // AI Multi-Provider Config State (Gemini Tier 1 + Groq Tier 2)
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => {
     try {
       return localStorage.getItem('core_gemini_api_key') || '';
     } catch {
       return '';
     }
   });
+  const [groqApiKey, setGroqApiKey] = useState<string>(() => {
+    try {
+      return localStorage.getItem('core_groq_api_key') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [aiProviderStatus, setAiProviderStatus] = useState<{
+    geminiConfigured: boolean;
+    groqConfigured: boolean;
+    geminiMasked: string;
+    groqMasked: string;
+    tier1Model: string;
+    tier2Model: string;
+  } | null>(null);
+
+  const [keysFeedback, setKeysFeedback] = useState<string | null>(null);
+  const [testingStatus, setTestingStatus] = useState<Record<string, 'idle' | 'testing' | 'success' | 'error'>>({});
+
+  useEffect(() => {
+    fetch('/api/chat/keys')
+      .then((res) => res.json())
+      .then((data) => setAiProviderStatus(data))
+      .catch(() => {});
+  }, []);
 
   // Sound settings state
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
@@ -375,14 +403,56 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
     }
   };
 
-  const handleSaveApiKey = (e: React.FormEvent) => {
+  const handleTestKey = async (provider: 'gemini' | 'groq', key: string) => {
+    setTestingStatus(prev => ({ ...prev, [provider]: 'testing' }));
+    setKeysFeedback(null);
+    try {
+      const res = await fetch('/api/chat/test-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, key })
+      });
+      if (res.ok) {
+        setTestingStatus(prev => ({ ...prev, [provider]: 'success' }));
+        setKeysFeedback(isAr ? `✓ اتصال ${provider} ناجح!` : `✓ ${provider} connection successful!`);
+      } else {
+        throw new Error('Connection failed');
+      }
+    } catch (e: any) {
+      setTestingStatus(prev => ({ ...prev, [provider]: 'error' }));
+      setKeysFeedback(isAr ? `خطأ في اتصال ${provider}: ${e.message}` : `${provider} connection error: ${e.message}`);
+    } finally {
+      setTimeout(() => setTestingStatus(prev => ({ ...prev, [provider]: 'idle' })), 3500);
+    }
+  };
+
+  const handleSaveApiKey = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      localStorage.setItem('core_gemini_api_key', apiKey.trim());
-      setShowApiKeySuccess(true);
-      setTimeout(() => setShowApiKeySuccess(false), 3000);
-    } catch (err) {
-      console.error(err);
+      if (geminiApiKey) localStorage.setItem('core_gemini_api_key', geminiApiKey.trim());
+      if (groqApiKey) localStorage.setItem('core_groq_api_key', groqApiKey.trim());
+
+      const payload: Record<string, string> = {};
+      if (geminiApiKey.trim()) payload.geminiApiKey = geminiApiKey.trim();
+      if (groqApiKey.trim()) payload.groqApiKey = groqApiKey.trim();
+
+      const res = await fetch('/api/chat/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAiProviderStatus(data);
+        setKeysFeedback(isAr ? '✓ تم حفظ وتحديث المفاتيح بنجاح!' : '✓ Provider keys updated successfully!');
+      } else {
+        throw new Error('Failed to update provider keys.');
+      }
+
+      setTimeout(() => setKeysFeedback(null), 3500);
+    } catch (err: any) {
+      setKeysFeedback(err.message || 'Error updating keys');
+      setTimeout(() => setKeysFeedback(null), 3500);
     }
   };
 
@@ -2348,42 +2418,139 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
           {/* AI CONFIGURATION TAB */}
           {activeTab === 'ai' && (
             <form onSubmit={handleSaveApiKey} className="space-y-4">
-              <h3 className="text-sm font-bold text-[#2F3437] dark:text-white border-b border-[#EAE9E6] dark:border-[#2A2C33] pb-2 flex items-center gap-2">
-                <Key size={16} className="text-[#34D399]" />
-                {isAr ? 'مستشار الذكاء الاصطناعي (أطلس)' : 'Gemini AI Integration (Atlas)'}
-              </h3>
+              <div className="flex items-center justify-between border-b border-[#EAE9E6] dark:border-[#2A2C33] pb-2">
+                <h3 className="text-sm font-bold text-[#2F3437] dark:text-white flex items-center gap-2">
+                  <Bot size={16} className="text-[#34D399]" />
+                  <span>{isAr ? 'مزودات الذكاء الاصطناعي (Core Chat & AI Providers)' : 'AI Providers & Failover Cascade (Core Chat)'}</span>
+                </h3>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                  Tier 1 ➔ Tier 2 Failover
+                </span>
+              </div>
 
               {/* Secure Integration Notice */}
-              <div className="p-3.5 bg-[#34D399]/10 text-emerald-800 dark:text-[#34D399] rounded-xl border border-[#34D399]/30 text-xs space-y-1">
-                <p className="font-bold">
-                  {isAr ? '✓ ربط آمن عبر خادم المزامنة المدمج' : '✓ Secure Server-side Proxy Active'}
+              <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-300 rounded-xl border border-emerald-200 dark:border-emerald-800 text-xs space-y-1.5">
+                <p className="font-bold flex items-center gap-1.5">
+                  <ShieldCheck size={14} className="text-emerald-600" />
+                  <span>{isAr ? 'نظام شلال الفشل التلقائي المدمج (Automatic Multi-Provider Cascade)' : 'Automatic Multi-Provider Failover Active'}</span>
                 </p>
                 <p className="text-[11px] leading-relaxed opacity-90">
                   {isAr 
-                    ? 'يتم تغذية أطلس بمفتاح الـ API المعتمد في بيئة عمل Google AI Studio تلقائياً من الخادم الخلفي الآمن. يمكنك بدء المحادثة فوراً دون الحاجة لإدخال أي بيانات أو مفاتيح يدوية.' 
-                    : 'Atlas is automatically powered by your secure Google AI Studio Gemini API Key from our backend proxy. You can chat with Atlas immediately without configuring any manual keys.'}
+                    ? 'يعمل التطبيق افتراضياً بنظام شلال ثنائي: يتم توجيه استفسارات Core Chat أولاً إلى Google Gemini 2.5 Flash، وإذا حدث عطل أو تجاوز للحصة اليومية، يتم التحويل فورياً وبلا توقف إلى خوادم Groq Cloud (Llama 3.3 70B).' 
+                    : 'Your workspace runs an elite 2-tier failover cascade: Core Chat queries hit Google Gemini 2.5 Flash (Tier 1). If rate-limited or quota exceeded, requests automatically cascade to Groq Cloud (Llama 3.3 70B) with zero downtime.'}
                 </p>
               </div>
 
+              {/* Provider Status Badges */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Tier 1: Gemini */}
+                <div className="p-3 rounded-xl border border-[#EAE9E6] dark:border-neutral-800 bg-[#FBFBFA] dark:bg-[#181A1F] space-y-1">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-[#2F3437] dark:text-white">
+                      <Zap size={14} className="text-blue-500" />
+                      <span>Tier 1: Google Gemini</span>
+                    </div>
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-bold border border-blue-200 dark:border-blue-800">
+                      Primary
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                    Model: <code className="font-mono text-neutral-700 dark:text-neutral-300">gemini-3.5-flash</code>
+                  </p>
+                  <p className="text-[10px] text-neutral-500 dark:text-neutral-400 font-mono">
+                    {aiProviderStatus?.geminiMasked ? `Key: ${aiProviderStatus.geminiMasked}` : (isAr ? 'المفتاح محمل في الخادم' : 'Server key loaded')}
+                  </p>
+                </div>
+
+                {/* Tier 2: Groq */}
+                <div className="p-3 rounded-xl border border-[#EAE9E6] dark:border-neutral-800 bg-[#FBFBFA] dark:bg-[#181A1F] space-y-1">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-[#2F3437] dark:text-white">
+                      <Cpu size={14} className="text-amber-500" />
+                      <span>Tier 2: Groq Cloud</span>
+                    </div>
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800">
+                      Ultra-Fast Failover
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                    Model: <code className="font-mono text-neutral-700 dark:text-neutral-300">llama-3.3-70b-versatile</code>
+                  </p>
+                  <p className="text-[10px] text-neutral-500 dark:text-neutral-400 font-mono">
+                    {aiProviderStatus?.groqMasked ? `Key: ${aiProviderStatus.groqMasked}` : (isAr ? 'المفتاح محمل في الخادم' : 'Server key loaded')}
+                  </p>
+                </div>
+              </div>
+
+              {/* Input for Gemini API Key */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#2D3136] dark:text-neutral-200">
-                  {isAr ? 'مفتاح مخصص يدوي (اختياري لتجاوز الإعدادات الافتراضية)' : 'Custom Override API Key (Optional)'}
+                <label className="text-xs font-semibold text-[#2D3136] dark:text-neutral-200 flex items-center justify-between">
+                  <span>{isAr ? 'مفتاح Google Gemini API (تغيير أو إضافة مفتاح جديد):' : 'Google Gemini API Key (Change or Override):'}</span>
+                  <span className="text-[10px] text-neutral-400 font-normal">Tier 1 Primary</span>
                 </label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAE9E6] dark:border-neutral-800 bg-neutral-50 dark:bg-[#1E2025] text-xs font-mono text-[#2D3136] dark:text-white focus:outline-none focus:border-[#34D399]"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={geminiApiKey}
+                    onChange={(e) => setGeminiApiKey(e.target.value)}
+                    placeholder="AQ.Ab8RN6LdTgD6YPploiZMOA..."
+                    className="flex-1 px-3.5 py-2.5 rounded-xl border border-[#EAE9E6] dark:border-neutral-800 bg-neutral-50 dark:bg-[#1E2025] text-xs font-mono text-[#2D3136] dark:text-white focus:outline-none focus:border-[#34D399]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleTestKey('gemini', geminiApiKey)}
+                    disabled={testingStatus['gemini'] === 'testing' || !geminiApiKey.trim()}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs ${
+                      testingStatus['gemini'] === 'success' ? 'bg-emerald-600 text-white' : 
+                      testingStatus['gemini'] === 'error' ? 'bg-rose-600 text-white' : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
+                    }`}
+                  >
+                    {testingStatus['gemini'] === 'testing' ? (isAr ? 'جاري الفحص...' : 'Testing...') : (isAr ? 'فحص الاتصال' : 'Test')}
+                  </button>
+                </div>
+              </div>
+
+              {/* Input for Groq API Key */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-[#2D3136] dark:text-neutral-200 flex items-center justify-between">
+                  <span>{isAr ? 'مفتاح Groq Cloud API (تغيير أو إضافة مفتاح جديد):' : 'Groq Cloud API Key (Change or Override):'}</span>
+                  <span className="text-[10px] text-neutral-400 font-normal">Tier 2 Failover</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={groqApiKey}
+                    onChange={(e) => setGroqApiKey(e.target.value)}
+                    placeholder="gsk_LRKAN4kXTRA9RSXvJqKrWGdy..."
+                    className="flex-1 px-3.5 py-2.5 rounded-xl border border-[#EAE9E6] dark:border-neutral-800 bg-neutral-50 dark:bg-[#1E2025] text-xs font-mono text-[#2D3136] dark:text-white focus:outline-none focus:border-[#34D399]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleTestKey('groq', groqApiKey)}
+                    disabled={testingStatus['groq'] === 'testing' || !groqApiKey.trim()}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs ${
+                      testingStatus['groq'] === 'success' ? 'bg-emerald-600 text-white' : 
+                      testingStatus['groq'] === 'error' ? 'bg-rose-600 text-white' : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
+                    }`}
+                  >
+                    {testingStatus['groq'] === 'testing' ? (isAr ? 'جاري الفحص...' : 'Testing...') : (isAr ? 'فحص الاتصال' : 'Test')}
+                  </button>
+                </div>
                 <p className="text-[10px] text-[#787774] dark:text-neutral-400">
-                  {isAr ? 'متروك للمستخدمين المتقدمين الراغبين في استخدام مفاتيح خارجية خاصة بهم.' : 'Only needed if you explicitly wish to override the default cloud environment configuration.'}
+                  {isAr 
+                    ? 'يمكنك هنا إدخال أو تغيير مفاتيح أي من المزودين. يتم حفظها وحمايتها عبر خادم التطبيق.' 
+                    : 'Enter custom keys for either provider. Server-side proxy securely manages authentication without exposing keys in frontend code.'}
                 </p>
               </div>
 
-              {showApiKeySuccess && (
-                <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-xs font-medium border border-emerald-200 dark:border-emerald-900/40">
-                  {isAr ? '✓ تم حفظ الإعدادات المخصصة بنجاح!' : '✓ Custom configuration successfully saved!'}
+              {keysFeedback && (
+                <div className={`p-2.5 rounded-xl text-xs font-medium border ${
+                  keysFeedback.includes('✓') 
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border-rose-200 dark:border-rose-900'
+                } flex items-center gap-1.5`}>
+                  <Check size={14} className={keysFeedback.includes('✓') ? 'text-emerald-600' : 'text-rose-600'} />
+                  <span>{keysFeedback}</span>
                 </div>
               )}
 
@@ -2392,7 +2559,7 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                   type="submit"
                   className="px-4 py-2 bg-[#2F3437] text-white hover:bg-black dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100 text-xs font-bold rounded-xl active:scale-95 transition-all cursor-pointer shadow-xs"
                 >
-                  {isAr ? 'حفظ التغييرات' : 'Save AI Config'}
+                  {isAr ? 'حفظ إعدادات المزودات' : 'Save Provider Keys'}
                 </button>
               </div>
             </form>

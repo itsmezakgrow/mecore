@@ -40,7 +40,8 @@ import {
   MoveRight,
   CalendarRange,
   BookmarkCheck,
-  Filter
+  Filter,
+  Sliders
 } from 'lucide-react';
 import {
   DailyBlockItem,
@@ -57,6 +58,8 @@ import {
   NestedChecklistItem
 } from '../types';
 import { playCelebrationChime, playTaskCompleteSound } from '../utils/focusAudio';
+import { usePageViewSettings } from '../hooks/usePageViewSettings';
+import { PageViewSettingsModal, PageViewSettingItem } from './PageViewSettingsModal';
 
 interface DailyBlocksEngineProps {
   blocks: DailyBlockItem[];
@@ -459,6 +462,50 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
       localStorage.setItem('daily_blocks_use_12h', String(next));
     } catch {}
   };
+
+  // Page View Customization Settings (Show/Hide sections)
+  const [showViewSettingsModal, setShowViewSettingsModal] = useState(false);
+  const dailyBlocksSettingsItems: PageViewSettingItem[] = useMemo(() => [
+    {
+      id: 'workflowStrip',
+      label: isAr ? 'شريط سير اليوم (الصباح والمساء)' : 'Daily Workflow Strip',
+      description: isAr
+        ? 'أزرار الانتقال السريع لقوالب الصباح، مهام اليوم وتقييم نهاية اليوم'
+        : 'Quick navigation buttons for morning setup blueprints, tasks & evening audit',
+      icon: <Moon size={16} />,
+    },
+    {
+      id: 'liveActiveBanner',
+      label: isAr ? 'شريط الفترة النشطة الآن' : 'Live Happening Now Banner',
+      description: isAr
+        ? 'تنبيه يوضح الفترة الجارية في الوقت الحالي مع زر بدء مؤقت بومودورو'
+        : 'Live indicator showing the currently active block with instant Focus timer',
+      icon: <Zap size={16} />,
+    },
+    {
+      id: 'executionMetrics',
+      label: isAr ? 'ملخص إحصائيات الإنجاز' : 'Execution Metrics Summary',
+      description: isAr
+        ? 'عداد الفترات المكتملة ونسبة الإنجاز وساعات التركيز المخططة'
+        : 'Summary showing completed blocks count, percentage and planned focus hours',
+      icon: <Activity size={16} />,
+    },
+    {
+      id: 'reuseAndTemplateActions',
+      label: isAr ? 'أزرار النماذج والاستيراد بالأعلى' : 'Top Template & Reuse Actions',
+      description: isAr
+        ? 'أزرار جلب فترة سابقة، استيراد من المخطط، ونماذج الأيام الجاهزة'
+        : 'Top action buttons: Reuse past block, import from planner and day templates',
+      icon: <Sparkles size={16} />,
+    },
+  ], [isAr]);
+
+  const { isVisible, toggleSetting, resetSettings } = usePageViewSettings('daily_blocks', {
+    workflowStrip: true,
+    liveActiveBanner: true,
+    executionMetrics: true,
+    reuseAndTemplateActions: true,
+  });
 
   // Modal tab: 'new' | 'reuse'
   const [addModalTab, setAddModalTab] = useState<'new' | 'reuse'>('new');
@@ -1330,59 +1377,74 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
             </button>
           </div>
 
+          {/* Page View Customization Button */}
+          <button
+            type="button"
+            onClick={() => setShowViewSettingsModal(true)}
+            className="px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5 bg-neutral-50 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:text-neutral-900 dark:hover:text-white"
+            title={isAr ? 'تخصيص وإخفاء أقسام الصفحة' : 'Customize view sections'}
+          >
+            <Sliders size={13} className="text-neutral-500" />
+            <span className="hidden sm:inline">{isAr ? 'تخصيص العرض' : 'View Settings'}</span>
+          </button>
+
           {/* Quick Jump to Weekly Planner Button */}
-          <button
-            type="button"
-            onClick={() => onNavigateModule('planner')}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-xl text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-2xs transition-all active:scale-95"
-            title={isAr ? 'فتح المخطط الأسبوعي' : 'Open Weekly Planner'}
-          >
-            <Calendar size={14} className="text-emerald-500" />
-            <span>{isAr ? 'المخطط الأسبوعي' : 'Weekly Planner'}</span>
-          </button>
+          {isVisible('reuseAndTemplateActions') && (
+            <>
+              <button
+                type="button"
+                onClick={() => onNavigateModule('planner')}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-xl text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-2xs transition-all active:scale-95"
+                title={isAr ? 'فتح المخطط الأسبوعي' : 'Open Weekly Planner'}
+              >
+                <Calendar size={14} className="text-emerald-500" />
+                <span>{isAr ? 'المخطط الأسبوعي' : 'Weekly Planner'}</span>
+              </button>
 
-          {/* Import from Weekly Plan Button if slots available */}
-          {availableWeekSlotsForDate.length > 0 && (
-            <button
-              type="button"
-              onClick={handleImportFromWeeklyPlan}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs font-bold border border-emerald-300 dark:border-emerald-800 cursor-pointer shadow-2xs transition-all active:scale-95"
-              title={isAr ? `استيراد ${availableWeekSlotsForDate.length} فترات مجدولة لهذا التاريخ من المخطط الأسبوعي` : `Import ${availableWeekSlotsForDate.length} slots from Weekly Planner`}
-            >
-              <RotateCcw size={13} />
-              <span>
-                {isAr
-                  ? `استيراد من المخطط (${availableWeekSlotsForDate.length})`
-                  : `Import from Plan (${availableWeekSlotsForDate.length})`}
-              </span>
-            </button>
+              {/* Import from Weekly Plan Button if slots available */}
+              {availableWeekSlotsForDate.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleImportFromWeeklyPlan}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs font-bold border border-emerald-300 dark:border-emerald-800 cursor-pointer shadow-2xs transition-all active:scale-95"
+                  title={isAr ? `استيراد ${availableWeekSlotsForDate.length} فترات مجدولة لهذا التاريخ من المخطط الأسبوعي` : `Import ${availableWeekSlotsForDate.length} slots from Weekly Planner`}
+                >
+                  <RotateCcw size={13} />
+                  <span>
+                    {isAr
+                      ? `استيراد من المخطط (${availableWeekSlotsForDate.length})`
+                      : `Import from Plan (${availableWeekSlotsForDate.length})`}
+                  </span>
+                </button>
+              )}
+
+              {/* Reuse Past Block Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setReuseSearchQuery('');
+                  setReuseTypeFilter('all');
+                  setShowReuseBlockModal(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs font-bold cursor-pointer shadow-2xs transition-all active:scale-95"
+                title={isAr ? 'استيراد واختيار فترة موجودة من قبل في أيام سابقة وتعديلها لهذا اليوم' : 'Reuse past block without typing from scratch'}
+              >
+                <Search size={13} className="text-neutral-500" />
+                <span>{isAr ? 'جلب فترة سابقة' : 'Reuse Block'}</span>
+              </button>
+
+              {/* 1-Click Apply Archetype / Custom Templates Button */}
+              <button
+                type="button"
+                onClick={() => setShowArchetypeModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-neutral-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs font-bold cursor-pointer shadow-2xs transition-all active:scale-95"
+                title={isAr ? 'اختيار وتطبيق نموذج يومي أو إدارة نماذجك المخصصة' : 'Day Blueprints & Custom Templates'}
+              >
+                <Sparkles size={14} className="text-amber-500" />
+                <span>{isAr ? 'نماذج الأيام' : 'Day Templates'}</span>
+              </button>
+            </>
           )}
-
-          {/* Reuse Past Block Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setReuseSearchQuery('');
-              setReuseTypeFilter('all');
-              setShowReuseBlockModal(true);
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs font-bold cursor-pointer shadow-2xs transition-all active:scale-95"
-            title={isAr ? 'استيراد واختيار فترة موجودة من قبل في أيام سابقة وتعديلها لهذا اليوم' : 'Reuse past block without typing from scratch'}
-          >
-            <Search size={13} className="text-neutral-500" />
-            <span>{isAr ? 'جلب فترة سابقة' : 'Reuse Block'}</span>
-          </button>
-
-          {/* 1-Click Apply Archetype / Custom Templates Button */}
-          <button
-            type="button"
-            onClick={() => setShowArchetypeModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-neutral-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs font-bold cursor-pointer shadow-2xs transition-all active:scale-95"
-            title={isAr ? 'اختيار وتطبيق نموذج يومي أو إدارة نماذجك المخصصة' : 'Day Blueprints & Custom Templates'}
-          >
-            <Sparkles size={14} className="text-amber-500" />
-            <span>{isAr ? 'نماذج الأيام' : 'Day Templates'}</span>
-          </button>
 
           {/* Add Block Button (Primary CTA) */}
           <button
@@ -1455,7 +1517,7 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
         </div>
 
         {/* Live Active Block Banner (When viewing today) */}
-        {isViewingToday && activeNowBlock && (
+        {isViewingToday && activeNowBlock && isVisible('liveActiveBanner') && (
           <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping inline-block" />
             <span className="font-bold">
@@ -1473,72 +1535,76 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
         )}
 
         {/* Execution Metrics Summary */}
-        <div className="flex items-center gap-3 text-xs font-mono">
-          <div className="flex items-center gap-1.5">
-            <span className="text-neutral-400">{isAr ? 'الفترات:' : 'Blocks:'}</span>
-            <span className="font-bold text-neutral-900 dark:text-white">
-              {dayStats.completed}/{dayStats.total}
-            </span>
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">({dayStats.pct}%)</span>
-          </div>
+        {isVisible('executionMetrics') && (
+          <div className="flex items-center gap-3 text-xs font-mono">
+            <div className="flex items-center gap-1.5">
+              <span className="text-neutral-400">{isAr ? 'الفترات:' : 'Blocks:'}</span>
+              <span className="font-bold text-neutral-900 dark:text-white">
+                {dayStats.completed}/{dayStats.total}
+              </span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">({dayStats.pct}%)</span>
+            </div>
 
-          <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-800" />
+            <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-800" />
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-neutral-400">{isAr ? 'ساعات التركيز:' : 'Focus Time:'}</span>
-            <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-              {Math.floor(dayStats.totalPlannedFocusMins / 60)}h {dayStats.totalPlannedFocusMins % 60}m
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-neutral-400">{isAr ? 'ساعات التركيز:' : 'Focus Time:'}</span>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                {Math.floor(dayStats.totalPlannedFocusMins / 60)}h {dayStats.totalPlannedFocusMins % 60}m
+              </span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ----------------------------------------------------
           2.5. DAILY WORKFLOW STRIP (MORNING SETUP & EVENING AUDIT)
           ---------------------------------------------------- */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/90 dark:border-neutral-800 shadow-2xs">
-        {/* Morning Setup Strip */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-            <span>🌅 {isAr ? 'تجهيز الصباح:' : 'Morning Setup:'}</span>
-          </span>
-
-          <button
-            type="button"
-            onClick={() => setShowArchetypeModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-50 dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-3xs transition-all active:scale-95"
-            title={isAr ? 'اختيار قالب يوم جاهز بنقرة واحدة' : 'Select a ready day blueprint'}
-          >
-            <Sparkles size={13} className="text-amber-500" />
-            <span>{isAr ? 'قالب جاهز' : 'Day Blueprints'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onNavigateModule('tasks')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-50 dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-3xs transition-all active:scale-95"
-            title={isAr ? 'الانتقال إلى قائمة المهام' : 'Go to tasks'}
-          >
-            <ListChecks size={13} className="text-emerald-500" />
-            <span>
-              {isAr ? `مهام اليوم (${todayTasksPendingCount})` : `Today's Tasks (${todayTasksPendingCount})`}
+      {isVisible('workflowStrip') && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/90 dark:border-neutral-800 shadow-2xs">
+          {/* Morning Setup Strip */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
+              <span>🌅 {isAr ? 'تجهيز الصباح:' : 'Morning Setup:'}</span>
             </span>
-          </button>
-        </div>
 
-        {/* Evening Audit Strip */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onNavigateModule('reflections')}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 active:scale-95 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-2xs transition-all"
-            title={isAr ? 'إجراء تقييم اليوم وتدوين الإنجازات والدروس' : 'Run daily evening review and reflections'}
-          >
-            <Moon size={13} className="text-amber-500" />
-            <span>{isAr ? 'تقييم نهاية اليوم' : 'Evening Audit'}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setShowArchetypeModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-50 dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-3xs transition-all active:scale-95"
+              title={isAr ? 'اختيار قالب يوم جاهز بنقرة واحدة' : 'Select a ready day blueprint'}
+            >
+              <Sparkles size={13} className="text-amber-500" />
+              <span>{isAr ? 'قالب جاهز' : 'Day Blueprints'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigateModule('tasks')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-50 dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-3xs transition-all active:scale-95"
+              title={isAr ? 'الانتقال إلى قائمة المهام' : 'Go to tasks'}
+            >
+              <ListChecks size={13} className="text-emerald-500" />
+              <span>
+                {isAr ? `مهام اليوم (${todayTasksPendingCount})` : `Today's Tasks (${todayTasksPendingCount})`}
+              </span>
+            </button>
+          </div>
+
+          {/* Evening Audit Strip */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onNavigateModule('reflections')}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 active:scale-95 text-neutral-800 dark:text-neutral-200 text-xs font-bold border border-neutral-200 dark:border-neutral-700 cursor-pointer shadow-2xs transition-all"
+              title={isAr ? 'إجراء تقييم اليوم وتدوين الإنجازات والدروس' : 'Run daily evening review and reflections'}
+            >
+              <Moon size={13} className="text-amber-500" />
+              <span>{isAr ? 'تقييم نهاية اليوم' : 'Evening Audit'}</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ----------------------------------------------------
           3. MAIN CONTENT: DAY VIEW VS WEEK VIEW
@@ -3418,6 +3484,18 @@ export const DailyBlocksEngine: React.FC<DailyBlocksEngineProps> = ({
           </div>
         </div>
       )}
+
+      {/* Page View Customization Settings Modal */}
+      <PageViewSettingsModal
+        isOpen={showViewSettingsModal}
+        onClose={() => setShowViewSettingsModal(false)}
+        pageTitle={isAr ? 'تخصيص عرض صفحة فترات اليوم (Daily Blocks)' : 'Daily Blocks View Settings'}
+        items={dailyBlocksSettingsItems}
+        isSectionVisible={isVisible}
+        onToggle={toggleSetting}
+        onReset={resetSettings}
+        lang={lang}
+      />
     </div>
   );
 };

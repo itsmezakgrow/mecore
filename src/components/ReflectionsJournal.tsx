@@ -33,6 +33,7 @@ import {
   ChevronDown,
   ChevronUp,
   Check,
+  Sliders,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -59,6 +60,8 @@ import {
 import { soundManager } from '../utils/soundEffects';
 import { FullVisionReaderModal } from './FullVisionReaderModal';
 import { AffirmationsModalPopup } from './AffirmationsModalPopup';
+import { usePageViewSettings } from '../hooks/usePageViewSettings';
+import { PageViewSettingsModal, PageViewSettingItem } from './PageViewSettingsModal';
 
 interface ReflectionsJournalProps {
   reviews: ReviewEntry[];
@@ -126,6 +129,50 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
 
   // Modal State for Daily Affirmations Flashcard Pop-up
   const [isAffirmationPopupOpen, setIsAffirmationPopupOpen] = useState(false);
+
+  // Page View Customization Settings (Show/Hide sections)
+  const [showViewSettingsModal, setShowViewSettingsModal] = useState(false);
+  const reflectionsViewSettingsItems: PageViewSettingItem[] = useMemo(() => [
+    {
+      id: 'dailyAuditBanner',
+      label: isAr ? 'شريط التقييم اليومي' : 'Daily Audit Banner',
+      description: isAr
+        ? 'شريط التقييم والمزاج والتنقيط والمحفزات والمستنزفات'
+        : 'Daily audit banner with mood/rating inputs, boosters and drains',
+      icon: <Target size={16} />,
+    },
+    {
+      id: 'moodTrendChart',
+      label: isAr ? 'رسم بياني للمزاج' : 'Mood Trend Chart',
+      description: isAr
+        ? 'مبيان يوضح تطور المزاج والنقاط عبر الزمن'
+        : 'Visual chart showing trends in mood, energy, and overall daily score',
+      icon: <BarChart2 size={16} />,
+    },
+    {
+      id: 'writtenPrompts',
+      label: isAr ? 'كتابة التأملات (إنجازات، دروس، تحديات)' : 'Written Reflections (Wins, Lessons, Challenges)',
+      description: isAr
+        ? 'قسم تدوين الأفكار والدروس المستفادة'
+        : 'Section for logging detailed reflections, lessons learned, and obstacles',
+      icon: <Brain size={16} />,
+    },
+    {
+      id: 'patternInsights',
+      label: isAr ? 'مكتشف الأنماط الذكي' : 'Behavioral Pattern Insights',
+      description: isAr
+        ? 'تحليل ذكي للعلاقات بين العادات والنتائج'
+        : 'Smart analysis of correlations between habits and performance',
+      icon: <TrendingUp size={16} />,
+    },
+  ], [isAr]);
+
+  const { isVisible, toggleSetting, resetSettings } = usePageViewSettings('reflections', {
+    dailyAuditBanner: true,
+    moodTrendChart: true,
+    writtenPrompts: true,
+    patternInsights: true,
+  });
 
   // ---------------- FEATURE 1: DAILY JOURNAL ----------------
   const todayIso = useMemo(() => {
@@ -604,6 +651,17 @@ export const ReflectionsJournal: React.FC<ReflectionsJournalProps> = ({
               <span className="truncate">{isAr ? 'سطح التوكيدات' : 'Affirmations Deck'}</span>
             </button>
           </div>
+
+          {/* Page View Customization Button */}
+          <button
+            type="button"
+            onClick={() => setShowViewSettingsModal(true)}
+            className="px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border bg-neutral-50 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white border-transparent hover:border-neutral-200 dark:hover:border-neutral-700"
+            title={isAr ? 'تخصيص وإخفاء أقسام الصفحة' : 'Customize view sections'}
+          >
+            <Sliders size={15} className="text-neutral-500" />
+            <span className="hidden sm:inline">{isAr ? 'تخصيص العرض' : 'View Settings'}</span>
+          </button>
         </div>
 
         {/* TAB 1: DAILY JOURNAL & STATE AUDIT */}

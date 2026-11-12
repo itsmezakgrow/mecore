@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+.git
+.cache/
+.eslintcache
+*.tmp
+*.bak

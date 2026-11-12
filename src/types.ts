@@ -146,6 +146,20 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export type ChatSessionSource = 'core-chat' | 'dashboard' | 'daily-blocks' | 'tasks' | 'habits' | 'training' | 'reflections' | 'planner' | 'projects' | 'goals';
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  source: ChatSessionSource;
+  sourceLabel: string;
+  date: number; // timestamp
+  conclusion?: string; // executive summary / takeaway
+  messages: ChatMessage[];
+  provider?: 'gemini' | 'groq';
+  model?: string;
+}
+
 export type Priority = 'High' | 'Med' | 'Low';
 
 export interface TaskSubtask {
@@ -447,6 +461,40 @@ export interface ReviewEntry {
   };
   boosters?: string[]; // energy boosters e.g. workout, clean_nutrition, etc.
   drains?: string[]; // energy drains / stressors e.g. work_stress, screen_overload, etc.
+  // Rich Periodic Dossier & Custom Labeling
+  customTitle?: string; // user-specified title or nickname for the week/month
+  customNumber?: string; // user-specified numbering e.g. "Week #42", "Sprint 4"
+  startDate?: string;
+  endDate?: string;
+  sleepStats?: {
+    avgHours: number;
+    onTargetDays: number;
+    totalDaysLogged: number;
+  };
+  stateAuditSummary?: {
+    avgDayScore: number;
+    avgEnergy: number;
+    avgStress: number;
+    avgClarity: number;
+    avgDiscipline: number;
+    avgFulfillment: number;
+    topBoosters: string[];
+    topDrains: string[];
+    daysAuditedCount: number;
+  };
+  gymSummary?: {
+    sessionsCount: number;
+    totalVolumeKg: number;
+    routines: string[];
+  };
+  tasksSummary?: {
+    completedCount: number;
+    highPriorityCount: number;
+  };
+  focusSummary?: {
+    totalMinutes: number;
+    avgDailyMinutes: number;
+  };
 }
 
 export interface SleepScheduleConfig {
