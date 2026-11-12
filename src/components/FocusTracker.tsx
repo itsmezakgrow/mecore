@@ -29,12 +29,19 @@ import {
 import confetti from 'canvas-confetti';
 import { TaskItem, HabitItem, ProjectItem, FocusSession } from '../types';
 import {
+  FocusLogModal
+} from './FocusLogModal';
+import {
+  deleteFocusSession,
+  updateFocusSession
+} from '../services/firestoreService';
+import {
   getStoredTimerState,
   saveStoredTimerState,
   clearStoredTimerState,
-  recordCompletedFocusSessionOfflineFirst,
   getPendingSyncSessions,
   syncPendingFocusSessions,
+  recordCompletedFocusSessionOfflineFirst
 } from '../utils/pomodoroOfflineStorage';
 import {
   playCelebrationChime,
@@ -42,6 +49,8 @@ import {
   playStartSound,
   playPauseSound,
   playTaskCompleteSound,
+  startContinuousAlarm,
+  stopContinuousAlarm,
 } from '../utils/focusAudio';
 
 interface FocusTrackerProps {
@@ -92,6 +101,26 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   onToggleTopBarTimer,
 }) => {
   const isAr = lang === 'ar';
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [sessionToEdit, setSessionToEdit] = useState<FocusSession | null>(null);
+
+  const handleSaveManualSession = async (session: Omit<FocusSession, 'id'>) => {
+    const sessionToSave = {
+      ...session,
+      associatedType: session.associatedType === 'habit' ? 'none' : session.associatedType as 'task' | 'project' | 'none'
+    };
+    await recordCompletedFocusSessionOfflineFirst(sessionToSave);
+  };
+
+  const handleUpdateSession = async (id: string, session: Partial<FocusSession>) => {
+    await updateFocusSession(id, session);
+  };
+
+  const handleDeleteSession = async (id: string) => {
+    if (confirm(isAr ? 'هل أنت متأكد من حذف هذه الجلسة؟' : 'Are you sure you want to delete this session?')) {
+      await deleteFocusSession(id);
+    }
+  };
 
   const [showTopBarTimerState, setShowTopBarTimerState] = useState<boolean>(() => {
     if (showTopBarTimer !== undefined) return showTopBarTimer;
@@ -176,6 +205,17 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
     }
   });
 
+  // Continuous Alarm Setting (loops sound on completion until manually dismissed)
+  const [continuousAlarmEnabled, setContinuousAlarmEnabled] = useState<boolean>(() => {
+    try {
+      const val = localStorage.getItem('pomodoro_continuous_alarm');
+      return val !== null ? val === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+  const [isAlarmPlaying, setIsAlarmPlaying] = useState<boolean>(false);
+
   // Settings & Target Modal States
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [showTargetModal, setShowTargetModal] = useState<boolean>(false);
@@ -249,14 +289,24 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   const totalDurationRef = useRef<number>(focusDuration * 60);
   const rafIdRef = useRef<number | null>(null);
 
-  // Sync total duration on mode/duration change
+  // Sync total duration on mode/duration change without overriding active or paused timers
+  const prevDurationRef = useRef<number>(focusDuration);
   useEffect(() => {
     let durMins = focusDuration;
     if (timerMode === 'short-break') durMins = shortBreakDuration;
     if (timerMode === 'long-break') durMins = longBreakDuration;
 
     totalDurationRef.current = durMins * 60;
-    if (!isActive) {
+
+    // Check if there is an existing stored paused or active timer
+    const stored = getStoredTimerState();
+    const isStoredPaused = stored && !stored.isActive && stored.pausedTimeRemaining > 0 && stored.pausedTimeRemaining < stored.totalDurationSeconds;
+
+    // Only reset timeRemaining if user explicitly changed focusDuration preference or switched mode
+    const durationChanged = prevDurationRef.current !== durMins;
+    prevDurationRef.current = durMins;
+
+    if (!isActive && durationChanged && !isStoredPaused) {
       setTimeRemaining(durMins * 60);
     }
   }, [timerMode, focusDuration, shortBreakDuration, longBreakDuration]);
@@ -547,13 +597,23 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   // ----------------------------------------------------
   // Session Complete Lifecycle Handler (Offline-First)
   // ----------------------------------------------------
+  const handleStopAlarm = () => {
+    stopContinuousAlarm();
+    setIsAlarmPlaying(false);
+  };
+
   const handleSessionComplete = async () => {
     setIsActive(false);
     targetEndTimeRef.current = null;
     clearStoredTimerState();
 
     if (soundAlertsEnabled) {
-      playCelebrationChime();
+      if (continuousAlarmEnabled) {
+        startContinuousAlarm();
+        setIsAlarmPlaying(true);
+      } else {
+        playCelebrationChime();
+      }
     }
 
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
@@ -844,20 +904,38 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
               <RotateCcw size={16} />
             </button>
 
-            {/* Big Emerald Play / Pause Button */}
+            {/* Big Emerald Play / Pause / Resume Button with Clear State Indicator */}
             <button
               type="button"
-              onClick={handleTogglePlayPause}
-              className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-transform active:scale-95 cursor-pointer shadow-lg ${
+              onClick={() => {
+                if (isAlarmPlaying) handleStopAlarm();
+                handleTogglePlayPause();
+              }}
+              className={`h-14 px-6 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer shadow-lg font-bold text-xs ${
                 timerMode === 'short-break'
                   ? 'bg-sky-500 hover:bg-sky-600 text-white dark:text-neutral-950 shadow-sky-500/30'
                   : timerMode === 'long-break'
                   ? 'bg-indigo-500 hover:bg-indigo-600 text-white dark:text-neutral-950 shadow-indigo-500/30'
                   : 'bg-emerald-500 hover:bg-emerald-600 text-white dark:text-neutral-950 shadow-emerald-500/30'
               }`}
-              title={isActive ? (isAr ? 'إيقاف مؤقت' : 'Pause') : (isAr ? 'بدء التركيز' : 'Start Focus')}
+              title={isActive ? (isAr ? 'إيقاف مؤقت' : 'Pause') : (timeRemaining < totalSecs ? (isAr ? 'استئناف التركيز' : 'Resume Focus') : (isAr ? 'بدء التركيز' : 'Start Focus'))}
             >
-              {isActive ? <Pause size={22} className="fill-current" /> : <Play size={22} className="fill-current translate-x-0.5" />}
+              {isActive ? (
+                <>
+                  <Pause size={20} className="fill-current" />
+                  <span>{isAr ? 'إيقاف مؤقت' : 'Pause'}</span>
+                </>
+              ) : timeRemaining < totalSecs ? (
+                <>
+                  <Play size={20} className="fill-current translate-x-0.5" />
+                  <span>{isAr ? 'استئناف' : 'Resume'}</span>
+                </>
+              ) : (
+                <>
+                  <Play size={20} className="fill-current translate-x-0.5" />
+                  <span>{isAr ? 'بدء' : 'Start'}</span>
+                </>
+              )}
             </button>
 
             {/* Skip */}
@@ -946,6 +1024,15 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
                 <Zap size={16} className="fill-emerald-500/20" />
               </div>
             </div>
+
+            {/* Manual Log Button */}
+            <button
+              onClick={() => setShowLogModal(true)}
+              className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+            >
+              <CheckSquare size={14} />
+              {isAr ? 'تسجيل يدوي للعمل' : 'Log Manual Session'}
+            </button>
           </div>
 
           {/* 2. Bindings: Project Selector & Task Selector */}
@@ -1066,9 +1153,22 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
             </div>
 
             <div className="space-y-2 pt-2">
+              {/* Prominent Stop Alarm Button if Alarm is ringing */}
+              {isAlarmPlaying && (
+                <button
+                  type="button"
+                  onClick={handleStopAlarm}
+                  className="w-full py-3 px-4 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 transition-all cursor-pointer animate-pulse"
+                >
+                  <VolumeX size={16} />
+                  <span>{isAr ? 'إيقاف صوت المنبه 🔔' : 'Stop Alarm Sound 🔔'}</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
+                  handleStopAlarm();
                   setShowRestModal(false);
                   handleSelectMode('short-break');
                   setIsActive(true);
@@ -1082,6 +1182,7 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  handleStopAlarm();
                   setShowRestModal(false);
                   handleSelectMode('long-break');
                   setIsActive(true);
@@ -1095,6 +1196,7 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  handleStopAlarm();
                   setShowRestModal(false);
                   handleSelectMode('focus');
                 }}
@@ -1292,6 +1394,39 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Continuous Alarm Sound Option */}
+              <div className="pt-3 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-neutral-800 dark:text-neutral-200 block text-xs">
+                    {isAr ? 'صوت تنبيه مستمر عند انتهاء الوقت:' : 'Continuous Alarm Sound on Complete:'}
+                  </span>
+                  <span className="text-[11px] text-neutral-500 font-normal block">
+                    {isAr ? 'صوت منبه يتكرر باستمرار ولا يتوقف حتى تقوم بإيقافه يدوياً' : 'Rings continuously until manually stopped or dismissed'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newVal = !continuousAlarmEnabled;
+                    setContinuousAlarmEnabled(newVal);
+                    try {
+                      localStorage.setItem('pomodoro_continuous_alarm', String(newVal));
+                    } catch {}
+                  }}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    continuousAlarmEnabled ? 'bg-emerald-500' : 'bg-neutral-300 dark:bg-neutral-700'
+                  }`}
+                  role="switch"
+                  aria-checked={continuousAlarmEnabled}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      continuousAlarmEnabled ? (isAr ? '-translate-x-5' : 'translate-x-5') : 'translate-x-0'
+                    }`}
+                  />
+                </button>
               </div>
 
               {/* Show Live Timer in Top Header Bar Option */}

@@ -349,3 +349,51 @@ export function playCelebrationChime() {
     console.warn('Failed to play focus chime:', error);
   }
 }
+
+// ----------------------------------------------------
+// Continuous Persistent Alarm (Loops until user dismisses)
+// ----------------------------------------------------
+let continuousAlarmInterval: any = null;
+let isAlarmRunning = false;
+
+export function isContinuousAlarmPlaying(): boolean {
+  return isAlarmRunning;
+}
+
+export function startContinuousAlarm() {
+  if (isAlarmRunning) return;
+  isAlarmRunning = true;
+
+  const playChimeSequence = () => {
+    try {
+      const ctx = getAudioContext();
+      // Repeating dual soft alarm pulse (A5 & E6)
+      const pitches = [880, 1318.51, 880, 1318.51];
+      pitches.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.18);
+        gain.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.18);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.18 + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + i * 0.18);
+        osc.stop(ctx.currentTime + i * 0.18 + 0.35);
+      });
+    } catch (e) {
+      console.warn('Continuous alarm sound error:', e);
+    }
+  };
+
+  playChimeSequence();
+  continuousAlarmInterval = setInterval(playChimeSequence, 1600);
+}
+
+export function stopContinuousAlarm() {
+  if (continuousAlarmInterval) {
+    clearInterval(continuousAlarmInterval);
+    continuousAlarmInterval = null;
+  }
+  isAlarmRunning = false;
+}

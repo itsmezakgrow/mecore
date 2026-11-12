@@ -303,13 +303,20 @@ export const ContextualAdvisorModal: React.FC<ContextualAdvisorModalProps> = ({
 
       const pageContext = `CURRENT PAGE / CONTEXT: "${sourceMeta.label}" (source id: ${source}). Provide immediate tactical insights tailored to this context. When recommending tasks or priorities, ALWAYS use clean Markdown tables (with columns | Priority | Task | Why it moves the needle |) and append <core_suggestions> JSON tags.`;
 
+      const clientGeminiKey = (localStorage.getItem('core_gemini_api_key') || '').trim();
+      const clientGroqKey = (localStorage.getItem('core_groq_api_key') || '').trim();
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: chatContext,
           systemInstruction: `You are Core Chat Executive Advisor serving from page "${sourceMeta.label}". ${isAr ? 'Respond in professional executive Arabic.' : 'Respond in sharp executive English.'} Present priorities in clean Markdown tables and wrap actionable suggestions in <core_suggestions> JSON.`,
-          dataSnapshot: `${pageContext}\n\n${telemetry.formattedPromptContext}`
+          dataSnapshot: `${pageContext}\n\n${telemetry.formattedPromptContext}`,
+          customKeys: {
+            gemini: clientGeminiKey,
+            groq: clientGroqKey
+          }
         })
       });
 

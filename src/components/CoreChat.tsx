@@ -526,6 +526,10 @@ export const CoreChat: React.FC<CoreChatProps> = ({
           content: m.content
         }));
 
+      // Retrieve locally saved keys if present
+      const clientGeminiKey = (customGeminiKey || localStorage.getItem('core_gemini_api_key') || '').trim();
+      const clientGroqKey = (customGroqKey || localStorage.getItem('core_groq_api_key') || '').trim();
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -533,6 +537,10 @@ export const CoreChat: React.FC<CoreChatProps> = ({
           messages: chatContext,
           systemInstruction: getSystemInstruction(lang, profileName),
           dataSnapshot: telemetry.formattedPromptContext,
+          customKeys: {
+            gemini: clientGeminiKey,
+            groq: clientGroqKey
+          },
           generationConfig: {
             temperature: 0.7
           }
@@ -639,7 +647,7 @@ export const CoreChat: React.FC<CoreChatProps> = ({
   const currentSourceMeta = getSourceMeta(activeSession?.source || 'core-chat', isAr ? 'ar' : 'en');
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] sm:h-[calc(100vh-5rem)] max-w-5xl mx-auto px-2 sm:px-4 py-2 animate-fadeIn font-sans relative">
+    <div className="flex flex-col h-full flex-1 max-w-5xl mx-auto px-2 sm:px-4 py-2 animate-fadeIn font-sans relative">
       
       {/* HEADER: Title, Source Tag, Failover Badge, History Drawer Toggle */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-[#1E2025] border border-[#EAE9E6] dark:border-neutral-800 rounded-2xl p-3.5 sm:p-4 mb-3 shadow-2xs">

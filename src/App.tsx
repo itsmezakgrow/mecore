@@ -780,9 +780,22 @@ export default function App() {
   });
   const [sharedTimeRemaining, setSharedTimeRemaining] = useState<number>(() => {
     const saved = getStoredTimerState();
-    if (!saved) return 25 * 60;
-    const { remainingSeconds } = reconcileTimerRemaining(saved);
-    return remainingSeconds > 0 ? remainingSeconds : (saved.pausedTimeRemaining || 25 * 60);
+    const defaultDur = (() => {
+      try {
+        const val = localStorage.getItem('pomodoro_focus_dur');
+        return val ? parseInt(val, 10) * 60 : 50 * 60;
+      } catch {
+        return 50 * 60;
+      }
+    })();
+    if (!saved) return defaultDur;
+    if (saved.isActive && saved.targetEndTime) {
+      const { remainingSeconds } = reconcileTimerRemaining(saved);
+      return remainingSeconds > 0 ? remainingSeconds : (saved.pausedTimeRemaining || defaultDur);
+    }
+    return saved.pausedTimeRemaining !== undefined && saved.pausedTimeRemaining > 0 
+      ? saved.pausedTimeRemaining 
+      : (saved.totalDurationSeconds || defaultDur);
   });
   const [focusQueueTaskIds, setFocusQueueTaskIds] = useState<string[]>([]);
   const [analyticsTab, setAnalyticsTab] = useState<'overview' | 'habits' | 'tasks' | 'goals' | 'focus'>('overview');
@@ -3013,7 +3026,7 @@ export default function App() {
         lang={lang}
       />
 
-      {/* Universal Floating In-Context Executive Advisor Button (Visible on all pages except full Core Chat) */}
+      {/* Universal Floating In-Context Executive Advisor Button (Repositioned well above Netlify badge & bottom bars) */}
       {activeModule !== 'mentor' && (
         <button
           id="floating-executive-advisor-btn"
@@ -3031,7 +3044,7 @@ export default function App() {
             setAdvisorSource(currentSource);
             setAdvisorModalOpen(true);
           }}
-          className="fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-50 flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-[#2D3136] hover:bg-black text-white text-xs font-bold shadow-lg hover:shadow-xl transition-all duration-200 border border-[#34D399]/40 hover:border-[#34D399] cursor-pointer group active:scale-95"
+          className="fixed bottom-40 md:bottom-8 right-4 sm:right-6 z-50 flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-[#2D3136]/95 hover:bg-black text-white text-xs font-bold shadow-xl hover:shadow-2xl transition-all duration-200 border border-[#34D399]/50 hover:border-[#34D399] cursor-pointer group active:scale-95 backdrop-blur-md"
           title={lang === 'ar' ? 'استشارة تنفيذية سريعة وتحليل الصفحة الحالية' : 'Quick Executive Advisor & Page Audit'}
         >
           <div className="w-5 h-5 rounded-lg bg-[#34D399]/20 text-[#34D399] flex items-center justify-center shrink-0">
@@ -3040,7 +3053,10 @@ export default function App() {
           <span className="hidden sm:inline font-sans">
             {lang === 'ar' ? 'المستشار التنفيذي' : 'Executive Advisor'}
           </span>
-          <span className="sm:hidden font-mono text-[10px] text-[#34D399]">AI</span>
+          <span className="sm:hidden font-mono text-[11px] font-bold text-[#34D399] flex items-center gap-1">
+            <span>AI</span>
+            <span className="text-[10px] text-white/90">{lang === 'ar' ? 'مستشار' : 'Advisor'}</span>
+          </span>
         </button>
       )}
 

@@ -39,28 +39,74 @@ async function startServer() {
   // POST /api/chat/test-key - Test connectivity for a provider
   app.post("/api/chat/test-key", async (req, res) => {
     const { provider, key } = req.body;
-    if (!key) return res.status(400).json({ error: { message: "No key provided" } });
+    const cleanKey = (key || "").trim();
+    if (!cleanKey) return res.status(400).json({ error: { message: "No key provided" } });
 
     if (provider === "gemini") {
       try {
-        const ai = new GoogleGenAI({ apiKey: key });
-        await ai.models.generateContent({ model: "gemini-3.5-flash", contents: "test" });
-        return res.json({ success: true });
+        const ai = new GoogleGenAI({ apiKey: cleanKey });
+        // Test with current models
+        const testModels = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-flash-latest"];
+        let lastErr: any = null;
+        let ok = false;
+        for (const m of testModels) {
+          try {
+            await ai.models.generateContent({ model: m, contents: "Hello, reply with OK" });
+            ok = true;
+            break;
+          } catch (e: any) {
+            lastErr = e;
+          }
+        }
+        if (ok) return res.json({ success: true });
+        throw lastErr || new Error("Gemini test failed");
       } catch (e: any) {
-        return res.status(401).json({ error: { message: e.message } });
+        const msg = e?.message || "Invalid Gemini API key or connection error.";
+        return res.status(401).json({ error: { message: msg } });
       }
     } else if (provider === "groq") {
       try {
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-          body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages: [{ role: "user", content: "test" }], max_tokens: 1 }),
-          signal: AbortSignal.timeout(5000),
+        // Supported active Groq models (mixtral-8x7b-32768 has been decommissioned by Groq)
+        const testGroqModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3.8-27b"];
+        let lastErr: any = null;
+        let ok = false;
+        let lastStatus = 400;
+
+        for (const gm of testGroqModels) {
+          try {
+            const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+              method: "POST",
+              headers: { 
+                "Content-Type": "application/json", 
+                Authorization: `Bearer ${cleanKey}` 
+              },
+              body: JSON.stringify({ 
+                model: gm, 
+                messages: [{ role: "user", content: "hi" }], 
+                max_tokens: 2 
+              }),
+              signal: AbortSignal.timeout(7000),
+            });
+
+            if (response.ok) {
+              ok = true;
+              break;
+            } else {
+              lastStatus = response.status;
+              const errBody = await response.json().catch(() => ({}));
+              lastErr = new Error(errBody?.error?.message || `Groq status ${response.status}`);
+            }
+          } catch (fetchErr: any) {
+            lastErr = fetchErr;
+          }
+        }
+
+        if (ok) return res.json({ success: true });
+        return res.status(lastStatus === 401 ? 401 : 400).json({ 
+          error: { message: lastErr?.message || "Groq key verification failed." } 
         });
-        if (response.ok) return res.json({ success: true });
-        throw new Error(`Groq returned status ${response.status}`);
       } catch (e: any) {
-        return res.status(401).json({ error: { message: e.message } });
+        return res.status(401).json({ error: { message: e.message || "Failed to connect to Groq" } });
       }
     }
     return res.status(400).json({ error: { message: "Invalid provider" } });
@@ -150,8 +196,8 @@ async function startServer() {
           parts: [{ text: m.content }],
         }));
 
-        // Candidate models for Tier 1: gemini-3.5-flash (primary high-speed flash), with preview fallbacks
-        const geminiModels = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash"];
+        // Candidate models for Tier 1: gemini-3.8-flash, gemini-2.5-flash, gemini-flash-latest
+        const geminiModels = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-flash-latest", "gemini-3.5-flash"];
         let response: any = null;
         let successfulGeminiModel = "";
 
@@ -167,7 +213,7 @@ async function startServer() {
               },
             });
             const timer = new Promise((_, reject) =>
-              setTimeout(() => reject(new Error(`Timeout on ${candidateModel}`)), 6000)
+              setTimeout(() => reject(new Error(`Timeout on ${candidateModel}`)), 7000)
             );
             response = await Promise.race([apiCall, timer]);
             if (response?.text || response?.candidates?.[0]?.content?.parts?.[0]?.text) {
@@ -188,7 +234,7 @@ async function startServer() {
           return res.json({
             text,
             provider: "gemini",
-            model: successfulGeminiModel || "gemini-3.5-flash",
+            model: successfulGeminiModel || "gemini-3.8-flash",
             tier: 1,
             failover: false,
             candidates: response.candidates,

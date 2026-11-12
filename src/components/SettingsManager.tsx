@@ -404,25 +404,33 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
   };
 
   const handleTestKey = async (provider: 'gemini' | 'groq', key: string) => {
+    const cleanKey = (key || '').trim();
+    if (!cleanKey) {
+      setKeysFeedback(isAr ? 'يرجى إدخال المفتاح أولاً قبل الفحص.' : 'Please enter an API key first to test.');
+      return;
+    }
+
     setTestingStatus(prev => ({ ...prev, [provider]: 'testing' }));
     setKeysFeedback(null);
     try {
       const res = await fetch('/api/chat/test-key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, key })
+        body: JSON.stringify({ provider, key: cleanKey })
       });
-      if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
         setTestingStatus(prev => ({ ...prev, [provider]: 'success' }));
-        setKeysFeedback(isAr ? `✓ اتصال ${provider} ناجح!` : `✓ ${provider} connection successful!`);
+        setKeysFeedback(isAr ? `✓ اتصال ${provider.toUpperCase()} شغال وناجح 100%!` : `✓ ${provider.toUpperCase()} connected successfully!`);
       } else {
-        throw new Error('Connection failed');
+        const errorDetail = data?.error?.message || `HTTP ${res.status}`;
+        throw new Error(errorDetail);
       }
     } catch (e: any) {
       setTestingStatus(prev => ({ ...prev, [provider]: 'error' }));
-      setKeysFeedback(isAr ? `خطأ في اتصال ${provider}: ${e.message}` : `${provider} connection error: ${e.message}`);
+      setKeysFeedback(isAr ? `فشل فحص ${provider}: ${e.message}` : `${provider} check failed: ${e.message}`);
     } finally {
-      setTimeout(() => setTestingStatus(prev => ({ ...prev, [provider]: 'idle' })), 3500);
+      setTimeout(() => setTestingStatus(prev => ({ ...prev, [provider]: 'idle' })), 4000);
     }
   };
 

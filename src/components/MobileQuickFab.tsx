@@ -86,16 +86,16 @@ export const MobileQuickFab: React.FC<MobileQuickFabProps> = ({
 
   return (
     <>
-      {/* Floating Action Button (Mobile Only) */}
+      {/* Floating Action Button (Mobile Only - positioned cleanly at bottom-24 right-4) */}
       <button
         id="mobile-quick-fab-btn"
         onClick={() => setIsOpen(!isOpen)}
-        className={`md:hidden fixed bottom-20 right-4 z-40 w-13 h-13 rounded-full bg-[#2F3437] text-white shadow-xl flex items-center justify-center transition-all duration-300 active:scale-95 border-2 border-white focus:outline-none ${
+        className={`md:hidden fixed bottom-24 right-4 z-40 w-12 h-12 rounded-full bg-[#2F3437] text-white shadow-xl flex items-center justify-center transition-all duration-300 active:scale-95 border-2 border-white dark:border-[#1E2025] focus:outline-none ${
           isOpen ? 'rotate-45 bg-rose-600' : 'hover:bg-black'
         }`}
         aria-label="Quick Action"
       >
-        <Plus size={24} />
+        <Plus size={22} />
       </button>
 
       {/* Mobile Bottom Sheet Modal */}
