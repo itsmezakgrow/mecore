@@ -1355,40 +1355,140 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   return (
     <div className={`space-y-4 max-w-6xl mx-auto animate-fadeIn text-neutral-900 dark:text-neutral-100 ${isAr ? 'text-right' : ''}`}>
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-200 dark:border-neutral-800">
-        <div>
-          <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-neutral-600 dark:text-neutral-400 font-bold mb-0.5">
-            <Flame size={15} className="text-amber-500 fill-amber-500" />
-            <span>{isAr ? 'بروتوكول بناء العادات والمقاييس' : 'Habits & Measurable Protocol'}</span>
-            <span className="text-neutral-300 dark:text-neutral-700">•</span>
-            <span className="text-amber-900 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2 py-0.2 rounded-md font-mono text-[11px] font-bold">
-              {completedTodayCount}/{activeHabits.length} {isAr ? 'أُنجز اليوم' : 'Done Today'}
-            </span>
+      <div className="space-y-3 pb-3.5 border-b border-neutral-200 dark:border-neutral-800">
+        {/* Top Row: Title + Primary Actions */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wider text-neutral-600 dark:text-neutral-400 font-bold mb-1">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <Flame size={15} className="text-amber-500 fill-amber-500 shrink-0" />
+                <span>{isAr ? 'بروتوكول بناء العادات والمقاييس' : 'Habits & Measurable Protocol'}</span>
+              </span>
+              <span className="text-neutral-300 dark:text-neutral-700">•</span>
+              <span className="text-amber-900 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-md font-mono text-[11px] font-bold whitespace-nowrap tabular-nums">
+                {completedTodayCount}/{activeHabits.length} {isAr ? 'أُنجز اليوم' : 'Done Today'}
+              </span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
+              {activeTab === 'tracker'
+                ? (isAr ? 'تسجيل العادات اليومية والمستويات' : 'Daily Habit Check-in')
+                : activeTab === 'sleep'
+                ? (isAr ? 'إيقاع النوم والاستيقاظ' : 'Sleep & Wake Rhythm')
+                : activeTab === 'stats'
+                ? (isAr ? 'إحصائيات وتحليلات العادات' : 'Habit Stats & Analytics')
+                : (isAr ? 'الأرشيف والعادات المتوقفة' : 'Archive & Paused History')}
+            </h2>
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
-            {activeTab === 'tracker' 
-              ? (isAr ? 'تسجيل العادات اليومية والمستويات' : 'Daily Habit Check-in') 
-              : activeTab === 'stats' 
-              ? (isAr ? 'إحصائيات وتحليلات العادات' : 'Habit Stats & Analytics') 
-              : (isAr ? 'الأرشيف والعادات المتوقفة' : 'Archive & Paused History')}
-          </h2>
+
+          {/* Primary Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowBulkExcuseModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:scale-[1.02] transition-all shadow-xs cursor-pointer whitespace-nowrap"
+              title={isAr ? 'تسجيل عذر وسياق استثنائي لأيام سابقة' : 'Log Context Excuses for Missed Days'}
+            >
+              <Shield size={14} className="text-blue-500 shrink-0" />
+              <span>{isAr ? 'تثبيت عذر' : 'Log Excuses'}</span>
+            </button>
+
+            <button
+              onClick={() => setShowRewardsModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 hover:scale-[1.02] transition-all shadow-xs cursor-pointer whitespace-nowrap"
+              title={isAr ? 'متجر الجوائز والمكافآت' : 'Milestone Rewards Vault'}
+            >
+              <Trophy size={14} className="text-amber-500 shrink-0" />
+              <span>{isAr ? 'الجوائز' : 'Rewards'}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                const newVal = soundManager.toggle();
+                setSoundEnabled(newVal);
+              }}
+              className="p-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer"
+              title={soundEnabled ? (isAr ? 'كتم المؤثرات الصوتية' : 'Mute Sound FX') : (isAr ? 'تفعيل المؤثرات الصوتية' : 'Enable Sound FX')}
+            >
+              {soundEnabled ? <Volume2 size={15} className="text-indigo-500" /> : <VolumeX size={15} />}
+            </button>
+
+            <button
+              onClick={() => {
+                setIsSelectMode(!isSelectMode);
+                if (isSelectMode) setSelectedHabitIds([]);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer whitespace-nowrap ${
+                isSelectMode || selectedHabitIds.length > 0
+                  ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 border-neutral-900 dark:border-white shadow-xs'
+                  : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:text-neutral-900 dark:hover:text-white'
+              }`}
+            >
+              <CheckCheck size={14} />
+              <span>{isAr ? 'تحديد' : 'Select'}</span>
+              {selectedHabitIds.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-white/20 rounded-md text-[10px] font-mono tabular-nums">
+                  {selectedHabitIds.length}
+                </span>
+              )}
+            </button>
+
+            {isSelectMode && (
+              <button
+                onClick={() => {
+                  if (selectedHabitIds.length === activeHabits.length) {
+                    setSelectedHabitIds([]);
+                  } else {
+                    setSelectedHabitIds(activeHabits.map((h) => h.id!).filter(Boolean));
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700 cursor-pointer shadow-xs whitespace-nowrap"
+                title={isAr ? 'تحديد كافة العادات النشطة بنقرة واحدة' : 'Select or deselect all active habits'}
+              >
+                <CheckCheck size={14} className={selectedHabitIds.length === activeHabits.length ? 'text-emerald-500' : ''} />
+                <span>
+                  {selectedHabitIds.length === activeHabits.length
+                    ? (isAr ? 'إلغاء تحديد الكل' : 'Deselect All')
+                    : (isAr ? `تحديد الكل (${activeHabits.length})` : `Select All (${activeHabits.length})`)}
+                </span>
+              </button>
+            )}
+
+            {/* View Customization Settings Button */}
+            <button
+              type="button"
+              onClick={() => setShowViewSettingsModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs font-bold cursor-pointer transition-all active:scale-95 shadow-3xs whitespace-nowrap"
+              title={isAr ? 'تخصيص واجهة العادات وإخفاء/إظهار الأقسام' : 'Customize view & toggle sections'}
+            >
+              <Sliders size={14} className="text-emerald-500 shrink-0" />
+              <span>{isAr ? 'تخصيص العرض' : 'View Settings'}</span>
+            </button>
+
+            <button
+              id="btn-add-habit-modal"
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 bg-[#10B981] hover:bg-[#059669] text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs transition-all shrink-0 active:scale-95 cursor-pointer whitespace-nowrap"
+            >
+              <Plus size={15} />
+              <span>{isAr ? 'عادة جديدة' : 'New Habit'}</span>
+            </button>
+          </div>
         </div>
 
-        {/* View Switcher Tabs & Actions */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="grid grid-cols-4 p-1 bg-neutral-100 dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700 w-full sm:w-auto text-xs font-semibold">
+        {/* Second Row: Dedicated View Switcher Bar (Matrix | Sleep & Wake | Analytics | Archive) */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="grid grid-cols-2 sm:inline-grid sm:grid-cols-4 gap-1 p-1 bg-neutral-100 dark:bg-neutral-800/90 rounded-xl border border-neutral-200 dark:border-neutral-700 w-full sm:w-auto text-xs font-semibold">
             <button
               onClick={() => {
                 setActiveTab('tracker');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'tracker'
                   ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-xs'
                   : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
               }`}
             >
-              <CheckCircle2 size={13} className={activeTab === 'tracker' ? 'text-amber-500' : ''} />
+              <CheckCircle2 size={14} className={activeTab === 'tracker' ? 'text-amber-500 shrink-0' : 'shrink-0'} />
               <span>{isAr ? 'المصفوفة' : 'Matrix'}</span>
             </button>
             <button
@@ -1396,13 +1496,13 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                 setActiveTab('sleep');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'sleep'
                   ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-xs'
                   : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
               }`}
             >
-              <Moon size={13} className={activeTab === 'sleep' ? 'text-indigo-500' : ''} />
+              <Moon size={14} className={activeTab === 'sleep' ? 'text-indigo-500 shrink-0' : 'shrink-0'} />
               <span>{isAr ? 'النوم والاستيقاظ' : 'Sleep & Wake'}</span>
             </button>
             <button
@@ -1410,13 +1510,13 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                 setActiveTab('stats');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'stats'
                   ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-xs'
                   : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
               }`}
             >
-              <BarChart2 size={13} className={activeTab === 'stats' ? 'text-indigo-500' : ''} />
+              <BarChart2 size={14} className={activeTab === 'stats' ? 'text-indigo-500 shrink-0' : 'shrink-0'} />
               <span>{isAr ? 'التحليلات' : 'Analytics'}</span>
             </button>
             <button
@@ -1424,106 +1524,16 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                 setActiveTab('archive');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'archive'
                   ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-xs'
                   : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
               }`}
             >
-              <Clock size={13} className={activeTab === 'archive' ? 'text-rose-500' : ''} />
+              <Clock size={14} className={activeTab === 'archive' ? 'text-rose-500 shrink-0' : 'shrink-0'} />
               <span>{isAr ? 'الأرشيف' : 'Archive'}</span>
             </button>
           </div>
-
-          <button
-            onClick={() => setShowBulkExcuseModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:scale-105 transition-all shadow-xs cursor-pointer"
-            title={isAr ? 'تسجيل عذر وسياق استثنائي لأيام سابقة' : 'Log Context Excuses for Missed Days'}
-          >
-            <Shield size={14} className="text-blue-500" />
-            <span className="hidden sm:inline">{isAr ? 'تثبيت عذر' : 'Log Excuses'}</span>
-          </button>
-
-          <button
-            onClick={() => setShowRewardsModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 hover:scale-105 transition-all shadow-xs cursor-pointer"
-            title={isAr ? 'متجر الجوائز والمكافآت' : 'Milestone Rewards Vault'}
-          >
-            <Trophy size={14} className="text-amber-500" />
-            <span className="hidden sm:inline">{isAr ? 'الجوائز' : 'Rewards'}</span>
-          </button>
-
-          <button
-            onClick={() => {
-              const newVal = soundManager.toggle();
-              setSoundEnabled(newVal);
-            }}
-            className="p-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer"
-            title={soundEnabled ? (isAr ? 'كتم المؤثرات الصوتية' : 'Mute Sound FX') : (isAr ? 'تفعيل المؤثرات الصوتية' : 'Enable Sound FX')}
-          >
-            {soundEnabled ? <Volume2 size={15} className="text-indigo-500" /> : <VolumeX size={15} />}
-          </button>
-
-          <button
-            onClick={() => {
-              setIsSelectMode(!isSelectMode);
-              if (isSelectMode) setSelectedHabitIds([]);
-            }}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-              isSelectMode || selectedHabitIds.length > 0
-                ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 border-neutral-900 dark:border-white shadow-xs'
-                : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:text-neutral-900 dark:hover:text-white'
-            }`}
-          >
-            <CheckCheck size={14} />
-            <span>{isAr ? 'تحديد' : 'Select'}</span>
-            {selectedHabitIds.length > 0 && (
-              <span className="px-1.5 py-0.2 bg-white/20 rounded-md text-[10px] font-mono">
-                {selectedHabitIds.length}
-              </span>
-            )}
-          </button>
-
-          {isSelectMode && (
-            <button
-              onClick={() => {
-                if (selectedHabitIds.length === activeHabits.length) {
-                  setSelectedHabitIds([]);
-                } else {
-                  setSelectedHabitIds(activeHabits.map((h) => h.id!).filter(Boolean));
-                }
-              }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700 cursor-pointer shadow-xs"
-              title={isAr ? 'تحديد كافة العادات النشطة بنقرة واحدة' : 'Select or deselect all active habits'}
-            >
-              <CheckCheck size={14} className={selectedHabitIds.length === activeHabits.length ? 'text-emerald-500' : ''} />
-              <span>
-                {selectedHabitIds.length === activeHabits.length
-                  ? (isAr ? 'إلغاء تحديد الكل' : 'Deselect All')
-                  : (isAr ? `تحديد الكل (${activeHabits.length})` : `Select All (${activeHabits.length})`)}
-              </span>
-            </button>
-          )}
-
-          {/* View Customization Settings Button */}
-          <button
-            type="button"
-            onClick={() => setShowViewSettingsModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs font-bold cursor-pointer transition-all active:scale-95 shadow-3xs"
-            title={isAr ? 'تخصيص واجهة العادات وإخفاء/إظهار الأقسام' : 'Customize view & toggle sections'}
-          >
-            <Sliders size={14} className="text-emerald-500" />
-            <span className="hidden sm:inline">{isAr ? 'تخصيص العرض' : 'View Settings'}</span>
-          </button>
-
-          <button
-            id="btn-add-habit-modal"
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 bg-[#10B981] hover:bg-[#059669] text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs transition-all shrink-0 ml-auto sm:ml-0 active:scale-95 cursor-pointer"
-          >
-            <Plus size={15} />
-            <span>{isAr ? 'عادة جديدة' : 'New Habit'}</span>
-          </button>
         </div>
       </div>
 

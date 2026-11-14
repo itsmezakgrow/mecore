@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, Dumbbell, Zap, Target, CheckCircle2, ShieldCheck, Sparkles, Layers, Sliders, ChevronDown, Flame, Scale, Info, ArrowUpRight } from 'lucide-react';
-import { getExerciseImagePath, getExerciseSpec, getAvailableWeightsForExercise, getNextProgressionWeight } from '../utils/exerciseAssets';
+import { X, Dumbbell, Zap, Target, ShieldCheck, Sparkles, Layers, Flame, Scale, Info, Activity, Timer } from 'lucide-react';
+import { getExerciseImagePath, getExerciseSpec, getAvailableWeightsForExercise, getNextProgressionWeight, isCardioExercise } from '../utils/exerciseAssets';
 import { calculateEquipmentBreakdown, EquipmentBreakdown } from '../utils/equipmentCalculator';
+import { CARDIO_MIN_DURATION, CARDIO_MAX_DURATION } from '../utils/progressiveOverloadCoach';
 
 interface ExercisePreviewModalProps {
   exerciseName: string | null;
@@ -27,6 +28,7 @@ export const ExercisePreviewModal: React.FC<ExercisePreviewModalProps> = ({
   const isAr = lang === 'ar';
   const imagePath = getExerciseImagePath(exerciseName);
   const spec = getExerciseSpec(exerciseName);
+  const isCardio = !!spec.isCardio || isCardioExercise(exerciseName);
   const availableWeights = getAvailableWeightsForExercise(exerciseName);
 
   // Editable local weight state for interactive calculator
@@ -34,8 +36,10 @@ export const ExercisePreviewModal: React.FC<ExercisePreviewModalProps> = ({
   const [customBaseWeight, setCustomBaseWeight] = useState<number | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<'equipment_calculator' | 'form_technique'>('equipment_calculator');
 
-  // Calculate equipment breakdown
-  const breakdown: EquipmentBreakdown = calculateEquipmentBreakdown(exerciseName, currentWeightKg, customBaseWeight);
+  // Calculate equipment breakdown only for strength movements
+  const breakdown: EquipmentBreakdown | null = !isCardio
+    ? calculateEquipmentBreakdown(exerciseName, currentWeightKg, customBaseWeight)
+    : null;
 
   // Quick weight adjustment helpers using the next available weight in the array
   const handleNextStep = () => {
@@ -67,6 +71,7 @@ export const ExercisePreviewModal: React.FC<ExercisePreviewModalProps> = ({
             <div>
               <h3 className="text-base font-black text-slate-900 dark:text-white leading-tight">
                 {exerciseName}
+                {(isAr ? spec.subtitleAr : spec.subtitleEn) ? ` (${isAr ? spec.subtitleAr : spec.subtitleEn})` : ''}
               </h3>
               <p className="text-[11px] font-medium text-slate-500 dark:text-neutral-400">
                 {isAr ? spec.categoryAr : spec.categoryEn}
@@ -83,7 +88,7 @@ export const ExercisePreviewModal: React.FC<ExercisePreviewModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Selector: Equipment Loading vs Form Guidance */}
+        {/* Tab Selector: Equipment Loading / Cardio Protocol vs Form Guidance */}
         <div className="flex border-b border-slate-100 dark:border-neutral-800 px-5 bg-slate-50/50 dark:bg-neutral-900/50 text-xs font-bold shrink-0">
           <button
             type="button"
@@ -94,8 +99,12 @@ export const ExercisePreviewModal: React.FC<ExercisePreviewModalProps> = ({
                 : 'border-transparent text-slate-500 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Scale size={15} />
-            <span>{isAr ? 'حاسبة أوزان المعدات والأقراص' : 'Equipment & Plate Loader'}</span>
+            {isCardio ? <Activity size={15} /> : <Scale size={15} />}
+            <span>
+              {isCardio
+                ? (isAr ? 'خوارزمية تطور الكارديو' : 'Cardio Overload Rules')
+                : (isAr ? 'حاسبة أوزان المعدات والأقراص' : 'Equipment & Plate Loader')}
+            </span>
           </button>
 
           <button
@@ -116,6 +125,78 @@ export const ExercisePreviewModal: React.FC<ExercisePreviewModalProps> = ({
         <div className="p-5 space-y-5 overflow-y-auto custom-scrollbar flex-1">
 
           {activeTab === 'equipment_calculator' ? (
+            isCardio ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-sky-500/10 border border-sky-500/30 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-9 h-9 rounded-xl bg-sky-600 text-white flex items-center justify-center">
+                        <Timer size={18} />
+                      </div>
+                      <div>
+                        <span className="text-xs font-black uppercase tracking-wider text-sky-700 dark:text-sky-300 block">
+                          {isAr ? 'نظام التدرج القلبي والتنفسي (15–30 دقيقة)' : 'Cardio Progressive Overload (15–30 mins)'}
+                        </span>
+                        <span className="text-[11px] text-slate-600 dark:text-neutral-300">
+                          {previousRepsSummary ? `${isAr ? 'آخر أداء:' : 'Last:'} ${previousRepsSummary}` : (isAr ? 'تدرج ذكي للمدة والشدة' : 'Smart Duration & Intensity Progression')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                    <div className="p-3 rounded-xl bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">{isAr ? 'الحد الأدنى للمدة' : 'Min Duration'}</span>
+                      <span className="text-lg font-mono font-black text-sky-600 dark:text-sky-400">{CARDIO_MIN_DURATION} mins</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">{isAr ? 'الحد الأقصى للمدة' : 'Max Duration'}</span>
+                      <span className="text-lg font-mono font-black text-emerald-600 dark:text-emerald-400">{CARDIO_MAX_DURATION} mins</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">{isAr ? 'السرعة الافتراضية' : 'Default Intensity'}</span>
+                      <span className="text-lg font-mono font-black text-slate-900 dark:text-white">
+                        {spec.defaultSpeedRpm ?? 1} {spec.speedUnit || 'level'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5 text-xs">
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 space-y-1">
+                    <span className="font-black text-sky-600 dark:text-sky-400 block">
+                      {isAr ? 'السيناريو B — بناء التحمل (< 30 دقيقة):' : 'Scenario B — Building Stamina (< 30 mins):'}
+                    </span>
+                    <p className="text-slate-600 dark:text-neutral-300 leading-relaxed">
+                      {isAr
+                        ? 'حافظ على نفس السرعة والميلان، وأضف +2 دقيقة في كل حصة قادمة حتى تصل إلى 30 دقيقة.'
+                        : 'Keep Speed/RPM & Incline/Resistance steady, and add +2 minutes next session until you reach 30 mins.'}
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 space-y-1">
+                    <span className="font-black text-emerald-700 dark:text-emerald-400 block">
+                      {isAr ? 'السيناريو A — إتقان التحمل (30 دقيقة × حصتين متتاليتين):' : 'Scenario A — Endurance Mastered (30 mins × 2 consecutive sessions):'}
+                    </span>
+                    <p className="text-emerald-900 dark:text-emerald-200 leading-relaxed">
+                      {isAr
+                        ? 'عند إتمام 30 دقيقة بنفس الشدة لحصتين متتاليتين، ارفع السرعة أو المقاومة +1 مستوى وأعد المدة إلى 15 دقيقة.'
+                        : 'After hitting 30 mins at the same Speed/Incline for 2 consecutive sessions, increase Speed or Incline by +1 level and reset Duration to 15 mins.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                    <ShieldCheck size={15} />
+                    <span>{isAr ? 'توجيه الأداء الصحيح:' : 'Execution & Form Cue:'}</span>
+                  </div>
+                  <p className="text-xs text-slate-700 dark:text-neutral-300 leading-relaxed">
+                    {isAr ? spec.executionCueAr : spec.executionCueEn}
+                  </p>
+                </div>
+              </div>
+            ) : breakdown ? (
             <div className="space-y-5">
               
               {/* Target Weight Interactive Dial */}
@@ -453,6 +534,7 @@ export const ExercisePreviewModal: React.FC<ExercisePreviewModalProps> = ({
               </div>
 
             </div>
+            ) : null
           ) : (
             /* MOTION & FORM GUIDE TAB */
             <div className="space-y-4">
@@ -490,16 +572,20 @@ export const ExercisePreviewModal: React.FC<ExercisePreviewModalProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 text-center">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold block">{isAr ? 'نطاق التكرارات' : 'Target Reps'}</span>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">
+                    {isCardio ? (isAr ? 'نطاق المدة' : 'Duration Range') : (isAr ? 'نطاق التكرارات' : 'Target Reps')}
+                  </span>
                   <p className="text-sm font-mono font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
-                    {spec.repRangeMin} - {spec.repRangeMax} reps
+                    {isCardio ? `${CARDIO_MIN_DURATION} - ${CARDIO_MAX_DURATION} mins` : `${spec.repRangeMin} - ${spec.repRangeMax} reps`}
                   </p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 text-center">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold block">{isAr ? 'خطوة التطور' : 'Progression Step'}</span>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">
+                    {isCardio ? (isAr ? 'التدرج' : 'Cardio Overload') : (isAr ? 'خطوة التطور' : 'Progression Step')}
+                  </span>
                   <p className="text-sm font-mono font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
-                    +{spec.incrementStep} kg
+                    {isCardio ? '+2 mins / +1 Lv' : `+${spec.incrementStep} kg`}
                   </p>
                 </div>
               </div>

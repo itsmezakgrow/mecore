@@ -25,6 +25,10 @@ import {
   Wifi,
   WifiOff,
   RefreshCw,
+  Pencil,
+  Trash2,
+  History,
+  BellOff,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { TaskItem, HabitItem, ProjectItem, FocusSession } from '../types';
@@ -32,16 +36,23 @@ import {
   FocusLogModal
 } from './FocusLogModal';
 import {
-  deleteFocusSession,
-  updateFocusSession
-} from '../services/firestoreService';
-import {
   getStoredTimerState,
   saveStoredTimerState,
   clearStoredTimerState,
   getPendingSyncSessions,
   syncPendingFocusSessions,
-  recordCompletedFocusSessionOfflineFirst
+  recordCompletedFocusSessionOfflineFirst,
+  updateFocusSessionOfflineFirst,
+  deleteFocusSessionOfflineFirst,
+  getConfiguredFocusDurationMinutes,
+  getConfiguredShortBreakMinutes,
+  getConfiguredLongBreakMinutes,
+  getQueuedNextMode,
+  setQueuedNextMode,
+  claimTargetEndTimeCompletion,
+  getSavedPausedMsForMode,
+  savePausedMsForMode,
+  DEFAULT_FOCUS_DURATION_MINUTES,
 } from '../utils/pomodoroOfflineStorage';
 import {
   playCelebrationChime,
@@ -51,6 +62,7 @@ import {
   playTaskCompleteSound,
   startContinuousAlarm,
   stopContinuousAlarm,
+  isContinuousAlarmPlaying,
 } from '../utils/focusAudio';
 
 interface FocusTrackerProps {
@@ -101,25 +113,50 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   onToggleTopBarTimer,
 }) => {
   const isAr = lang === 'ar';
+  const isManagedExternally = propIsActive !== undefined && propSetTimeRemaining !== undefined;
+
   const [showLogModal, setShowLogModal] = useState(false);
   const [sessionToEdit, setSessionToEdit] = useState<FocusSession | null>(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [manualFeedback, setManualFeedback] = useState<string | null>(null);
+  const [modeSwitchNotice, setModeSwitchNotice] = useState<string | null>(null);
+  const [queuedNextModeState, setQueuedNextModeState] = useState<'focus' | 'short-break' | 'long-break' | null>(() => getQueuedNextMode());
 
   const handleSaveManualSession = async (session: Omit<FocusSession, 'id'>) => {
     const sessionToSave = {
       ...session,
-      associatedType: session.associatedType === 'habit' ? 'none' : session.associatedType as 'task' | 'project' | 'none'
+      associatedType: session.associatedType === 'habit' ? 'none' : (session.associatedType as 'task' | 'project' | 'none'),
     };
     await recordCompletedFocusSessionOfflineFirst(sessionToSave);
+    if (sessionToSave.associatedType === 'task' && sessionToSave.associatedId && onUpdateTask) {
+      const linkedTask = tasks.find((t) => t.id === sessionToSave.associatedId);
+      if (linkedTask) {
+        try {
+          await onUpdateTask(linkedTask.id!, {
+            focusedMinutes: (linkedTask.focusedMinutes || 0) + (sessionToSave.duration || 0),
+          });
+        } catch {}
+      }
+    }
+    setPendingSessionsCount(getPendingSyncSessions().length);
+    setManualFeedback(
+      isAr
+        ? `تم تسجيل ${sessionToSave.duration} دقيقة بنجاح`
+        : `Logged ${sessionToSave.duration}m manually`
+    );
+    setTimeout(() => setManualFeedback(null), 3500);
   };
 
   const handleUpdateSession = async (id: string, session: Partial<FocusSession>) => {
-    await updateFocusSession(id, session);
+    await updateFocusSessionOfflineFirst(id, session);
+    setPendingSessionsCount(getPendingSyncSessions().length);
   };
 
   const handleDeleteSession = async (id: string) => {
-    if (confirm(isAr ? 'هل أنت متأكد من حذف هذه الجلسة؟' : 'Are you sure you want to delete this session?')) {
-      await deleteFocusSession(id);
-    }
+    await deleteFocusSessionOfflineFirst(id);
+    setConfirmDeleteId(null);
+    setPendingSessionsCount(getPendingSyncSessions().length);
   };
 
   const [showTopBarTimerState, setShowTopBarTimerState] = useState<boolean>(() => {
@@ -139,32 +176,11 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   }, [showTopBarTimer]);
 
   // ----------------------------------------------------
-  // Configurable Durations & Preferences
+  // Configurable Durations & Preferences (Default Focus = 50 mins)
   // ----------------------------------------------------
-  const [focusDuration, setFocusDuration] = useState<number>(() => {
-    try {
-      const val = localStorage.getItem('pomodoro_focus_dur');
-      return val ? parseInt(val, 10) : 25;
-    } catch {
-      return 25;
-    }
-  });
-  const [shortBreakDuration, setShortBreakDuration] = useState<number>(() => {
-    try {
-      const val = localStorage.getItem('pomodoro_short_dur');
-      return val ? parseInt(val, 10) : 5;
-    } catch {
-      return 5;
-    }
-  });
-  const [longBreakDuration, setLongBreakDuration] = useState<number>(() => {
-    try {
-      const val = localStorage.getItem('pomodoro_long_dur');
-      return val ? parseInt(val, 10) : 15;
-    } catch {
-      return 15;
-    }
-  });
+  const [focusDuration, setFocusDuration] = useState<number>(() => getConfiguredFocusDurationMinutes());
+  const [shortBreakDuration, setShortBreakDuration] = useState<number>(() => getConfiguredShortBreakMinutes());
+  const [longBreakDuration, setLongBreakDuration] = useState<number>(() => getConfiguredLongBreakMinutes());
   // Configurable Durations & Precise Time Daily Targets
   const [targetHours, setTargetHours] = useState<number>(() => {
     try {
@@ -214,7 +230,7 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
       return true;
     }
   });
-  const [isAlarmPlaying, setIsAlarmPlaying] = useState<boolean>(false);
+  const [isAlarmPlaying, setIsAlarmPlaying] = useState<boolean>(() => isContinuousAlarmPlaying());
 
   // Settings & Target Modal States
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
@@ -228,7 +244,10 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   const [localTimeRemaining, setLocalTimeRemaining] = useState<number>(focusDuration * 60);
   const [localIsActive, setLocalIsActive] = useState<boolean>(false);
   const [localActiveTaskId, setLocalActiveTaskId] = useState<string | null>(null);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('none');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
+    const stored = getStoredTimerState();
+    return stored?.selectedProjectId || 'none';
+  });
 
   const timerMode = propTimerMode !== undefined ? propTimerMode : localTimerMode;
   const setTimerMode = propSetTimerMode !== undefined ? propSetTimerMode : setLocalTimerMode;
@@ -238,6 +257,9 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   const setIsActive = propSetIsActive !== undefined ? propSetIsActive : setLocalIsActive;
   const activeTaskId = propActiveTaskId !== undefined ? propActiveTaskId : localActiveTaskId;
   const setActiveTaskId = propSetActiveTaskId !== undefined ? propSetActiveTaskId : setLocalActiveTaskId;
+
+  // Preserve per-mode paused progress if user pauses and peeks at another tab
+  const pausedByModeRef = useRef<Partial<Record<'focus' | 'short-break' | 'long-break', number>>>({});
 
   // Quick focus goal text
   const [quickGoalText, setQuickGoalText] = useState<string>('');
@@ -286,30 +308,97 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
 
   // Precise timing refs
   const targetEndTimeRef = useRef<number | null>(null);
-  const totalDurationRef = useRef<number>(focusDuration * 60);
+  const totalDurationRef = useRef<number>((() => {
+    const stored = getStoredTimerState();
+    if (stored && stored.timerMode === timerMode && stored.totalDurationSeconds > 0) {
+      return stored.totalDurationSeconds;
+    }
+    if (timerMode === 'short-break') return shortBreakDuration * 60;
+    if (timerMode === 'long-break') return longBreakDuration * 60;
+    return focusDuration * 60;
+  })());
   const rafIdRef = useRef<number | null>(null);
 
   // Sync total duration on mode/duration change without overriding active or paused timers
-  const prevDurationRef = useRef<number>(focusDuration);
+  const prevDurationRef = useRef<number>(
+    timerMode === 'short-break'
+      ? shortBreakDuration
+      : timerMode === 'long-break'
+      ? longBreakDuration
+      : focusDuration
+  );
   useEffect(() => {
     let durMins = focusDuration;
     if (timerMode === 'short-break') durMins = shortBreakDuration;
     if (timerMode === 'long-break') durMins = longBreakDuration;
 
-    totalDurationRef.current = durMins * 60;
+    const prevMins = prevDurationRef.current;
+    const durationChanged = prevMins !== durMins;
+    prevDurationRef.current = durMins;
 
     // Check if there is an existing stored paused or active timer
     const stored = getStoredTimerState();
-    const isStoredPaused = stored && !stored.isActive && stored.pausedTimeRemaining > 0 && stored.pausedTimeRemaining < stored.totalDurationSeconds;
+    const isStoredActiveForMode = stored && stored.isActive && stored.timerMode === timerMode;
+    const storedPausedMs = stored?.pausedRemainingMs ?? (stored ? stored.pausedTimeRemaining * 1000 : 0);
+    const isStoredPaused =
+      stored &&
+      !stored.isActive &&
+      stored.timerMode === timerMode &&
+      storedPausedMs > 0 &&
+      storedPausedMs < stored.totalDurationSeconds * 1000;
 
-    // Only reset timeRemaining if user explicitly changed focusDuration preference or switched mode
-    const durationChanged = prevDurationRef.current !== durMins;
-    prevDurationRef.current = durMins;
+    if (isStoredActiveForMode && stored?.totalDurationSeconds > 0) {
+      totalDurationRef.current = stored.totalDurationSeconds;
+      return;
+    }
+
+    totalDurationRef.current = durMins * 60;
 
     if (!isActive && durationChanged && !isStoredPaused) {
-      setTimeRemaining(durMins * 60);
+      const nextSecs = durMins * 60;
+      setTimeRemaining(nextSecs);
+      saveStoredTimerState({
+        isActive: false,
+        timerMode,
+        targetEndTime: null,
+        pausedTimeRemaining: nextSecs,
+        pausedRemainingMs: nextSecs * 1000,
+        totalDurationSeconds: nextSecs,
+        activeTaskId: activeTaskId || null,
+        activeTaskTitle: stored?.activeTaskTitle || null,
+        selectedProjectId: selectedProjectId !== 'none' ? selectedProjectId : null,
+      });
     }
   }, [timerMode, focusDuration, shortBreakDuration, longBreakDuration]);
+
+  // Listen for completion events dispatched by App.tsx so UI shows Rest Modal / Confetti / Stop Alarm
+  useEffect(() => {
+    const handleAppTimerCompleted = (e: any) => {
+      const completedMode = e?.detail?.mode as 'focus' | 'short-break' | 'long-break' | undefined;
+      setIsAlarmPlaying(isContinuousAlarmPlaying());
+      if (completedMode === 'focus') {
+        confetti({
+          particleCount: 40,
+          spread: 60,
+          origin: { y: 0.7 },
+          colors: ['#10B981', '#34D399', '#059669', '#3B82F6'],
+        });
+        setShowRestModal(true);
+      }
+      setPendingSessionsCount(getPendingSyncSessions().length);
+    };
+
+    const handleAlarmStopped = () => {
+      setIsAlarmPlaying(false);
+    };
+
+    window.addEventListener('pomodoro_timer_completed', handleAppTimerCompleted);
+    window.addEventListener('pomodoro_alarm_stopped', handleAlarmStopped);
+    return () => {
+      window.removeEventListener('pomodoro_timer_completed', handleAppTimerCompleted);
+      window.removeEventListener('pomodoro_alarm_stopped', handleAlarmStopped);
+    };
+  }, []);
 
   // Request browser notifications permission
   useEffect(() => {
@@ -321,9 +410,15 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   }, []);
 
   // ----------------------------------------------------
-  // Precision Timestamp Delta Timing Loop (Tab Throttling & Offline Proof)
+  // Standalone Fallback Timing Loop (only active if not controlled by App.tsx)
   // ----------------------------------------------------
   useEffect(() => {
+    if (isManagedExternally) {
+      const stored = getStoredTimerState();
+      targetEndTimeRef.current = isActive ? stored?.targetEndTime || null : null;
+      return;
+    }
+
     if (isActive) {
       const stored = getStoredTimerState();
       let targetEndTime = stored?.targetEndTime;
@@ -400,16 +495,17 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
       targetEndTimeRef.current = null;
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     }
-  }, [isActive, timerMode]);
+  }, [isActive, timerMode, isManagedExternally]);
 
-  // Document Title Synchronization
+  // Standalone Document Title Sync (when rendered outside App.tsx)
   useEffect(() => {
+    if (isManagedExternally) return;
     const mins = Math.floor(timeRemaining / 60).toString().padStart(2, '0');
     const secs = (timeRemaining % 60).toString().padStart(2, '0');
     const modeLabel = timerMode === 'focus' ? (isAr ? 'تركيز' : 'Focus') : (isAr ? 'استراحة' : 'Break');
 
     if (isActive) {
-      document.title = `(${mins}:${secs}) 🎯 ${modeLabel} - Pomodoro`;
+      document.title = `(${mins}:${secs}) ${modeLabel} - Pomodoro`;
     } else {
       document.title = `Core - Executive Habit & Workspace OS`;
     }
@@ -417,7 +513,7 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
     return () => {
       document.title = `Core - Executive Habit & Workspace OS`;
     };
-  }, [timeRemaining, isActive, timerMode, isAr]);
+  }, [timeRemaining, isActive, timerMode, isAr, isManagedExternally]);
 
   // Active Task & Project Details
   const activeTask = useMemo(() => {
@@ -444,23 +540,21 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
     return pending;
   }, [tasks, selectedProjectId]);
 
-  // Today's completed focus cycles
-  const completedCyclesToday = useMemo(() => {
+  // Today's completed focus cycles & sessions list (for history/edit modal)
+  const todaysFocusSessions = useMemo(() => {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     return focusSessions.filter(
       (s) => s.createdAt >= startOfToday.getTime() && s.type === 'focus'
-    ).length;
+    );
   }, [focusSessions]);
+
+  const completedCyclesToday = todaysFocusSessions.length;
 
   // Total Focus Minutes Today
   const totalMinutesToday = useMemo(() => {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    return focusSessions
-      .filter((s) => s.createdAt >= startOfToday.getTime() && s.type === 'focus')
-      .reduce((acc, curr) => acc + (curr.duration || 0), 0);
-  }, [focusSessions]);
+    return todaysFocusSessions.reduce((acc, curr) => acc + (curr.duration || 0), 0);
+  }, [todaysFocusSessions]);
 
   // Precise Time Daily Target Calculations
   const totalTargetMinutes = useMemo(() => {
@@ -468,7 +562,7 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   }, [targetHours, targetMinutes]);
 
   const targetSessionsCount = useMemo(() => {
-    return Math.max(1, Math.round(totalTargetMinutes / (focusDuration || 25)));
+    return Math.max(1, Math.round(totalTargetMinutes / (focusDuration || DEFAULT_FOCUS_DURATION_MINUTES)));
   }, [totalTargetMinutes, focusDuration]);
 
   const targetProgressPct = useMemo(() => {
@@ -487,28 +581,47 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
     if (!isActive) {
       if (soundAlertsEnabled) playStartSound();
       const now = Date.now();
-      const targetEndTime = now + timeRemaining * 1000;
+      const stored = getStoredTimerState();
+      const storedSavedMs =
+        stored && stored.timerMode === timerMode && stored.pausedRemainingMs && stored.pausedRemainingMs > 0
+          ? stored.pausedRemainingMs
+          : null;
+      const remainingMs = storedSavedMs ?? (timeRemaining > 0 ? timeRemaining : totalDurationRef.current) * 1000;
+      const remainingSecs = Math.max(1, Math.ceil(remainingMs / 1000));
+      const targetEndTime = now + remainingMs;
       targetEndTimeRef.current = targetEndTime;
+      savePausedMsForMode(timerMode, null);
       saveStoredTimerState({
         isActive: true,
         timerMode,
         targetEndTime,
-        pausedTimeRemaining: timeRemaining,
+        pausedTimeRemaining: remainingSecs,
+        pausedRemainingMs: remainingMs,
         totalDurationSeconds: totalDurationRef.current,
         activeTaskId: activeTask?.id || null,
         activeTaskTitle: activeTask?.title || quickGoalText || null,
         selectedProjectId: selectedProjectId !== 'none' ? selectedProjectId : null,
         startedAt: now,
       });
+      setModeSwitchNotice(null);
       setIsActive(true);
     } else {
       if (soundAlertsEnabled) playPauseSound();
+      const stored = getStoredTimerState();
+      const exactRemainingMs = stored?.targetEndTime
+        ? Math.max(1000, stored.targetEndTime - Date.now())
+        : timeRemaining * 1000;
+      const exactRemaining = Math.max(1, Math.ceil(exactRemainingMs / 1000));
       targetEndTimeRef.current = null;
+      pausedByModeRef.current[timerMode] = exactRemaining;
+      savePausedMsForMode(timerMode, exactRemainingMs);
+      setTimeRemaining(exactRemaining);
       saveStoredTimerState({
         isActive: false,
         timerMode,
         targetEndTime: null,
-        pausedTimeRemaining: timeRemaining,
+        pausedTimeRemaining: exactRemaining,
+        pausedRemainingMs: exactRemainingMs,
         totalDurationSeconds: totalDurationRef.current,
         activeTaskId: activeTask?.id || null,
         activeTaskTitle: activeTask?.title || quickGoalText || null,
@@ -521,6 +634,9 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   const handleResetTimer = () => {
     setIsActive(false);
     targetEndTimeRef.current = null;
+    delete pausedByModeRef.current[timerMode];
+    savePausedMsForMode(timerMode, null);
+    setModeSwitchNotice(null);
     let durMins = focusDuration;
     if (timerMode === 'short-break') durMins = shortBreakDuration;
     if (timerMode === 'long-break') durMins = longBreakDuration;
@@ -533,9 +649,11 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
       timerMode,
       targetEndTime: null,
       pausedTimeRemaining: resetSecs,
+      pausedRemainingMs: resetSecs * 1000,
       totalDurationSeconds: resetSecs,
       activeTaskId: activeTask?.id || null,
       activeTaskTitle: activeTask?.title || quickGoalText || null,
+      selectedProjectId: selectedProjectId !== 'none' ? selectedProjectId : null,
     });
   };
 
@@ -544,24 +662,64 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   };
 
   const handleSelectMode = (mode: 'focus' | 'short-break' | 'long-break') => {
-    setTimerMode(mode);
-    setIsActive(false);
-    targetEndTimeRef.current = null;
+    // CRITICAL RULE: Clicking Short Break / Long Break (or another mode) while a session is RUNNING
+    // must NEVER stop or interrupt the running timer! It keeps running until it finishes or the user pauses.
+    if (isActive && mode !== timerMode) {
+      if (timerMode === 'focus' && (mode === 'short-break' || mode === 'long-break')) {
+        setQueuedNextMode(mode);
+        setQueuedNextModeState(mode);
+      }
+      const modeNameAr = mode === 'short-break' ? 'الاستراحة القصيرة' : mode === 'long-break' ? 'الاستراحة الطويلة' : 'التركيز';
+      const modeNameEn = mode === 'short-break' ? 'Short Break' : mode === 'long-break' ? 'Long Break' : 'Focus';
+      setModeSwitchNotice(
+        isAr
+          ? `المؤقت قيد التشغيل ولن يتوقف حتى تنتهي الجلسة أو تضغط إيقاف مؤقت (${timerMode === 'focus' ? `تمت جدولة ${modeNameAr} بعدها` : ''})`
+          : `Active session stays running until it finishes or you press Pause${timerMode === 'focus' ? ` (${modeNameEn} queued next)` : ''}.`
+      );
+      setTimeout(() => setModeSwitchNotice(null), 4500);
+      return;
+    }
+
+    if (mode === timerMode) return;
+
+    // Persist current mode's paused progress if paused mid-session
+    const currentStored = getStoredTimerState();
+    const currentMs =
+      currentStored && currentStored.timerMode === timerMode && currentStored.pausedRemainingMs
+        ? currentStored.pausedRemainingMs
+        : timeRemaining * 1000;
+    if (currentMs > 0 && currentMs < totalDurationRef.current * 1000) {
+      pausedByModeRef.current[timerMode] = Math.ceil(currentMs / 1000);
+      savePausedMsForMode(timerMode, currentMs);
+    } else {
+      delete pausedByModeRef.current[timerMode];
+      savePausedMsForMode(timerMode, null);
+    }
 
     let durMins = focusDuration;
     if (mode === 'short-break') durMins = shortBreakDuration;
     if (mode === 'long-break') durMins = longBreakDuration;
 
-    const resetSecs = durMins * 60;
-    setTimeRemaining(resetSecs);
-    totalDurationRef.current = resetSecs;
+    const fullModeSecs = durMins * 60;
+    const restoredMs = getSavedPausedMsForMode(mode) ?? (pausedByModeRef.current[mode] ? pausedByModeRef.current[mode]! * 1000 : null);
+    const hasPartialSaved = restoredMs !== null && restoredMs > 0 && restoredMs < fullModeSecs * 1000;
+    const nextMs = hasPartialSaved ? restoredMs! : fullModeSecs * 1000;
+    const nextSecs = Math.max(1, Math.ceil(nextMs / 1000));
+
+    setTimerMode(mode);
+    setTimeRemaining(nextSecs);
+    totalDurationRef.current = fullModeSecs;
+    setModeSwitchNotice(null);
     saveStoredTimerState({
       isActive: false,
       timerMode: mode,
       targetEndTime: null,
-      pausedTimeRemaining: resetSecs,
-      totalDurationSeconds: resetSecs,
+      pausedTimeRemaining: nextSecs,
+      pausedRemainingMs: nextMs,
+      totalDurationSeconds: fullModeSecs,
       activeTaskId: activeTask?.id || null,
+      activeTaskTitle: activeTask?.title || quickGoalText || null,
+      selectedProjectId: selectedProjectId !== 'none' ? selectedProjectId : null,
     });
   };
 
@@ -600,11 +758,21 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   const handleStopAlarm = () => {
     stopContinuousAlarm();
     setIsAlarmPlaying(false);
+    try {
+      window.dispatchEvent(new Event('pomodoro_alarm_stopped'));
+    } catch {}
   };
 
   const handleSessionComplete = async () => {
+    const stored = getStoredTimerState();
+    if (stored?.targetEndTime && !claimTargetEndTimeCompletion(stored.targetEndTime)) {
+      return;
+    }
+
     setIsActive(false);
     targetEndTimeRef.current = null;
+    delete pausedByModeRef.current[timerMode];
+    savePausedMsForMode(timerMode, null);
     clearStoredTimerState();
 
     if (soundAlertsEnabled) {
@@ -618,14 +786,24 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
 
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       try {
-        const title = timerMode === 'focus'
-          ? (isAr ? '🎉 اكتملت دورة التركيز!' : '🎉 Pomodoro Focus Completed!')
-          : (isAr ? '☕ انتهت الاستراحة، حان وقت العمل!' : '☕ Break finished, ready to sprint!');
+        const title =
+          timerMode === 'focus'
+            ? isAr
+              ? 'اكتملت دورة التركيز!'
+              : 'Pomodoro Focus Completed!'
+            : isAr
+            ? 'انتهت الاستراحة، حان وقت العمل!'
+            : 'Break finished, ready to sprint!';
         new Notification(title, {
-          body: timerMode === 'focus'
-            ? (isAr ? `أحسنت! تم تسجيل ${focusDuration} دقيقة تركيز.` : `Great job! ${focusDuration} mins logged.`)
-            : (isAr ? 'استعد للبدء في جلسة التركيز التالية.' : 'Ready for your next focus session.'),
-          icon: '/favicon.ico'
+          body:
+            timerMode === 'focus'
+              ? isAr
+                ? `أحسنت! تم تسجيل ${focusDuration} دقيقة تركيز.`
+                : `Great job! ${focusDuration} mins logged.`
+              : isAr
+              ? 'استعد للبدء في جلسة التركيز التالية.'
+              : 'Ready for your next focus session.',
+          icon: '/favicon.ico',
         });
       } catch (e) {}
     }
@@ -635,7 +813,7 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
         particleCount: 40,
         spread: 60,
         origin: { y: 0.7 },
-        colors: ['#10B981', '#34D399', '#059669', '#3B82F6']
+        colors: ['#10B981', '#34D399', '#059669', '#3B82F6'],
       });
 
       const sessionDurationMins = Math.round(totalDurationRef.current / 60) || focusDuration;
@@ -646,7 +824,7 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
           title: activeTask?.title || quickGoalText || (isAr ? 'جلسة تركيز بومودورو' : 'Pomodoro Focus Session'),
           duration: sessionDurationMins,
           type: 'focus',
-          associatedType: activeTask ? 'task' : (activeProject ? 'project' : 'none'),
+          associatedType: activeTask ? 'task' : activeProject ? 'project' : 'none',
           associatedId: activeTask?.id || activeProject?.id,
           associatedTitle: activeTask?.title || activeProject?.title || quickGoalText,
           createdAt: Date.now(),
@@ -670,18 +848,22 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
         }
       }
 
+      const focusSecs = focusDuration * 60;
+      setTimeRemaining(focusSecs);
+      totalDurationRef.current = focusSecs;
       setShowRestModal(true);
     } else {
       setTimerMode('focus');
-      setTimeRemaining(focusDuration * 60);
-      totalDurationRef.current = focusDuration * 60;
+      const focusSecs = focusDuration * 60;
+      setTimeRemaining(focusSecs);
+      totalDurationRef.current = focusSecs;
     }
   };
 
   // Math for Circular Dial
   const minutes = Math.floor(timeRemaining / 60).toString().padStart(2, '0');
   const seconds = (timeRemaining % 60).toString().padStart(2, '0');
-  const totalSecs = totalDurationRef.current || 25 * 60;
+  const totalSecs = totalDurationRef.current || DEFAULT_FOCUS_DURATION_MINUTES * 60;
   const progressRatio = Math.max(0, Math.min(1, (totalSecs - timeRemaining) / totalSecs));
   
   // Circumference for r=100 in 230x230 viewBox: 2 * Math.PI * 100 = 628.31
@@ -744,10 +926,28 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
             </div>
           )}
 
+          {/* Stop Continuous Alarm Button if ringing */}
+          {isAlarmPlaying && (
+            <button
+              type="button"
+              onClick={handleStopAlarm}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold shadow-md shadow-rose-600/30 animate-pulse cursor-pointer"
+            >
+              <BellOff size={13} />
+              <span>{isAr ? 'إيقاف المنبه' : 'Stop Alarm'}</span>
+            </button>
+          )}
+
           {/* Sound Alarm Toggle */}
           <button
             type="button"
-            onClick={() => setSoundAlertsEnabled(!soundAlertsEnabled)}
+            onClick={() => {
+              const next = !soundAlertsEnabled;
+              setSoundAlertsEnabled(next);
+              try {
+                localStorage.setItem('pomodoro_alerts', String(next));
+              } catch {}
+            }}
             className={`p-1.5 sm:p-2 rounded-xl border transition-all cursor-pointer ${
               soundAlertsEnabled
                 ? 'bg-emerald-500/10 dark:bg-emerald-500/20 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
@@ -831,6 +1031,12 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
               {isAr ? 'استراحة طويلة' : 'Long Break'}
             </button>
           </div>
+
+          {modeSwitchNotice && (
+            <div className="w-full px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[10px] font-semibold text-center animate-fadeIn">
+              {modeSwitchNotice}
+            </div>
+          )}
 
           {/* 2. Hero Circular Ring with Emerald Accent */}
           <div className="relative flex items-center justify-center my-auto py-1">
@@ -1025,14 +1231,36 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
               </div>
             </div>
 
-            {/* Manual Log Button */}
-            <button
-              onClick={() => setShowLogModal(true)}
-              className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
-            >
-              <CheckSquare size={14} />
-              {isAr ? 'تسجيل يدوي للعمل' : 'Log Manual Session'}
-            </button>
+            {/* Manual Log + Today's Log Action Row */}
+            <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSessionToEdit(null);
+                  setShowLogModal(true);
+                }}
+                className="sm:col-span-2 w-full flex items-center justify-center gap-2 px-3 py-2 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/25 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+              >
+                <CheckSquare size={14} />
+                <span>{isAr ? 'تسجيل عمل يدوي (بدون بومودورو)' : 'Log Manual Session'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(true)}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-neutral-100 dark:bg-neutral-800/90 hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                title={isAr ? 'عرض وتعديل جلسات اليوم' : 'View or edit today logged sessions'}
+              >
+                <History size={13} className="text-emerald-500" />
+                <span>{isAr ? `سجل اليوم (${todaysFocusSessions.length})` : `Today (${todaysFocusSessions.length})`}</span>
+              </button>
+            </div>
+
+            {manualFeedback && (
+              <div className="sm:col-span-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold text-center">
+                {manualFeedback}
+              </div>
+            )}
           </div>
 
           {/* 2. Bindings: Project Selector & Task Selector */}
@@ -1170,10 +1398,29 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
                 onClick={() => {
                   handleStopAlarm();
                   setShowRestModal(false);
-                  handleSelectMode('short-break');
+                  setQueuedNextMode(null);
+                  setQueuedNextModeState(null);
+                  setTimerMode('short-break');
+                  const breakSecs = shortBreakDuration * 60;
+                  setTimeRemaining(breakSecs);
+                  totalDurationRef.current = breakSecs;
+                  const targetEnd = Date.now() + breakSecs * 1000;
+                  saveStoredTimerState({
+                    isActive: true,
+                    timerMode: 'short-break',
+                    targetEndTime: targetEnd,
+                    pausedTimeRemaining: breakSecs,
+                    totalDurationSeconds: breakSecs,
+                    activeTaskId: activeTask?.id || null,
+                    activeTaskTitle: activeTask?.title || quickGoalText || null,
+                    selectedProjectId: selectedProjectId !== 'none' ? selectedProjectId : null,
+                    startedAt: Date.now(),
+                  });
                   setIsActive(true);
                 }}
-                className="w-full py-3 px-4 bg-sky-500 hover:bg-sky-600 text-white dark:text-neutral-950 font-bold rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 transition-all cursor-pointer"
+                className={`w-full py-3 px-4 bg-sky-500 hover:bg-sky-600 text-white dark:text-neutral-950 font-bold rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 transition-all cursor-pointer ${
+                  queuedNextModeState === 'short-break' ? 'ring-2 ring-sky-300 dark:ring-sky-400' : ''
+                }`}
               >
                 <span>☕</span>
                 <span>{isAr ? `بدء استراحة قصيرة (${shortBreakDuration} د)` : `Start Short Break (${shortBreakDuration}m)`}</span>
@@ -1184,10 +1431,29 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
                 onClick={() => {
                   handleStopAlarm();
                   setShowRestModal(false);
-                  handleSelectMode('long-break');
+                  setQueuedNextMode(null);
+                  setQueuedNextModeState(null);
+                  setTimerMode('long-break');
+                  const breakSecs = longBreakDuration * 60;
+                  setTimeRemaining(breakSecs);
+                  totalDurationRef.current = breakSecs;
+                  const targetEnd = Date.now() + breakSecs * 1000;
+                  saveStoredTimerState({
+                    isActive: true,
+                    timerMode: 'long-break',
+                    targetEndTime: targetEnd,
+                    pausedTimeRemaining: breakSecs,
+                    totalDurationSeconds: breakSecs,
+                    activeTaskId: activeTask?.id || null,
+                    activeTaskTitle: activeTask?.title || quickGoalText || null,
+                    selectedProjectId: selectedProjectId !== 'none' ? selectedProjectId : null,
+                    startedAt: Date.now(),
+                  });
                   setIsActive(true);
                 }}
-                className="w-full py-2.5 px-4 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-bold rounded-2xl text-xs border border-neutral-200 dark:border-neutral-700 transition-all cursor-pointer"
+                className={`w-full py-2.5 px-4 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-bold rounded-2xl text-xs border border-neutral-200 dark:border-neutral-700 transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                  queuedNextModeState === 'long-break' ? 'ring-2 ring-indigo-400' : ''
+                }`}
               >
                 <span>🌴</span>
                 <span>{isAr ? `بدء استراحة طويلة (${longBreakDuration} د)` : `Start Long Break (${longBreakDuration}m)`}</span>
@@ -1198,7 +1464,22 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
                 onClick={() => {
                   handleStopAlarm();
                   setShowRestModal(false);
-                  handleSelectMode('focus');
+                  setQueuedNextMode(null);
+                  setQueuedNextModeState(null);
+                  setTimerMode('focus');
+                  const focusSecs = focusDuration * 60;
+                  setTimeRemaining(focusSecs);
+                  totalDurationRef.current = focusSecs;
+                  saveStoredTimerState({
+                    isActive: false,
+                    timerMode: 'focus',
+                    targetEndTime: null,
+                    pausedTimeRemaining: focusSecs,
+                    totalDurationSeconds: focusSecs,
+                    activeTaskId: activeTask?.id || null,
+                    activeTaskTitle: activeTask?.title || quickGoalText || null,
+                    selectedProjectId: selectedProjectId !== 'none' ? selectedProjectId : null,
+                  });
                 }}
                 className="w-full py-2 text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white text-xs font-semibold transition-colors cursor-pointer"
               >
@@ -1233,21 +1514,46 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
 
             <div className="space-y-4 text-xs font-bold text-neutral-700 dark:text-neutral-300">
               {/* Focus Duration */}
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <div className="flex justify-between">
                   <span>{isAr ? 'مدة التركيز:' : 'Focus Duration:'}</span>
                   <span className="font-mono text-emerald-500">{focusDuration} {isAr ? 'دقيقة' : 'mins'}</span>
                 </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[25, 50, 60, 90].map((mins) => (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() => {
+                        setFocusDuration(mins);
+                        try {
+                          localStorage.setItem('pomodoro_focus_dur', String(mins));
+                          window.dispatchEvent(new Event('pomodoro_durations_changed'));
+                        } catch {}
+                      }}
+                      className={`py-1.5 rounded-xl text-[11px] font-mono font-bold border transition-all cursor-pointer ${
+                        focusDuration === mins
+                          ? 'bg-emerald-500 text-white dark:text-neutral-950 border-emerald-500 shadow-xs'
+                          : 'bg-neutral-100 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300'
+                      }`}
+                    >
+                      {mins}m{mins === 50 ? (isAr ? ' (افتراضي)' : ' ★') : ''}
+                    </button>
+                  ))}
+                </div>
                 <input
                   type="range"
                   min="5"
-                  max="90"
+                  max="120"
                   step="5"
                   value={focusDuration}
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10);
                     setFocusDuration(val);
-                    try { localStorage.setItem('pomodoro_focus_dur', String(val)); } catch {}
+                    try {
+                      localStorage.setItem('pomodoro_focus_dur', String(val));
+                      window.dispatchEvent(new Event('pomodoro_durations_changed'));
+                    } catch {}
                   }}
                   className="w-full accent-emerald-500"
                 />
@@ -1655,6 +1961,171 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
                 className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white dark:text-neutral-950 rounded-xl font-bold text-xs cursor-pointer shadow-md shadow-emerald-500/20 transition-all active:scale-95"
               >
                 {isAr ? 'حفظ وتطبيق الهدف الدقيق' : 'Save & Set Target'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ----------------------------------------------------
+          MANUAL FOCUS SESSION / EDIT MODAL
+          ---------------------------------------------------- */}
+      <FocusLogModal
+        isOpen={showLogModal}
+        onClose={() => {
+          setShowLogModal(false);
+          setSessionToEdit(null);
+        }}
+        onSave={handleSaveManualSession}
+        onUpdate={handleUpdateSession}
+        sessionToEdit={sessionToEdit}
+        defaultDuration={focusDuration}
+        projects={projects}
+        tasks={tasks}
+        initialProjectId={selectedProjectId}
+        initialTaskId={activeTaskId}
+        lang={lang}
+      />
+
+      {/* ----------------------------------------------------
+          TODAY'S LOGGED SESSIONS MODAL (EDIT / DELETE)
+          ---------------------------------------------------- */}
+      {showHistoryModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowHistoryModal(false);
+              setConfirmDeleteId(null);
+            }
+          }}
+        >
+          <div className="bg-white dark:bg-[#181A20] border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-lg p-5 sm:p-6 space-y-4 shadow-2xl max-h-[82vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <History size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                    {isAr ? 'سجل جلسات التركيز اليوم' : "Today's Focus Sessions"}
+                  </h3>
+                  <p className="text-[11px] text-neutral-500">
+                    {isAr
+                      ? `الإجمالي: ${Math.floor(totalMinutesToday / 60)}س ${totalMinutesToday % 60}د (${todaysFocusSessions.length} جلسات)`
+                      : `Total: ${Math.floor(totalMinutesToday / 60)}h ${totalMinutesToday % 60}m (${todaysFocusSessions.length} entries)`}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHistoryModal(false);
+                  setConfirmDeleteId(null);
+                }}
+                className="p-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 cursor-pointer"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {todaysFocusSessions.length === 0 ? (
+                <div className="py-10 text-center text-xs text-neutral-500 dark:text-neutral-400">
+                  {isAr
+                    ? 'لا توجد جلسات مسجلة اليوم بعد. يمكنك تسجيل جلسة يدوياً أو بدء المؤقت.'
+                    : 'No sessions logged today yet. Start the timer or log a manual session.'}
+                </div>
+              ) : (
+                todaysFocusSessions.map((session) => (
+                  <div
+                    key={session.id || session.createdAt}
+                    className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-900/80 border border-neutral-200/80 dark:border-neutral-800 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-neutral-900 dark:text-white truncate">
+                        {session.title || (isAr ? 'جلسة تركيز' : 'Focus Session')}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-neutral-500 font-mono">
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                          {Math.floor((session.duration || 0) / 60) > 0
+                            ? `${Math.floor((session.duration || 0) / 60)}h ${(session.duration || 0) % 60}m`
+                            : `${session.duration || 0}m`}
+                        </span>
+                        <span>•</span>
+                        <span>
+                          {new Date(session.createdAt).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        {session.associatedTitle && session.associatedTitle !== session.title && (
+                          <>
+                            <span>•</span>
+                            <span className="truncate font-sans">{session.associatedTitle}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowHistoryModal(false);
+                          setSessionToEdit(session);
+                          setShowLogModal(true);
+                        }}
+                        className="p-1.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+                        title={isAr ? 'تعديل المدة أو العنوان' : 'Edit session'}
+                      >
+                        <Pencil size={13} />
+                      </button>
+
+                      {confirmDeleteId === session.id ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => session.id && handleDeleteSession(session.id)}
+                            className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold cursor-pointer"
+                          >
+                            {isAr ? 'تأكيد' : 'Confirm'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="px-2 py-1 rounded-lg bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 text-[10px] font-bold cursor-pointer"
+                          >
+                            {isAr ? 'إلغاء' : 'Cancel'}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => session.id && setConfirmDeleteId(session.id)}
+                          className="p-1.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:text-rose-600 transition-colors cursor-pointer"
+                          title={isAr ? 'حذف الجلسة' : 'Delete session'}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-neutral-200 dark:border-neutral-800 flex gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHistoryModal(false);
+                  setSessionToEdit(null);
+                  setShowLogModal(true);
+                }}
+                className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white dark:text-neutral-950 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                {isAr ? '+ تسجيل جلسة جديدة' : '+ Log New Session'}
               </button>
             </div>
           </div>

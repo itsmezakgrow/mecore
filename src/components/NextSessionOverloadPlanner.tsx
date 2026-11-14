@@ -8,21 +8,19 @@ import {
   Scale,
   Zap,
   Play,
-  CheckCircle2,
-  ChevronRight,
   Flame,
-  Award,
-  Sparkles,
   Info,
-  Layers,
   ArrowRight,
   Briefcase,
   Target,
   Eye,
-  Camera
+  Activity,
+  CheckSquare,
+  Square
 } from 'lucide-react';
-import { WorkoutSession, WorkoutExercise, WorkoutSet, WorkoutRoutineTemplate, BodyProfileConfig } from '../types';
-import { getExerciseImagePath, getExerciseSpec, getExerciseMeta, getNextProgressionWeight, getAvailableWeightsForExercise } from '../utils/exerciseAssets';
+import { WorkoutSession, WorkoutExercise, WorkoutRoutineTemplate, BodyProfileConfig, RpeFeedbackRating } from '../types';
+import { getExerciseImagePath, getExerciseSpec, getExerciseMeta, getExerciseBiomechanicalType, normalizeExerciseLookupKey } from '../utils/exerciseAssets';
+import { getCoachPrescriptionForExercise, getCardioOverloadPrescription, CardioPrescription } from '../utils/progressiveOverloadCoach';
 import { ExercisePreviewModal } from './ExercisePreviewModal';
 
 interface NextSessionOverloadPlannerProps {
@@ -45,7 +43,15 @@ interface TacticalExercisePrescription {
   nextWeightKg: number;
   nextTargetReps: number;
   targetSetReps?: number[];
-  overloadStatus: 'increase_weight' | 'consolidate_reps' | 'form_recovery' | 'baseline';
+  overloadStatus:
+    | 'increase_weight'
+    | 'double_jump_weight'
+    | 'rpe_easy_jump'
+    | 'rpe_failure_hold'
+    | 'consolidate_reps'
+    | 'form_recovery'
+    | 'baseline';
+  rpeFeedbackApplied?: RpeFeedbackRating;
   actionTagEn: string;
   actionTagAr: string;
   executionCueEn: string;
@@ -55,9 +61,18 @@ interface TacticalExercisePrescription {
 }
 
 const PRESET_ROUTINES_CONFIG: {
-  id: 'routine-a-fullbody' | 'routine-b-fullbody';
+  id: 'routine-a-fullbody' | 'routine-b-fullbody' | 'routine-c-cardio';
   name: string;
-  exercises: { name: string; defaultWeight: number }[];
+  isCardio?: boolean;
+  exercises: {
+    name: string;
+    subtitle?: string;
+    defaultWeight: number;
+    defaultDuration?: number;
+    defaultSpeed?: number;
+    speedUnit?: 'km/h' | 'rpm' | 'level' | 'spm';
+    defaultIncline?: number;
+  }[];
 }[] = [
   {
     id: 'routine-a-fullbody',
@@ -80,6 +95,19 @@ const PRESET_ROUTINES_CONFIG: {
       { name: 'Dumbbell Lateral Raises', defaultWeight: 2.5 },
       { name: 'Tricep Rope Pushdown', defaultWeight: 20 },
     ]
+  },
+  {
+    id: 'routine-c-cardio',
+    name: 'Routine C (Cardio & Conditioning)',
+    isCardio: true,
+    exercises: [
+      { name: 'Treadmill', subtitle: 'طابي roulant', defaultWeight: 0, defaultDuration: 15, defaultSpeed: 8, speedUnit: 'km/h', defaultIncline: 1 },
+      { name: 'Stationary Bike', subtitle: 'Picala', defaultWeight: 0, defaultDuration: 15, defaultSpeed: 75, speedUnit: 'rpm', defaultIncline: 4 },
+      { name: 'Rowing Machine', subtitle: 'Erg / Rower', defaultWeight: 0, defaultDuration: 15, defaultSpeed: 10, speedUnit: 'km/h', defaultIncline: 5 },
+      { name: 'Jump Rope', subtitle: 'الحبل', defaultWeight: 0, defaultDuration: 15, defaultSpeed: 1, speedUnit: 'level', defaultIncline: 0 },
+      { name: 'Outdoor Sprint Intervals', subtitle: 'Outside / No equipment', defaultWeight: 0, defaultDuration: 15, defaultSpeed: 1, speedUnit: 'level', defaultIncline: 0 },
+      { name: 'Burpees / Kettlebell Swings', subtitle: 'High-Intensity limited space', defaultWeight: 0, defaultDuration: 15, defaultSpeed: 1, speedUnit: 'level', defaultIncline: 0 },
+    ]
   }
 ];
 
@@ -92,8 +120,24 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
 }) => {
   const isAr = lang === 'ar';
 
-  // Routine selection: Routine A or Routine B
-  const [selectedRoutineId, setSelectedRoutineId] = useState<'routine-a-fullbody' | 'routine-b-fullbody'>('routine-a-fullbody');
+  // Routine selection: Routine A, Routine B, or Routine C
+  const [selectedRoutineId, setSelectedRoutineId] = useState<'routine-a-fullbody' | 'routine-b-fullbody' | 'routine-c-cardio'>('routine-a-fullbody');
+
+  // Flexible cardio selection (defaults to all 6 options)
+  const [selectedCardioNames, setSelectedCardioNames] = useState<string[]>([
+    'Treadmill',
+    'Stationary Bike',
+    'Rowing Machine',
+    'Jump Rope',
+    'Outdoor Sprint Intervals',
+    'Burpees / Kettlebell Swings'
+  ]);
+
+  const toggleCardioSelection = (name: string) => {
+    setSelectedCardioNames((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+    );
+  };
 
   // Modal preview state
   const [previewExercise, setPreviewExercise] = useState<{
@@ -118,15 +162,21 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
   }, [profile]);
 
   const currentRoutineConfig = PRESET_ROUTINES_CONFIG.find(r => r.id === selectedRoutineId) || PRESET_ROUTINES_CONFIG[0];
+  const isCardioRoutine = !!currentRoutineConfig.isCardio;
 
   // Check how many past workouts exist containing exercises from this specific routine
   const routineHistorySessions = useMemo(() => {
     const sorted = [...workouts].sort((a, b) => b.createdAt - a.createdAt);
-    const exerciseSet = new Set(currentRoutineConfig.exercises.map(e => e.name.trim().toLowerCase()));
+    const exerciseSet = new Set(currentRoutineConfig.exercises.map(e => normalizeExerciseLookupKey(e.name)));
 
     return sorted.filter(w => {
       if (!w.exercises || !Array.isArray(w.exercises)) return false;
-      return w.exercises.some(e => exerciseSet.has(e.name.trim().toLowerCase()) && e.sets && e.sets.length > 0);
+      return w.exercises.some(e => {
+        if (!exerciseSet.has(normalizeExerciseLookupKey(e.name))) return false;
+        const hasStrengthLogs = e.sets && e.sets.length > 0;
+        const hasCardioLogs = e.cardioData && e.cardioData.completed === true;
+        return hasStrengthLogs || hasCardioLogs;
+      });
     });
   }, [workouts, currentRoutineConfig]);
 
@@ -163,154 +213,169 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
     return { energyMessageEn, energyMessageAr, isBusinessFocus };
   }, [gymEntryTime, preGymMeals, profile?.primaryFocusMode]);
 
-  // Algorithmic Double Progression Evaluation for Selected Routine
+  // Algorithmic Double Progression + RPE + Double Weight Jump Evaluation for Selected Strength Routine
   const exercisePrescriptions: TacticalExercisePrescription[] = useMemo(() => {
-    if (!hasBaselineHistory) return [];
+    if (!hasBaselineHistory || isCardioRoutine) return [];
 
     return currentRoutineConfig.exercises.map((item) => {
-      const cleanName = item.name.trim().toLowerCase();
       const spec = getExerciseSpec(item.name);
-      
-      // Find latest session containing this exercise
-      let lastExerciseMatch: WorkoutExercise | null = null;
-      for (const w of routineHistorySessions) {
-        if (w.exercises) {
-          const match = w.exercises.find(e => e.name.trim().toLowerCase() === cleanName);
-          if (match && match.sets && match.sets.length > 0) {
-            lastExerciseMatch = match;
-            break;
-          }
-        }
-      }
-
+      const rx = getCoachPrescriptionForExercise(
+        item.name,
+        3,
+        spec.repRangeMin,
+        item.defaultWeight.toString(),
+        workouts
+      );
       const imgPath = getExerciseImagePath(item.name);
       const meta = getExerciseMeta(item.name);
 
-      if (!lastExerciseMatch || !lastExerciseMatch.sets || lastExerciseMatch.sets.length === 0) {
-        return {
-          name: item.name,
-          targetSets: 3,
-          repRangeMin: spec.repRangeMin,
-          repRangeMax: spec.repRangeMax,
-          incrementStep: spec.incrementStep,
-          lastWeightKg: null,
-          lastRepsSummary: isAr ? 'لم تسجل سابقاً' : 'No past logs',
-          nextWeightKg: item.defaultWeight,
-          nextTargetReps: spec.repRangeMin,
-          overloadStatus: 'baseline',
-          actionTagEn: '🎯 Baseline Setup',
-          actionTagAr: '🎯 إدراج المستوى الأول',
-          executionCueEn: spec.executionCueEn,
-          executionCueAr: spec.executionCueAr,
-          imagePath: imgPath,
-          meta
-        };
+      let overloadStatus: TacticalExercisePrescription['overloadStatus'] = 'baseline';
+      let actionTagEn = '🎯 Baseline Setup';
+      let actionTagAr = '🎯 إدراج المستوى الأول';
+
+      if (rx.action === 'double_jump_weight') {
+        overloadStatus = 'double_jump_weight';
+        actionTagEn = `⚡ Double Jump ⬆️ (+${rx.weightStep}kg)`;
+        actionTagAr = `⚡ قفزة وزن مضاعفة (+${rx.weightStep} كجم)`;
+      } else if (rx.action === 'rpe_easy_jump') {
+        overloadStatus = 'rpe_easy_jump';
+        actionTagEn = `🟢 Easy (RIR 3+): +${rx.weightStep}kg`;
+        actionTagAr = `🟢 سهل (RIR 3+): +${rx.weightStep} كجم`;
+      } else if (rx.action === 'rpe_failure_hold') {
+        overloadStatus = 'rpe_failure_hold';
+        actionTagEn = rx.headlineEn;
+        actionTagAr = rx.headlineAr;
+      } else if (rx.action === 'increase_weight') {
+        overloadStatus = 'increase_weight';
+        actionTagEn = `🔥 Weight Increase ⬆️ (+${rx.weightStep}kg)`;
+        actionTagAr = `🔥 زيادة الوزن (+${rx.weightStep} كجم)`;
+      } else if (rx.action === 'consolidate_volume') {
+        overloadStatus = 'consolidate_reps';
+        actionTagEn = '🔄 Rep Increase (Build Volume)';
+        actionTagAr = '🔄 زيادة التكرارات (بناء الحجم)';
+      } else if (rx.action === 'struggle_safety') {
+        overloadStatus = 'form_recovery';
+        actionTagEn = '⚠️ Maintain Weight & Focus on Form';
+        actionTagAr = '⚠️ حافظ على الوزن وركز على الأداء الحركي';
       }
 
-      // Past sets extraction
-      const completedSets = lastExerciseMatch.sets.filter(s => s.completed || (s.reps && Number(s.reps) > 0));
-      const activeSets = completedSets.length > 0 ? completedSets : lastExerciseMatch.sets;
-
-      const validWeights = activeSets
-        .map(s => {
-          const parsed = parseFloat(String(s.weight).replace(/[^0-9.]/g, ''));
-          return isNaN(parsed) ? 0 : parsed;
-        })
-        .filter(w => w > 0);
-      const reps = activeSets.map(s => Number(s.reps) || 0);
-
-      // CRITICAL FIX: NEVER override real logged weights with hardcoded item.defaultWeight!
-      const maxWeight = validWeights.length > 0 ? Math.max(...validWeights) : item.defaultWeight;
-      const repsSummary = reps.join(', ') + ' reps';
-
-      // DOUBLE PROGRESSION SCENARIOS:
-      // Scenario A (Mastered weight): All sets >= repRangeMax
-      const masteredAllSets = reps.length >= 3 && reps.every(r => r >= spec.repRangeMax);
-
-      // Scenario B (Volume Building): All sets >= repRangeMin, but not all reached repRangeMax
-      const hitMinRepRangeAllSets = reps.length >= 3 && reps.every(r => r >= spec.repRangeMin);
-
-      if (masteredAllSets) {
-        // SCENARIO 1: WEIGHT INCREASE (Mastery): All sets reached maxReps -> Weight increases, Reps reset to minReps
-        const { nextWeight, incrementStep } = getNextProgressionWeight(item.name, maxWeight);
-        const actualStep = incrementStep > 0 ? incrementStep : spec.incrementStep;
-        const nextTargetReps = spec.repRangeMin;
-        const targetSetReps = Array(3).fill(spec.repRangeMin);
-
-        return {
-          name: item.name,
-          targetSets: 3,
-          repRangeMin: spec.repRangeMin,
-          repRangeMax: spec.repRangeMax,
-          incrementStep: actualStep,
-          lastWeightKg: maxWeight,
-          lastReps: reps,
-          lastRepsSummary: repsSummary,
-          nextWeightKg: nextWeight,
-          nextTargetReps,
-          targetSetReps,
-          overloadStatus: 'increase_weight',
-          actionTagEn: `🔥 Weight Increase ⬆️ (+${actualStep}kg)`,
-          actionTagAr: `🔥 زيادة الوزن (+${actualStep} كجم)`,
-          executionCueEn: `Mastered ${maxWeight}kg on all sets (${reps.join(', ')} >= ${spec.repRangeMax} reps)! Increased to ${nextWeight}kg for ${nextTargetReps} reps. Explosive push, 3s negative.`,
-          executionCueAr: `أتقنت وزن ${maxWeight} كجم في كل المجموعات (${reps.join(', ')} >= ${spec.repRangeMax} تكرار)! تمت زيادة الوزن إلى ${nextWeight} كجم لـ ${nextTargetReps} تكرارات لجميع المجموعات.`,
-          imagePath: imgPath,
-          meta
-        };
-      } else if (hitMinRepRangeAllSets) {
-        // SCENARIO 2: REP INCREASE (Building Volume): Hit minReps on all sets -> Keep weight, +1 rep on sets that missed max
-        const targetSetReps = reps.map(r => Math.min(spec.repRangeMax, r + (r < spec.repRangeMax ? 1 : 0)));
-        const nextTargetReps = Math.max(...targetSetReps);
-
-        return {
-          name: item.name,
-          targetSets: 3,
-          repRangeMin: spec.repRangeMin,
-          repRangeMax: spec.repRangeMax,
-          incrementStep: spec.incrementStep,
-          lastWeightKg: maxWeight,
-          lastReps: reps,
-          lastRepsSummary: repsSummary,
-          nextWeightKg: maxWeight,
-          nextTargetReps,
-          targetSetReps,
-          overloadStatus: 'consolidate_reps',
-          actionTagEn: '🔄 Rep Increase (Build Volume)',
-          actionTagAr: '🔄 زيادة التكرارات (بناء الحجم)',
-          executionCueEn: `Hold ${maxWeight}kg steady (NO WEIGHT CHANGE). Target [${targetSetReps.join(', ')}] reps (+1 on missed sets) to build volume towards ${spec.repRangeMax}.`,
-          executionCueAr: `ثبّت الوزن عند ${maxWeight} كجم (دون زيادة في الوزن). الهدف القادم [${targetSetReps.join(', ')}] تكرار (+1 على المجموعات غير المكتملة) حتى تصل لـ ${spec.repRangeMax}.`,
-          imagePath: imgPath,
-          meta
-        };
-      } else {
-        // SCENARIO 3: DELOAD / SAFETY (Struggle): Missed minReps on one or more sets -> Keep weight, reset to minReps, warning flag
-        const targetSetReps = Array(3).fill(spec.repRangeMin);
-        return {
-          name: item.name,
-          targetSets: 3,
-          repRangeMin: spec.repRangeMin,
-          repRangeMax: spec.repRangeMax,
-          incrementStep: spec.incrementStep,
-          lastWeightKg: maxWeight,
-          lastReps: reps,
-          lastRepsSummary: repsSummary,
-          nextWeightKg: maxWeight,
-          nextTargetReps: spec.repRangeMin,
-          targetSetReps,
-          overloadStatus: 'form_recovery',
-          actionTagEn: '⚠️ Maintain Weight & Focus on Form',
-          actionTagAr: '⚠️ حافظ على الوزن وركز على الأداء الحركي',
-          executionCueEn: `⚠️ Maintain Weight & Focus on Form. Missed minimum reps on previous session (${reps.join(', ')}). Hold ${maxWeight}kg steady and aim for ${spec.repRangeMin} clean reps.`,
-          executionCueAr: `⚠️ حافظ على الوزن وركز على الأداء الحركي. لم تحقق الحد الأدنى في الجلسة السابقة (${reps.join(', ')}). حافظ على ${maxWeight} كجم وركز على إتقان ${spec.repRangeMin} تكرارات نظيفة.`,
-          imagePath: imgPath,
-          meta
-        };
-      }
+      return {
+        name: item.name,
+        targetSets: rx.suggestedSets,
+        repRangeMin: rx.minReps,
+        repRangeMax: rx.maxReps,
+        incrementStep: rx.weightStep,
+        lastWeightKg: rx.lastWeight > 0 ? rx.lastWeight : null,
+        lastReps: rx.lastReps,
+        lastRepsSummary: rx.lastRepsSummary === 'No past logs'
+          ? (isAr ? 'لم تسجل سابقاً' : 'No past logs')
+          : rx.lastRepsSummary,
+        nextWeightKg: rx.suggestedWeight,
+        nextTargetReps: rx.suggestedReps,
+        targetSetReps: rx.targetSetReps,
+        overloadStatus,
+        rpeFeedbackApplied: rx.rpeFeedbackApplied,
+        actionTagEn,
+        actionTagAr,
+        executionCueEn: rx.action === 'new_exercise' ? spec.executionCueEn : rx.detailsEn,
+        executionCueAr: rx.action === 'new_exercise' ? spec.executionCueAr : rx.detailsAr,
+        imagePath: imgPath,
+        meta
+      };
     });
-  }, [routineHistorySessions, currentRoutineConfig, isAr, hasBaselineHistory]);
+  }, [workouts, currentRoutineConfig, isAr, hasBaselineHistory, isCardioRoutine]);
+
+  // Cardio Progressive Overload Evaluation for Routine C
+  const cardioPrescriptions = useMemo(() => {
+    if (!isCardioRoutine) return [];
+    return currentRoutineConfig.exercises.map((item) => {
+      const spec = getExerciseSpec(item.name);
+      const rx: CardioPrescription = getCardioOverloadPrescription(item.name, workouts, {
+        durationMinutes: item.defaultDuration,
+        speedRpm: item.defaultSpeed,
+        speedUnit: item.speedUnit,
+        inclineResistance: item.defaultIncline
+      });
+      return {
+        ...rx,
+        subtitle: item.subtitle,
+        imagePath: getExerciseImagePath(item.name),
+        meta: getExerciseMeta(item.name),
+        executionCueEn: spec.executionCueEn,
+        executionCueAr: spec.executionCueAr,
+        supportsIncline: spec.supportsIncline !== false
+      };
+    });
+  }, [isCardioRoutine, currentRoutineConfig, workouts]);
 
   // Launch Workout Directly with Prescribed Targets
   const handleLaunchSession = () => {
+    if (isCardioRoutine) {
+      const activeItems = cardioPrescriptions.filter((p) =>
+        selectedCardioNames.length > 0 ? selectedCardioNames.includes(p.exerciseName) : true
+      );
+
+      const template: WorkoutRoutineTemplate = {
+        id: currentRoutineConfig.id,
+        name: currentRoutineConfig.name,
+        category: 'Cardio & Conditioning',
+        isFlexible: true,
+        description: isAr
+          ? 'حصة كارديو مرنة مع التدرج الذكي للمدة (15-30 دقيقة) والسرعة/المقاومة'
+          : 'Flexible Cardio & Conditioning with progressive duration (15-30m) and intensity overload',
+        exercises: activeItems.map((p) => ({
+          name: p.exerciseName,
+          subtitle: p.subtitle,
+          isCardio: true,
+          isOptional: true,
+          targetSets: 1,
+          targetReps: p.suggestedDurationMinutes,
+          defaultWeight: '0',
+          defaultDuration: p.suggestedDurationMinutes,
+          defaultSpeed: p.suggestedSpeedRpm,
+          speedUnit: p.speedUnit,
+          defaultIncline: p.suggestedInclineResistance
+        }))
+      };
+
+      const targetExercises: WorkoutExercise[] = activeItems.map((p, idx) => {
+        const unitStr = p.speedUnit === 'km/h' ? 'km/h' : p.speedUnit === 'rpm' ? 'RPM' : p.speedUnit === 'spm' ? 'SPM' : 'Lv';
+        const hasPastSummary =
+          p.lastDurationMinutes !== null ||
+          p.lastSpeedRpm !== null ||
+          p.lastHeartRateBpm !== null;
+
+        return {
+          id: `ex-cardio-${Date.now()}-${idx}`,
+          name: p.exerciseName,
+          exerciseType: 'cardio',
+          executionCategory: 'cardio',
+          subtitle: p.subtitle,
+          isOptional: true,
+          category: 'Cardio & Conditioning',
+          isAutoFilled: true,
+          previousPerformanceSummary: hasPastSummary ? (isAr ? p.lastSummaryAr : p.lastSummaryEn) : undefined,
+          nextTargetSummary: `${p.suggestedDurationMinutes}m @ ${p.suggestedSpeedRpm} ${unitStr}`,
+          sets: [],
+          cardioData: {
+            // Actual logged metrics intentionally start empty so omitted metrics are never counted
+            speedUnit: p.speedUnit,
+            completed: false,
+            targetDurationMinutes: p.suggestedDurationMinutes,
+            targetSpeedRpm: p.suggestedSpeedRpm,
+            targetInclineResistance: p.suggestedInclineResistance,
+            previousDurationMinutes: p.lastDurationMinutes ?? undefined,
+            previousSpeedRpm: p.lastSpeedRpm ?? undefined,
+            previousInclineResistance: p.lastInclineResistance ?? undefined,
+            previousHeartRateBpm: p.lastHeartRateBpm ?? undefined
+          }
+        };
+      });
+
+      onLaunchWorkoutWithTargets(template, targetExercises, sessionDate);
+      return;
+    }
+
     const template: WorkoutRoutineTemplate = {
       id: currentRoutineConfig.id,
       name: currentRoutineConfig.name,
@@ -361,6 +426,8 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
       return {
         id: `ex-${Date.now()}-${idx}`,
         name: p.name,
+        exerciseType: 'strength' as const,
+        executionCategory: getExerciseBiomechanicalType(p.name),
         isAutoFilled: true,
         previousWeight: prevWeightStr,
         previousReps: prevRepsArr[0] || 0,
@@ -431,11 +498,11 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
           </div>
 
           {/* Routine Toggle Buttons */}
-          <div className="flex items-center p-1 bg-slate-100 dark:bg-neutral-900 rounded-2xl border border-slate-200 dark:border-neutral-800 self-start md:self-auto">
+          <div className="flex flex-wrap items-center p-1 bg-slate-100 dark:bg-neutral-900 rounded-2xl border border-slate-200 dark:border-neutral-800 self-start md:self-auto gap-1">
             <button
               type="button"
               onClick={() => setSelectedRoutineId('routine-a-fullbody')}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 selectedRoutineId === 'routine-a-fullbody'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
@@ -446,13 +513,24 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
             <button
               type="button"
               onClick={() => setSelectedRoutineId('routine-b-fullbody')}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                 selectedRoutineId === 'routine-b-fullbody'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               Routine B
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedRoutineId('routine-c-cardio')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                selectedRoutineId === 'routine-c-cardio'
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Routine C (Cardio)
             </button>
           </div>
         </div>
@@ -592,9 +670,196 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
         </div>
       </div>
 
-      {/* CONDITIONAL DISPLAY: Zero History vs Calculated Prescriptions */}
-      {!hasBaselineHistory ? (
-        /* Zero Baseline Screen when no historical workouts recorded for this routine */
+      {/* CONDITIONAL DISPLAY: Routine C Cardio Gameplan vs Strength Zero History / Prescriptions */}
+      {isCardioRoutine ? (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+            <h3 className="text-sm font-black uppercase text-slate-500 dark:text-neutral-400 tracking-wider flex items-center gap-2">
+              <Activity size={16} className="text-sky-500" />
+              <span>
+                {isAr
+                  ? 'خطة تدرج الكارديو — Routine C (15–30 دقيقة، اختيار مرن حسب المعدات)'
+                  : 'Cardio Overload Plan — Routine C (15–30 mins, Flexible Equipment)'}
+              </span>
+            </h3>
+            <span className="text-xs font-mono font-bold text-slate-400">
+              {selectedCardioNames.length}/{cardioPrescriptions.length} {isAr ? 'محددة للحصة' : 'selected for session'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3.5">
+            {cardioPrescriptions.map((cx, idx) => {
+              const isSelected = selectedCardioNames.includes(cx.exerciseName);
+              const isIntensityUp = cx.action === 'increase_intensity';
+              const isConsolidateMax = cx.action === 'consolidate_max';
+              const unitStr = cx.speedUnit === 'km/h' ? 'km/h' : cx.speedUnit === 'rpm' ? 'RPM' : 'Lv';
+
+              return (
+                <div
+                  key={cx.exerciseName}
+                  className={`p-4 sm:p-5 rounded-3xl border transition-all ${
+                    !isSelected
+                      ? 'opacity-65 bg-slate-50 dark:bg-neutral-900/50 border-slate-200 dark:border-neutral-800'
+                      : isIntensityUp
+                      ? 'bg-gradient-to-r from-emerald-50/70 via-white to-white dark:from-emerald-950/30 dark:via-[#18191D] dark:to-[#18191D] border-emerald-300 dark:border-emerald-600/50 shadow-xs'
+                      : 'bg-gradient-to-r from-sky-50/60 via-white to-white dark:from-sky-950/20 dark:via-[#18191D] dark:to-[#18191D] border-sky-200 dark:border-sky-800/40 shadow-xs'
+                  }`}
+                >
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    {/* Left: Toggle Checkbox + Exercise Icon + Name & Action Tag */}
+                    <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => toggleCardioSelection(cx.exerciseName)}
+                        className="mt-1 sm:mt-0 text-sky-600 dark:text-sky-400 hover:scale-105 transition-transform cursor-pointer shrink-0"
+                        title={isSelected ? (isAr ? 'استبعاد من هذه الحصة' : 'Exclude from this session') : (isAr ? 'تضمين في الحصة' : 'Include in session')}
+                      >
+                        {isSelected ? <CheckSquare size={20} /> : <Square size={20} className="text-slate-400" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPreviewExercise({
+                          name: cx.exerciseName,
+                          weightKg: cx.suggestedSpeedRpm,
+                          previousRepsSummary: isAr ? cx.lastSummaryAr : cx.lastSummaryEn,
+                          targetReps: cx.suggestedDurationMinutes
+                        })}
+                        className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-sky-500/10 dark:bg-sky-950/50 border border-sky-500/20 flex items-center justify-center text-2xl shrink-0 cursor-pointer hover:border-sky-500 transition-all"
+                        title={isAr ? 'معاينة قواعد الكارديو والتكنيك' : 'View cardio overload rules & form'}
+                      >
+                        {cx.meta.icon}
+                      </button>
+
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-mono font-black text-slate-400">#{idx + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewExercise({
+                              name: cx.exerciseName,
+                              weightKg: cx.suggestedSpeedRpm,
+                              previousRepsSummary: isAr ? cx.lastSummaryAr : cx.lastSummaryEn,
+                              targetReps: cx.suggestedDurationMinutes
+                            })}
+                            className="text-base font-black text-slate-900 dark:text-white hover:text-sky-500 transition-colors text-left rtl:text-right cursor-pointer flex items-center gap-1.5"
+                          >
+                            <span>{cx.exerciseName}</span>
+                            {cx.subtitle && (
+                              <span className="text-xs font-semibold text-slate-500 dark:text-neutral-400">
+                                ({cx.subtitle})
+                              </span>
+                            )}
+                          </button>
+
+                          <span className="text-[11px] font-bold text-slate-400">· Optional</span>
+
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wide ${
+                            isIntensityUp
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : isConsolidateMax
+                              ? 'bg-amber-500 text-white shadow-xs'
+                              : 'bg-sky-600 text-white shadow-xs'
+                          }`}>
+                            {isAr ? cx.actionTagAr : cx.actionTagEn}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-slate-600 dark:text-neutral-300 font-medium leading-relaxed">
+                          {isAr ? cx.detailsAr : cx.detailsEn}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Right: Last Session vs Next Cardio Target */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 self-start lg:self-auto shrink-0">
+                      <div className="flex items-center gap-4 bg-slate-50 dark:bg-neutral-900/90 p-3 rounded-2xl border border-slate-200 dark:border-neutral-800">
+                        <div className="text-left rtl:text-right">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                            {isAr ? 'آخر حصة' : 'LAST SESSION'}
+                          </span>
+                          <p className="text-xs font-mono font-bold text-slate-700 dark:text-neutral-300 mt-0.5 tabular-nums">
+                            {cx.lastDurationMinutes !== null
+                              ? `${cx.lastDurationMinutes} mins`
+                              : cx.lastHeartRateBpm !== null
+                              ? `♥ ${cx.lastHeartRateBpm} BPM`
+                              : '—'}
+                          </p>
+                          <span className="text-[10px] font-mono text-slate-400 tabular-nums">
+                            {cx.lastSpeedRpm !== null || cx.lastHeartRateBpm !== null
+                              ? [
+                                  cx.lastSpeedRpm !== null ? `${cx.lastSpeedRpm} ${unitStr}` : null,
+                                  cx.lastInclineResistance ? `Lv ${cx.lastInclineResistance}` : null,
+                                  cx.lastDurationMinutes !== null && cx.lastHeartRateBpm !== null ? `♥ ${cx.lastHeartRateBpm} bpm` : null
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ')
+                              : (isAr ? 'لا توجد سجلات' : 'No past logs')}
+                          </span>
+                        </div>
+
+                        <ArrowRight size={16} className="text-sky-500 rtl:rotate-180" />
+
+                        <div className="text-left rtl:text-right">
+                          <span className="text-[10px] uppercase font-bold text-sky-600 dark:text-sky-400 block">
+                            {isAr ? 'الهدف القادم' : 'NEXT TARGET'}
+                          </span>
+                          <p className="text-base font-mono font-black text-sky-600 dark:text-sky-400 mt-0.5 tabular-nums">
+                            {cx.suggestedDurationMinutes} mins
+                          </p>
+                          <span className="text-[10px] font-mono font-bold text-slate-700 dark:text-neutral-200 tabular-nums">
+                            {cx.suggestedSpeedRpm} {unitStr}
+                            {cx.supportsIncline && cx.suggestedInclineResistance > 0 ? ` · Inc/Res ${cx.suggestedInclineResistance}` : ''}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setPreviewExercise({
+                          name: cx.exerciseName,
+                          weightKg: cx.suggestedSpeedRpm,
+                          previousRepsSummary: isAr ? cx.lastSummaryAr : cx.lastSummaryEn,
+                          targetReps: cx.suggestedDurationMinutes
+                        })}
+                        className="px-3 py-2 rounded-2xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/30 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                      >
+                        <Activity size={14} />
+                        <span>{isAr ? 'دليل الكارديو' : 'Cardio Guide'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="p-4 rounded-3xl bg-slate-900 text-white border border-neutral-800 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <h4 className="text-sm font-black text-white">
+                {isAr ? 'جاهز لبدء Routine C (الكارديو واللياقة)؟' : 'Ready for Routine C (Cardio & Conditioning)?'}
+              </h4>
+              <p className="text-xs text-neutral-400">
+                {isAr
+                  ? `سيتم تحميل ${selectedCardioNames.length || cardioPrescriptions.length} خيارات كارديو مرنة بأهداف المدة والسرعة المحسوبة.`
+                  : `Launches the logger with ${selectedCardioNames.length || cardioPrescriptions.length} selected cardio options pre-filled with Duration & Speed/RPM targets.`}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleLaunchSession}
+              className="w-full sm:w-auto px-7 py-3.5 rounded-2xl bg-sky-600 hover:bg-sky-500 active:scale-[0.98] text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-sky-600/30 transition-all cursor-pointer shrink-0"
+            >
+              <Play size={16} className="fill-current" />
+              <span>
+                {isAr ? 'بدء Routine C بهذه الأهداف' : 'Launch Routine C With Targets'}
+              </span>
+            </button>
+          </div>
+        </div>
+      ) : !hasBaselineHistory ? (
+        /* Zero Baseline Screen when no historical workouts recorded for this strength routine */
         <div className="p-8 sm:p-10 rounded-3xl bg-white dark:bg-[#18191D] border border-slate-200/80 dark:border-neutral-800 shadow-xs text-center space-y-5 animate-scaleUp">
           <div className="w-16 h-16 rounded-3xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-inner">
             <Dumbbell size={32} />
@@ -637,7 +902,11 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
 
           <div className="grid grid-cols-1 gap-3.5">
             {exercisePrescriptions.map((ex, idx) => {
-              const isLevelUp = ex.overloadStatus === 'increase_weight';
+              const isLevelUp =
+                ex.overloadStatus === 'increase_weight' ||
+                ex.overloadStatus === 'double_jump_weight' ||
+                ex.overloadStatus === 'rpe_easy_jump';
+              const isFailureHold = ex.overloadStatus === 'rpe_failure_hold';
               const isConsolidate = ex.overloadStatus === 'consolidate_reps';
 
               return (
@@ -646,6 +915,8 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
                   className={`p-4 sm:p-5 rounded-3xl border transition-all ${
                     isLevelUp
                       ? 'bg-gradient-to-r from-emerald-50/70 via-white to-white dark:from-emerald-950/30 dark:via-[#18191D] dark:to-[#18191D] border-emerald-300 dark:border-emerald-600/50 shadow-xs'
+                      : isFailureHold
+                      ? 'bg-gradient-to-r from-rose-50/60 via-white to-white dark:from-rose-950/20 dark:via-[#18191D] dark:to-[#18191D] border-rose-300 dark:border-rose-700/50 shadow-xs'
                       : isConsolidate
                       ? 'bg-gradient-to-r from-sky-50/50 via-white to-white dark:from-sky-950/20 dark:via-[#18191D] dark:to-[#18191D] border-sky-200 dark:border-sky-800/40'
                       : 'bg-white dark:bg-[#18191D] border-slate-200/80 dark:border-neutral-800 shadow-xs'
@@ -709,6 +980,8 @@ export const NextSessionOverloadPlanner: React.FC<NextSessionOverloadPlannerProp
                           <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
                             isLevelUp
                               ? 'bg-emerald-500 text-white shadow-xs'
+                              : isFailureHold
+                              ? 'bg-rose-500 text-white shadow-xs'
                               : isConsolidate
                               ? 'bg-sky-500 text-white shadow-xs'
                               : 'bg-amber-500 text-white shadow-xs'

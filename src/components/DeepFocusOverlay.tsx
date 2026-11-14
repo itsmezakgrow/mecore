@@ -14,9 +14,12 @@ import {
   Info
 } from 'lucide-react';
 
+import { getConfiguredDurationSeconds } from '../utils/pomodoroOfflineStorage';
+
 interface DeepFocusOverlayProps {
   isOpen: boolean;
   timeRemaining: number;
+  totalDurationSeconds?: number;
   isActive: boolean;
   target: { id?: string; type: 'task' | 'plan' | 'custom'; title: string } | null;
   ambientAudio: 'none' | 'lofi' | 'white-noise';
@@ -31,6 +34,7 @@ interface DeepFocusOverlayProps {
 export const DeepFocusOverlay: React.FC<DeepFocusOverlayProps> = ({
   isOpen,
   timeRemaining,
+  totalDurationSeconds,
   isActive,
   target,
   ambientAudio,
@@ -46,7 +50,8 @@ export const DeepFocusOverlay: React.FC<DeepFocusOverlayProps> = ({
   const isAr = lang === 'ar';
   const minutes = Math.floor(timeRemaining / 60);
   const seconds = timeRemaining % 60;
-  const progressPercent = ((25 * 60 - timeRemaining) / (25 * 60)) * 100;
+  const effectiveTotalSecs = Math.max(1, totalDurationSeconds || getConfiguredDurationSeconds('focus'));
+  const progressPercent = Math.max(0, Math.min(100, ((effectiveTotalSecs - timeRemaining) / effectiveTotalSecs) * 100));
 
   return (
     <div className="fixed inset-0 z-50 bg-[#121314] text-white flex flex-col justify-between p-6 sm:p-12 animate-fadeIn font-sans selection:bg-neutral-800">

@@ -26,7 +26,13 @@ export function sanitizeUpdateData<T extends Record<string, any>>(data: T): Reco
   for (const [key, value] of Object.entries(data)) {
     if (value === undefined) {
       sanitized[key] = deleteField();
-    } else if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+    } else if (Array.isArray(value)) {
+      sanitized[key] = value.map((item) =>
+        item !== null && typeof item === 'object' && !(item instanceof Date)
+          ? sanitizeInsertData(item)
+          : item
+      );
+    } else if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
       sanitized[key] = sanitizeUpdateData(value);
     } else {
       sanitized[key] = value;
@@ -37,13 +43,21 @@ export function sanitizeUpdateData<T extends Record<string, any>>(data: T): Reco
 
 /**
  * Deeply sanitizes insert data for Firestore addDoc/setDoc operations by removing
- * keys with `undefined` values.
+ * keys with `undefined` values (including inside nested arrays of objects).
  */
 export function sanitizeInsertData<T extends Record<string, any>>(data: T): Record<string, any> {
   const sanitized: Record<string, any> = {};
   for (const [key, value] of Object.entries(data)) {
     if (value !== undefined) {
-      if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+      if (Array.isArray(value)) {
+        sanitized[key] = value
+          .filter((item) => item !== undefined)
+          .map((item) =>
+            item !== null && typeof item === 'object' && !(item instanceof Date)
+              ? sanitizeInsertData(item)
+              : item
+          );
+      } else if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
         sanitized[key] = sanitizeInsertData(value);
       } else {
         sanitized[key] = value;

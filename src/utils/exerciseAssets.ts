@@ -52,13 +52,23 @@ export interface ExerciseSpec {
   repRangeMin: number;
   repRangeMax: number;
   incrementStep: number; // in kg
-  categoryType: 'heavy_compound' | 'back_leg_machine' | 'isolation';
+  categoryType: 'heavy_compound' | 'back_leg_machine' | 'isolation' | 'cardio_conditioning';
   categoryEn: string;
   categoryAr: string;
   icon: string;
   executionCueEn: string;
   executionCueAr: string;
   availableWeights: number[];
+  isCardio?: boolean;
+  subtitleEn?: string;
+  subtitleAr?: string;
+  defaultDurationMinutes?: number;
+  defaultSpeedRpm?: number;
+  speedUnit?: 'km/h' | 'rpm' | 'level' | 'spm';
+  defaultInclineResistance?: number;
+  supportsIncline?: boolean;
+  inclineLabelEn?: string;
+  inclineLabelAr?: string;
 }
 
 // Exact realistic gym increments specified for commercial gym setups
@@ -198,13 +208,205 @@ export const KNOWN_EXERCISES_SPECS: Record<string, ExerciseSpec> = {
     executionCueEn: 'Lock upper arms in place. Extend forearms down fully and flare rope outward at bottom.',
     executionCueAr: 'ثبّت الذراعين العلوية. افرد الساعدين لأسفل تماماً وافرك الحبل للخارج في النهاية.',
     availableWeights: EXERCISE_AVAILABLE_WEIGHTS['tricep rope pushdown']
+  },
+
+  // ROUTINE C (CARDIO & CONDITIONING)
+  'treadmill': {
+    repRangeMin: 15,
+    repRangeMax: 30,
+    incrementStep: 1.0,
+    categoryType: 'cardio_conditioning',
+    categoryEn: 'Cardio / Aerobic Endurance Machine',
+    categoryAr: 'كارديو / طابي roulant',
+    icon: '🏃',
+    executionCueEn: 'Maintain upright posture, mid-foot strike, and steady nasal breathing. Avoid holding side rails.',
+    executionCueAr: 'حافظ على استقامة القامة والهبوط على منتصف القدم وتنفس منتظم بدون الإمساك بالمقابض.',
+    availableWeights: [],
+    isCardio: true,
+    subtitleEn: 'طابي roulant',
+    subtitleAr: 'طابي roulant',
+    defaultDurationMinutes: 15,
+    defaultSpeedRpm: 8,
+    speedUnit: 'km/h',
+    defaultInclineResistance: 1,
+    supportsIncline: true,
+    inclineLabelEn: 'Incline (% / Level)',
+    inclineLabelAr: 'الميلان (Incline)'
+  },
+  'stationary bike': {
+    repRangeMin: 15,
+    repRangeMax: 30,
+    incrementStep: 1.0,
+    categoryType: 'cardio_conditioning',
+    categoryEn: 'Cardio / Low-Impact Cycling',
+    categoryAr: 'كارديو / الدراجة الثابتة (Picala)',
+    icon: '🚴',
+    executionCueEn: 'Adjust saddle to hip height with slight knee bend at bottom. Keep cadence smooth and consistent.',
+    executionCueAr: 'اضبط المقعد بمستوى الورك مع انحناء طفيف في الركبة، وحافظ على دوران سلس ومنتظم.',
+    availableWeights: [],
+    isCardio: true,
+    subtitleEn: 'Picala',
+    subtitleAr: 'Picala / الدراجة',
+    defaultDurationMinutes: 15,
+    defaultSpeedRpm: 75,
+    speedUnit: 'rpm',
+    defaultInclineResistance: 4,
+    supportsIncline: true,
+    inclineLabelEn: 'Resistance (Level)',
+    inclineLabelAr: 'المقاومة (Resistance)'
+  },
+  'jump rope': {
+    repRangeMin: 15,
+    repRangeMax: 30,
+    incrementStep: 1.0,
+    categoryType: 'cardio_conditioning',
+    categoryEn: 'Cardio / Coordination & Stamina',
+    categoryAr: 'كارديو / نط الحبل',
+    icon: '🪢',
+    executionCueEn: 'Turn rope from the wrists, keep elbows tucked, jump 2-3cm off the ground on balls of feet.',
+    executionCueAr: 'دوّر الحبل من المعصمين مع تثبيت المرفقين، واقفز بخفة على أطراف الأصابع بمسافة صغيرة.',
+    availableWeights: [],
+    isCardio: true,
+    subtitleEn: 'الحبل',
+    subtitleAr: 'الحبل',
+    defaultDurationMinutes: 15,
+    defaultSpeedRpm: 1,
+    speedUnit: 'level',
+    defaultInclineResistance: 0,
+    supportsIncline: false,
+    inclineLabelEn: 'Resistance / Intensity (Optional)',
+    inclineLabelAr: 'مستوى الشدة (اختياري)'
+  },
+  'outdoor sprint intervals': {
+    repRangeMin: 15,
+    repRangeMax: 30,
+    incrementStep: 1.0,
+    categoryType: 'cardio_conditioning',
+    categoryEn: 'Cardio / Outdoor Conditioning',
+    categoryAr: 'كارديو / سبرينت في الهواء الطلق',
+    icon: '⚡',
+    executionCueEn: 'Alternate 20-30s fast strides with 60s brisk walk recovery. Drive knees and pump arms smoothly.',
+    executionCueAr: 'ناوب بين 20-30 ثانية جري سريع و60 ثانية مشي استشفائي. ادفع الركبتين والذراعين بتناسق.',
+    availableWeights: [],
+    isCardio: true,
+    subtitleEn: 'Outside / No Equipment',
+    subtitleAr: 'خارج الصالة / بدون معدات',
+    defaultDurationMinutes: 15,
+    defaultSpeedRpm: 1,
+    speedUnit: 'level',
+    defaultInclineResistance: 0,
+    supportsIncline: true,
+    inclineLabelEn: 'Grade / Effort Level (Optional)',
+    inclineLabelAr: 'درجة الانحدار / الجهد (اختياري)'
+  },
+  'rowing machine': {
+    repRangeMin: 15,
+    repRangeMax: 30,
+    incrementStep: 1.0,
+    categoryType: 'cardio_conditioning',
+    categoryEn: 'Cardio / Full-Body Ergometer Rowing',
+    categoryAr: 'كارديو / آلة التجديف',
+    icon: '🚣',
+    executionCueEn: 'Drive forcefully with the legs first, lean slightly back, then pull handle cleanly to lower chest. Reverse arms-hips-knees.',
+    executionCueAr: 'ادفع بقوة بالرجلين أولاً مع ميل خفيف للخلف ثم اسحب المقبض لأسفل الصدر، وعد بالترتيب: الذراعان ثم الورك ثم الركبتان.',
+    availableWeights: [],
+    isCardio: true,
+    subtitleEn: 'Erg / Rower',
+    subtitleAr: 'آلة التجديف',
+    defaultDurationMinutes: 15,
+    defaultSpeedRpm: 10,
+    speedUnit: 'km/h',
+    defaultInclineResistance: 5,
+    supportsIncline: true,
+    inclineLabelEn: 'Damper / Resistance (Optional)',
+    inclineLabelAr: 'المقاومة (Damper - اختياري)'
+  },
+  'burpees / kettlebell swings': {
+    repRangeMin: 15,
+    repRangeMax: 30,
+    incrementStep: 1.0,
+    categoryType: 'cardio_conditioning',
+    categoryEn: 'Cardio / High-Intensity Conditioning',
+    categoryAr: 'كارديو / تمارين عالية الكثافة',
+    icon: '🔥',
+    executionCueEn: 'Keep core braced. On swings, hinge hips sharply and snap glutes; on burpees, land softly.',
+    executionCueAr: 'شد الجذع باستمرار. في التأرجح ادفع الورك بانفجار، وفي البيربي اهبط بنعومة مع تنفس منظم.',
+    availableWeights: [],
+    isCardio: true,
+    subtitleEn: 'High-Intensity Limited Space',
+    subtitleAr: 'بديل عالي الكثافة للمساحات المحدودة',
+    defaultDurationMinutes: 15,
+    defaultSpeedRpm: 1,
+    speedUnit: 'level',
+    defaultInclineResistance: 0,
+    supportsIncline: true,
+    inclineLabelEn: 'Kettlebell / Resistance Level',
+    inclineLabelAr: 'مستوى المقاومة / الوزن (اختياري)'
   }
 };
 
+export function normalizeExerciseLookupKey(name: string): string {
+  const lower = name.toLowerCase().trim();
+  if (KNOWN_EXERCISES_SPECS[lower]) return lower;
+  // Strip optional parenthetical subtitle e.g. "Treadmill (طابي roulant)" -> "treadmill"
+  const stripped = lower.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  if (KNOWN_EXERCISES_SPECS[stripped]) return stripped;
+  return lower;
+}
+
+export function isCardioExercise(name: string): boolean {
+  const key = normalizeExerciseLookupKey(name);
+  if (KNOWN_EXERCISES_SPECS[key]?.isCardio) return true;
+  const raw = name.toLowerCase().trim();
+  return (
+    raw.includes('treadmill') ||
+    raw.includes('طابي') ||
+    raw.includes('stationary bike') ||
+    raw.includes('picala') ||
+    raw.includes('rowing') ||
+    raw.includes('rower') ||
+    raw.includes('concept2') ||
+    raw.includes('تجديف') ||
+    raw.includes('jump rope') ||
+    raw.includes('الحبل') ||
+    raw.includes('sprint') ||
+    raw.includes('burpee') ||
+    raw.includes('kettlebell swing') ||
+    raw.includes('cardio') ||
+    raw.includes('elliptical') ||
+    raw.includes('stairmaster') ||
+    raw.includes('cycling') ||
+    raw.includes('jogging')
+  );
+}
+
 export function getExerciseSpec(name: string): ExerciseSpec {
-  const key = name.toLowerCase().trim();
+  const key = normalizeExerciseLookupKey(name);
   if (KNOWN_EXERCISES_SPECS[key]) {
     return KNOWN_EXERCISES_SPECS[key];
+  }
+
+  if (isCardioExercise(name)) {
+    return {
+      repRangeMin: 15,
+      repRangeMax: 30,
+      incrementStep: 1.0,
+      categoryType: 'cardio_conditioning',
+      categoryEn: 'Cardio & Conditioning',
+      categoryAr: 'كارديو ولياقة قلبية',
+      icon: '🫀',
+      executionCueEn: 'Build duration from 15 to 30 mins (+2 mins/session), then level up Speed or Incline by +1.',
+      executionCueAr: 'زد المدة من 15 إلى 30 دقيقة (+2 دقيقة/حصة)، ثم ارفع السرعة أو الميلان +1.',
+      availableWeights: [],
+      isCardio: true,
+      defaultDurationMinutes: 15,
+      defaultSpeedRpm: 1,
+      speedUnit: 'level',
+      defaultInclineResistance: 0,
+      supportsIncline: true,
+      inclineLabelEn: 'Incline / Resistance',
+      inclineLabelAr: 'الميلان / المقاومة'
+    };
   }
 
   // Fallback heuristic based on exercise name keywords
@@ -263,6 +465,37 @@ export function getExerciseMeta(name: string) {
 }
 
 /**
+ * Classifies an exercise biomechanically for chronological execution-order analysis:
+ * - 'cardio': Conditioning / aerobic equipment
+ * - 'isolation': Single-joint lifts targeting small muscle groups (biceps, triceps, lateral delts, calves)
+ * - 'compound': Multi-joint heavy compound movements (chest press, leg press, squats, rows, pulldowns, overhead press)
+ */
+export function getExerciseBiomechanicalType(name: string): 'compound' | 'isolation' | 'cardio' {
+  if (isCardioExercise(name)) return 'cardio';
+  const spec = getExerciseSpec(name);
+  if (spec.categoryType === 'cardio_conditioning') return 'cardio';
+  if (spec.categoryType === 'isolation') return 'isolation';
+
+  const key = normalizeExerciseLookupKey(name);
+  if (
+    key.includes('curl') ||
+    key.includes('tricep') ||
+    key.includes('pushdown') ||
+    key.includes('lateral raise') ||
+    key.includes('fly') ||
+    key.includes('pec deck') ||
+    key.includes('extension') ||
+    key.includes('calf') ||
+    key.includes('shrug') ||
+    key.includes('kickback')
+  ) {
+    return 'isolation';
+  }
+
+  return 'compound';
+}
+
+/**
  * Get available standard gym weights for an exercise
  */
 export function getAvailableWeightsForExercise(name: string): number[] {
@@ -282,10 +515,10 @@ export function getNextProgressionWeight(
   currentWeight: number
 ): { nextWeight: number; incrementStep: number } {
   const weights = getAvailableWeightsForExercise(exerciseName);
+  const fallbackStep = getExerciseSpec(exerciseName).incrementStep || 2.5;
   
   if (!weights || weights.length === 0) {
-    const defaultStep = 2.5;
-    return { nextWeight: currentWeight + defaultStep, incrementStep: defaultStep };
+    return { nextWeight: Number((currentWeight + fallbackStep).toFixed(1)), incrementStep: fallbackStep };
   }
 
   // Find exact index or the closest index <= currentWeight
@@ -319,3 +552,61 @@ export function getNextProgressionWeight(
   // Already above max or no higher weight found
   return { nextWeight: currentWeight, incrementStep: 0 };
 }
+
+/**
+ * Double Weight Jump (2x normal weightStep):
+ * Used when an athlete breaks the rep ceiling by +2 or more (e.g., 14+ reps when maxReps is 12),
+ * indicating the current load was far too light for their strength level.
+ */
+export function getDoubleProgressionWeight(
+  exerciseName: string,
+  currentWeight: number
+): { nextWeight: number; incrementStep: number } {
+  const firstStep = getNextProgressionWeight(exerciseName, currentWeight);
+  const specStep = getExerciseSpec(exerciseName).incrementStep || 2.5;
+  const secondStep = getNextProgressionWeight(exerciseName, firstStep.nextWeight);
+
+  if (secondStep.nextWeight > firstStep.nextWeight) {
+    return {
+      nextWeight: secondStep.nextWeight,
+      incrementStep: Math.round((secondStep.nextWeight - currentWeight) * 10) / 10
+    };
+  }
+
+  const rawDouble = Number((currentWeight + specStep * 2).toFixed(1));
+  return {
+    nextWeight: Math.max(firstStep.nextWeight, rawDouble),
+    incrementStep: Math.round((Math.max(firstStep.nextWeight, rawDouble) - currentWeight) * 10) / 10
+  };
+}
+
+/**
+ * Micro-Deload Helper (Failure / Injury Guard):
+ * Drops load by 1 realistic gym increment step (never below minimum available weight).
+ */
+export function getSmallDeloadWeight(
+  exerciseName: string,
+  currentWeight: number
+): { nextWeight: number; decrementStep: number } {
+  const weights = getAvailableWeightsForExercise(exerciseName);
+  const specStep = getExerciseSpec(exerciseName).incrementStep || 2.5;
+
+  if (weights && weights.length > 0) {
+    const lowerWeights = weights.filter(w => w < currentWeight - 0.05);
+    if (lowerWeights.length > 0) {
+      const nextWeight = lowerWeights[lowerWeights.length - 1];
+      return {
+        nextWeight,
+        decrementStep: Math.round((currentWeight - nextWeight) * 10) / 10
+      };
+    }
+    return { nextWeight: weights[0], decrementStep: 0 };
+  }
+
+  const nextWeight = Math.max(specStep, Number((currentWeight - specStep).toFixed(1)));
+  return {
+    nextWeight,
+    decrementStep: Math.round((currentWeight - nextWeight) * 10) / 10
+  };
+}
+

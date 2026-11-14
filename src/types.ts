@@ -16,6 +16,8 @@ export interface AppNavItemConfig {
   order: number;
 }
 
+export type RpeFeedbackRating = 'easy' | 'perfect' | 'failure';
+
 export interface WorkoutSet {
   id: string;
   setNumber: number;
@@ -23,6 +25,7 @@ export interface WorkoutSet {
   weight: number | string; // e.g. 0 or 'Bodyweight' or added kg/lbs (e.g. 10, '+10kg')
   weightUnit?: 'kg' | 'lbs' | 'bw';
   completed: boolean;
+  completedAt?: number; // Epoch ms timestamp when set was checked off
   rpe?: number; // Rate of Perceived Exertion (1-10) optional
   notes?: string;
   previousWeight?: number | string;
@@ -31,11 +34,34 @@ export interface WorkoutSet {
   targetReps?: number;
 }
 
+export interface CardioExerciseData {
+  durationMinutes?: number;
+  speedRpm?: number;
+  speedUnit?: 'km/h' | 'rpm' | 'level' | 'spm';
+  inclineResistance?: number;
+  heartRateBpm?: number; // Cospo chest strap & app heart pumps (BPM)
+  completed: boolean;
+  targetDurationMinutes?: number;
+  targetSpeedRpm?: number;
+  targetInclineResistance?: number;
+  previousDurationMinutes?: number;
+  previousSpeedRpm?: number;
+  previousInclineResistance?: number;
+  previousHeartRateBpm?: number;
+}
+
 export interface WorkoutExercise {
   id: string;
-  name: string; // e.g., 'Push-ups', 'Pull-ups', 'Dips', 'Pistol Squats'
-  category?: 'Chest & Triceps' | 'Back & Biceps' | 'Legs & Core' | 'Shoulders' | 'Skills' | 'Full Body' | 'General';
+  name: string; // e.g., 'Push-ups', 'Pull-ups', 'Dips', 'Treadmill'
+  exerciseType?: 'strength' | 'cardio';
+  executionCategory?: 'compound' | 'isolation' | 'cardio';
+  subtitle?: string;
+  isOptional?: boolean;
+  category?: 'Chest & Triceps' | 'Back & Biceps' | 'Legs & Core' | 'Shoulders' | 'Skills' | 'Full Body' | 'Cardio & Conditioning' | 'General';
   sets: WorkoutSet[];
+  cardioData?: CardioExerciseData;
+  completedAt?: number; // Exact chronological timestamp when final set / exercise was completed
+  rpeFeedback?: RpeFeedbackRating; // 'easy' (RIR 3+), 'perfect' (RIR 1-2), 'failure' (RIR 0)
   notes?: string;
   restSeconds?: number;
   isAutoFilled?: boolean;
@@ -45,12 +71,15 @@ export interface WorkoutExercise {
   previousReps?: number;
   targetWeight?: number | string;
   targetReps?: number;
+  targetSetsCount?: number;
 }
+
+export type WorkoutRoutineCategory = 'Push' | 'Pull' | 'Legs' | 'Full Body' | 'Cardio & Conditioning' | 'Calisthenics Skills' | 'Core & Mobility' | 'Custom';
 
 export interface WorkoutSession {
   id?: string;
-  routineName: string; // e.g., "Push Day", "Calisthenics Upper Power"
-  routineCategory?: 'Push' | 'Pull' | 'Legs' | 'Full Body' | 'Calisthenics Skills' | 'Core & Mobility' | 'Custom';
+  routineName: string; // e.g., "Push Day", "Routine C (Cardio & Conditioning)"
+  routineCategory?: WorkoutRoutineCategory;
   exercises: WorkoutExercise[];
   durationMinutes?: number;
   date: string; // YYYY-MM-DD
@@ -59,18 +88,30 @@ export interface WorkoutSession {
   totalVolume?: number; // total calculated volume or load
   totalReps?: number;
   totalSets?: number;
+  totalCardioMinutes?: number;
+  avgHeartRateBpm?: number; // Average Cospo heart pumps (BPM) across cardio exercises where BPM was logged
+  hasExecutionOrderAlert?: boolean;
+  executionOrderAlertDetails?: string;
 }
 
 export interface WorkoutRoutineTemplate {
   id: string;
   name: string;
-  category: 'Push' | 'Pull' | 'Legs' | 'Full Body' | 'Calisthenics Skills' | 'Core & Mobility' | 'Custom';
+  category: WorkoutRoutineCategory;
   description?: string;
+  isFlexible?: boolean;
   exercises: {
     name: string;
+    subtitle?: string;
+    isCardio?: boolean;
+    isOptional?: boolean;
     targetSets: number;
     targetReps: number;
     defaultWeight: string;
+    defaultDuration?: number;
+    defaultSpeed?: number;
+    speedUnit?: 'km/h' | 'rpm' | 'level' | 'spm';
+    defaultIncline?: number;
   }[];
 }
 

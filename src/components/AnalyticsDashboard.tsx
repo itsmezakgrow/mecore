@@ -71,8 +71,10 @@ import {
   Line,
 } from 'recharts';
 import { TaskItem, HabitItem, ProjectItem, WeeklyPlanSlot, ChecklistGroup, GoalItem, ModuleType, FocusSession, ReviewEntry, DailyBlockItem, WorkoutSession, ModuleLifecycleEvent, DailySleepLog, SleepScheduleConfig } from '../types';
-import { deleteFocusSession } from '../services/firestoreService';
+import { deleteFocusSessionOfflineFirst } from '../utils/pomodoroOfflineStorage';
 import { getDisabledModules, getModuleLifecycleHistory, ALL_CONTROLLABLE_MODULES } from '../utils/moduleLifecycle';
+import { analyzeSessionExecutionOrder, ExecutionOrderAnalysis } from '../utils/progressiveOverloadCoach';
+import { isCardioExercise } from '../utils/exerciseAssets';
 
 interface AnalyticsDashboardProps {
   tasks: TaskItem[];
@@ -994,18 +996,25 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         volumeChart: [],
         exerciseNames: [],
         exerciseTrajectory: [],
+        muscleCategoryDistribution: [],
+        executionOrderAlerts: [] as { id?: string; date: string; routineName: string; analysis: ExecutionOrderAnalysis }[],
         totalVolume: 0,
         totalWorkouts: 0,
-        peakVolume: 0
+        peakVolume: 0,
+        totalCardioMinutes: 0,
+        avgHeartRateBpm: null as number | null
       };
     }
 
     // Sort workouts chronologically
     const sorted = [...workouts].sort((a, b) => a.date.localeCompare(b.date));
     
-    // Volume Over Time Data
+    // Volume Over Time Data & Cardio Telemetry (strictly omit unentered metrics)
     let grandVolume = 0;
     let maxSessionVol = 0;
+    let totalCardioMinutes = 0;
+    let bpmSum = 0;
+    let bpmCount = 0;
     const volumeChart = sorted.map((w) => {
       const vol = w.totalVolume || 0;
       grandVolume += vol;
@@ -1056,8 +1065,24 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
 
       w.exercises?.forEach((ex) => {
         const cleanExName = ex.name.trim().toLowerCase();
+        const isCardioEx = ex.exerciseType === 'cardio' || !!ex.cardioData || isCardioExercise(ex.name);
+
+        if (isCardioEx) {
+          if (ex.cardioData?.completed) {
+            const dur = Number(ex.cardioData.durationMinutes);
+            if (Number.isFinite(dur) && dur > 0) {
+              totalCardioMinutes += dur;
+            }
+            const bpm = Number(ex.cardioData.heartRateBpm);
+            if (Number.isFinite(bpm) && bpm > 0) {
+              bpmSum += bpm;
+              bpmCount++;
+            }
+          }
+          return;
+        }
         
-        // Categorize for Muscle Volume Breakdown
+        // Categorize for Muscle Volume Breakdown (strength only)
         let categoryKey = 'Chest';
         if (cleanExName.includes('leg') || cleanExName.includes('squat')) categoryKey = 'Legs';
         else if (cleanExName.includes('lat') || cleanExName.includes('row') || cleanExName.includes('back')) categoryKey = 'Back';
@@ -1122,14 +1147,28 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         volume: Math.round(vol)
       }));
 
+    // Execution Order Biomechanics Alerts (Isolation before Compound)
+    const executionOrderAlerts = [...sorted]
+      .reverse()
+      .map((w) => ({
+        id: w.id,
+        date: w.date,
+        routineName: w.routineName,
+        analysis: analyzeSessionExecutionOrder(w.exercises || [])
+      }))
+      .filter((item) => item.analysis.hasAlert);
+
     return {
       volumeChart,
       exerciseNames,
       exerciseTrajectory,
       muscleCategoryDistribution,
+      executionOrderAlerts,
       totalVolume: grandVolume,
       totalWorkouts: workouts.length,
-      peakVolume: maxSessionVol
+      peakVolume: maxSessionVol,
+      totalCardioMinutes,
+      avgHeartRateBpm: bpmCount > 0 ? Math.round(bpmSum / bpmCount) : null
     };
   }, [workouts, selectedIronExercise, isAr]);
 
@@ -3027,7 +3066,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                         <td className="py-2.5 px-3 text-end">
                           <button
                             onClick={async () => {
-                              if (s.id) await deleteFocusSession(s.id);
+                              if (s.id) await deleteFocusSessionOfflineFirst(s.id);
                             }}
                             className="text-neutral-400 hover:text-rose-600 p-1 cursor-pointer transition-colors"
                             title={isAr ? 'حذف الجلسة' : 'Delete session'}
@@ -3980,13 +4019,99 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
             </div>
 
             <div className="p-4 rounded-2xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-3xs space-y-1">
-              <span className="text-[10px] text-neutral-400 font-bold uppercase">{isAr ? 'ربط العادة' : 'Habit Integration'}</span>
-              <p className="text-sm font-black font-mono text-emerald-500 mt-1">
-                {typeof window !== 'undefined' && localStorage.getItem('iron_engine_gym_habit') ? (isAr ? 'مربوطة تلقائياً ✓' : 'Linked ✓') : (isAr ? 'غير مربوطة' : 'Not Linked')}
-              </p>
-              <span className="text-[10px] text-neutral-500 font-mono">{isAr ? 'إعدادات الوحدة' : 'Module Settings'}</span>
+              <span className="text-[10px] text-neutral-400 font-bold uppercase">
+                {ironAnalyticsData.avgHeartRateBpm
+                  ? (isAr ? 'متوسط نبض Cospo' : 'Cospo Avg Heart Rate')
+                  : ironAnalyticsData.totalCardioMinutes > 0
+                  ? (isAr ? 'دقائق الكارديو' : 'Cardio Duration')
+                  : (isAr ? 'ربط العادة' : 'Habit Integration')}
+              </span>
+              {ironAnalyticsData.avgHeartRateBpm ? (
+                <>
+                  <p className="text-xl font-black font-mono tabular-nums text-rose-500 mt-1">
+                    ♥ {ironAnalyticsData.avgHeartRateBpm} BPM
+                  </p>
+                  <span className="text-[10px] text-neutral-500 font-mono">
+                    {ironAnalyticsData.totalCardioMinutes > 0
+                      ? `${ironAnalyticsData.totalCardioMinutes} ${isAr ? 'د كارديو مسجلة' : 'mins cardio logged'}`
+                      : (isAr ? 'متوسط قياسات الحصص' : 'logged cardio avg')}
+                  </span>
+                </>
+              ) : ironAnalyticsData.totalCardioMinutes > 0 ? (
+                <>
+                  <p className="text-xl font-black font-mono tabular-nums text-amber-500 mt-1">
+                    {ironAnalyticsData.totalCardioMinutes} mins
+                  </p>
+                  <span className="text-[10px] text-neutral-500 font-mono">{isAr ? 'إجمالي مدة الكارديو' : 'logged cardio time'}</span>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-black font-mono text-emerald-500 mt-1">
+                    {typeof window !== 'undefined' && localStorage.getItem('iron_engine_gym_habit') ? (isAr ? 'مربوطة تلقائياً ✓' : 'Linked ✓') : (isAr ? 'غير مربوطة' : 'Not Linked')}
+                  </p>
+                  <span className="text-[10px] text-neutral-500 font-mono">{isAr ? 'إعدادات الوحدة' : 'Module Settings'}</span>
+                </>
+              )}
             </div>
           </div>
+
+          {/* Feature 1: Biomechanical Execution Order Efficiency Alert & Tooltip */}
+          {ironAnalyticsData.executionOrderAlerts.length > 0 && (
+            <div className="p-4 sm:p-5 rounded-3xl bg-amber-50/90 dark:bg-amber-950/25 border border-amber-300 dark:border-amber-700/60 shadow-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <ShieldAlert size={18} />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs sm:text-sm font-black text-amber-900 dark:text-amber-200">
+                        {isAr ? 'تحليل الترتيب البيوميكانيكي للتمارين' : 'Biomechanical Execution Order Flag'}
+                      </span>
+                      <div className="relative group inline-block">
+                        <button
+                          type="button"
+                          className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-800 dark:text-amber-300 text-[10px] font-bold border border-amber-500/30 cursor-help flex items-center gap-1"
+                          title="⚠️ Efficiency Alert: You fatigued small muscles before heavy compounds. This reduces strength output."
+                        >
+                          <AlertCircle size={12} />
+                          <span>{isAr ? 'تنبيه الكفاءة' : 'Efficiency Alert Tooltip'}</span>
+                        </button>
+                        <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 transition-opacity absolute left-0 rtl:left-auto rtl:right-0 top-full mt-1.5 w-72 sm:w-80 p-3 rounded-2xl bg-neutral-900 text-amber-100 text-xs font-medium shadow-xl border border-amber-500/40 z-30 pointer-events-none">
+                          {isAr
+                            ? ironAnalyticsData.executionOrderAlerts[0].analysis.alertMessageAr
+                            : '⚠️ Efficiency Alert: You fatigued small muscles before heavy compounds. This reduces strength output.'}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                      ⚠️ Efficiency Alert: You fatigued small muscles before heavy compounds. This reduces strength output.
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs font-mono tabular-nums font-black text-amber-700 dark:text-amber-300 shrink-0">
+                  {ironAnalyticsData.executionOrderAlerts.length} {isAr ? 'جلسات مرصودة' : 'flagged sessions'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+                {ironAnalyticsData.executionOrderAlerts.slice(0, 4).map((item, idx) => (
+                  <div
+                    key={item.id || `${item.date}-${idx}`}
+                    className="p-3 rounded-2xl bg-white/80 dark:bg-[#18191D]/90 border border-amber-200 dark:border-amber-800/40 text-xs space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-black text-neutral-900 dark:text-white truncate">{item.routineName}</span>
+                      <span className="font-mono tabular-nums text-[11px] text-neutral-500">{item.date}</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                      {isAr ? item.analysis.detailsAr : item.analysis.detailsEn}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Graph 1: Volume Over Time */}
           <div className="p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-4">

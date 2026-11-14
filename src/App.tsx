@@ -75,7 +75,10 @@ import {
 import {
   startAmbientSound,
   stopAmbientSound,
-  playCelebrationChime
+  playCelebrationChime,
+  startContinuousAlarm,
+  stopContinuousAlarm,
+  isContinuousAlarmPlaying,
 } from './utils/focusAudio';
 import { translations } from './utils/translations';
 import {
@@ -217,11 +220,17 @@ import {
   getOfflineFocusSessions,
   setOfflineFocusSessionsCache,
   getPendingSyncSessions,
+  getPendingFocusDeletes,
   recordCompletedFocusSessionOfflineFirst,
   initOfflineFocusSyncListeners,
+  getConfiguredDurationSeconds,
+  getConfiguredFocusDurationMinutes,
+  claimTargetEndTimeCompletion,
+  ensureDefaultPomodoroDurations,
+  savePausedMsForMode,
 } from './utils/pomodoroOfflineStorage';
 import firebaseConfig from '../firebase-applet-config.json';
-import { RefreshCw, Wifi, WifiOff, Download, Monitor, Minimize2, Maximize2, Moon, Sun, Timer, MessageSquare, BarChart3, CheckSquare, Flame, CalendarDays, StickyNote, ChevronLeft, ChevronRight, RotateCcw, Archive, HelpCircle, Bell, Sparkles } from 'lucide-react';
+import { RefreshCw, Wifi, WifiOff, Download, Monitor, Minimize2, Maximize2, Moon, Sun, Timer, MessageSquare, BarChart3, CheckSquare, Flame, CalendarDays, StickyNote, ChevronLeft, ChevronRight, RotateCcw, Archive, HelpCircle, Bell, BellOff, Sparkles } from 'lucide-react';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState<ModuleType>(() => {
@@ -779,26 +788,30 @@ export default function App() {
     return !isFinished;
   });
   const [sharedTimeRemaining, setSharedTimeRemaining] = useState<number>(() => {
+    ensureDefaultPomodoroDurations();
     const saved = getStoredTimerState();
-    const defaultDur = (() => {
-      try {
-        const val = localStorage.getItem('pomodoro_focus_dur');
-        return val ? parseInt(val, 10) * 60 : 50 * 60;
-      } catch {
-        return 50 * 60;
-      }
-    })();
+    const mode = saved?.timerMode || 'focus';
+    const defaultDur = getConfiguredDurationSeconds(mode);
     if (!saved) return defaultDur;
     if (saved.isActive && saved.targetEndTime) {
       const { remainingSeconds } = reconcileTimerRemaining(saved);
       return remainingSeconds > 0 ? remainingSeconds : (saved.pausedTimeRemaining || defaultDur);
     }
-    return saved.pausedTimeRemaining !== undefined && saved.pausedTimeRemaining > 0 
-      ? saved.pausedTimeRemaining 
+    return saved.pausedTimeRemaining !== undefined && saved.pausedTimeRemaining > 0
+      ? saved.pausedTimeRemaining
       : (saved.totalDurationSeconds || defaultDur);
   });
   const [focusQueueTaskIds, setFocusQueueTaskIds] = useState<string[]>([]);
   const [analyticsTab, setAnalyticsTab] = useState<'overview' | 'habits' | 'tasks' | 'goals' | 'focus'>('overview');
+  const [isPomodoroAlarmPlaying, setIsPomodoroAlarmPlaying] = useState<boolean>(() => isContinuousAlarmPlaying());
+
+  const handleStopGlobalPomodoroAlarm = () => {
+    stopContinuousAlarm();
+    setIsPomodoroAlarmPlaying(false);
+    try {
+      window.dispatchEvent(new Event('pomodoro_alarm_stopped'));
+    } catch {}
+  };
 
   const handleFocusTask = (task: TaskItem) => {
     if (task.id) {
@@ -810,9 +823,10 @@ export default function App() {
         timerMode: sharedTimerMode,
         targetEndTime: stored?.targetEndTime || null,
         pausedTimeRemaining: sharedTimeRemaining,
-        totalDurationSeconds: stored?.totalDurationSeconds || 25 * 60,
+        totalDurationSeconds: stored?.totalDurationSeconds || getConfiguredDurationSeconds(sharedTimerMode),
         activeTaskId: task.id,
         activeTaskTitle: task.title,
+        selectedProjectId: stored?.selectedProjectId || null,
       });
     }
     setActiveModule('focus');
@@ -854,6 +868,54 @@ export default function App() {
   const [isFocusMode, setIsFocusMode] = useState<boolean>(false);
   const [ambientAudio, setAmbientAudio] = useState<'none' | 'lofi' | 'white-noise'>('none');
 
+  // Keep DeepFocusOverlay time synced with sharedTimeRemaining
+  useEffect(() => {
+    setPomodoroTime(sharedTimeRemaining);
+  }, [sharedTimeRemaining]);
+
+  useEffect(() => {
+    setPomodoroActive(sharedIsActive);
+  }, [sharedIsActive]);
+
+  // Listen to duration changes from Pomodoro Settings modal and alarm stop events
+  useEffect(() => {
+    const handleDurationsChanged = () => {
+      const stored = getStoredTimerState();
+      if (stored?.isActive) return;
+      const mode = stored?.timerMode || sharedTimerMode;
+      const isPausedMidSession =
+        stored &&
+        stored.pausedTimeRemaining > 0 &&
+        stored.pausedTimeRemaining < stored.totalDurationSeconds;
+      if (!isPausedMidSession) {
+        const nextSecs = getConfiguredDurationSeconds(mode);
+        setSharedTimeRemaining(nextSecs);
+        setPomodoroTime(nextSecs);
+        saveStoredTimerState({
+          isActive: false,
+          timerMode: mode,
+          targetEndTime: null,
+          pausedTimeRemaining: nextSecs,
+          totalDurationSeconds: nextSecs,
+          activeTaskId: stored?.activeTaskId || activeFocusTaskId,
+          activeTaskTitle: stored?.activeTaskTitle || null,
+          selectedProjectId: stored?.selectedProjectId || null,
+        });
+      }
+    };
+
+    const handleAlarmStopped = () => {
+      setIsPomodoroAlarmPlaying(false);
+    };
+
+    window.addEventListener('pomodoro_durations_changed', handleDurationsChanged);
+    window.addEventListener('pomodoro_alarm_stopped', handleAlarmStopped);
+    return () => {
+      window.removeEventListener('pomodoro_durations_changed', handleDurationsChanged);
+      window.removeEventListener('pomodoro_alarm_stopped', handleAlarmStopped);
+    };
+  }, [sharedTimerMode, activeFocusTaskId]);
+
   // Option to display the Pomodoro timer in the top header bar (configurable in Pomodoro/System Settings)
   const [showTopBarTimer, setShowTopBarTimer] = useState<boolean>(() => {
     try {
@@ -889,100 +951,274 @@ export default function App() {
     };
   }, []);
 
-  // Unified Session Completion Handler (Offline-First)
+  // Unified Session Completion Handler (Offline-First, Single Authoritative Trigger)
   const handleUnifiedPomodoroCompleted = async () => {
-    try {
-      playCelebrationChime();
-    } catch {}
-
     const stored = getStoredTimerState();
-    const durationMins = stored?.totalDurationSeconds ? Math.round(stored.totalDurationSeconds / 60) : 25;
+    if (stored?.targetEndTime && !claimTargetEndTimeCompletion(stored.targetEndTime)) {
+      return;
+    }
+
+    const completedMode = stored?.timerMode || sharedTimerMode;
+    const defaultFocusMins = getConfiguredFocusDurationMinutes();
+    const durationMins = stored?.totalDurationSeconds
+      ? Math.max(1, Math.round(stored.totalDurationSeconds / 60))
+      : defaultFocusMins;
     const taskId = stored?.activeTaskId || activeFocusTaskId || (pomodoroTarget?.type === 'task' ? pomodoroTarget.id : null);
     const targetTask = taskId ? tasks.find((t) => t.id === taskId) : null;
-    const title = targetTask?.title || stored?.activeTaskTitle || pomodoroTarget?.title || (lang === 'ar' ? 'جلسة تركيز بومودورو' : 'Pomodoro Focus Session');
+    const selectedProjId = stored?.selectedProjectId || null;
+    const targetProj = selectedProjId ? projects.find((p) => p.id === selectedProjId) : null;
+    const title =
+      targetTask?.title ||
+      stored?.activeTaskTitle ||
+      pomodoroTarget?.title ||
+      (lang === 'ar' ? 'جلسة تركيز بومودورو' : 'Pomodoro Focus Session');
 
-    // 1. Record Offline-First (saved to localStorage cache immediately + queued for sync)
+    // Clear timer storage before recording so rapid ticks cannot re-trigger
+    savePausedMsForMode(completedMode, null);
+    clearStoredTimerState();
+    setSharedIsActive(false);
+    setPomodoroActive(false);
+
+    // Sound / Continuous Alarm Alerts
     try {
-      await recordCompletedFocusSessionOfflineFirst({
-        title,
-        duration: durationMins,
-        type: 'focus',
-        associatedType: targetTask ? 'task' : 'none',
-        associatedId: targetTask?.id,
-        associatedTitle: targetTask?.title,
-        createdAt: Date.now(),
-      });
-    } catch (e) {
-      console.warn('Failed to record completed focus session offline:', e);
+      const alertsEnabled = localStorage.getItem('pomodoro_alerts') !== 'false';
+      const continuousSetting = localStorage.getItem('pomodoro_continuous_alarm');
+      const continuousAlarm = continuousSetting !== null ? continuousSetting === 'true' : true;
+      if (alertsEnabled) {
+        if (continuousAlarm) {
+          startContinuousAlarm();
+          setIsPomodoroAlarmPlaying(true);
+        } else {
+          playCelebrationChime();
+        }
+      }
+    } catch {}
+
+    // Browser Notification
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        const notifTitle =
+          completedMode === 'focus'
+            ? lang === 'ar'
+              ? 'اكتملت دورة التركيز!'
+              : 'Pomodoro Focus Completed!'
+            : lang === 'ar'
+            ? 'انتهت الاستراحة، حان وقت العمل!'
+            : 'Break finished, ready to sprint!';
+        new Notification(notifTitle, {
+          body:
+            completedMode === 'focus'
+              ? lang === 'ar'
+                ? `أحسنت! تم تسجيل ${durationMins} دقيقة تركيز.`
+                : `Great job! ${durationMins} mins logged.`
+              : lang === 'ar'
+              ? 'استعد للبدء في جلسة التركيز التالية.'
+              : 'Ready for your next focus session.',
+          icon: '/favicon.ico',
+        });
+      } catch {}
     }
 
-    // 2. Increment Task Progress immediately
-    if (targetTask?.id) {
+    if (completedMode === 'focus') {
+      // 1. Record Offline-First (saved to localStorage cache immediately + queued for sync)
       try {
-        const currentFocused = targetTask.focusedMinutes || 0;
-        const currentVal = targetTask.currentValue || 0;
-        await handleUpdateTask(targetTask.id, {
-          focusedMinutes: currentFocused + durationMins,
-          currentValue: targetTask.isMeasurable ? currentVal + 1 : currentVal,
+        await recordCompletedFocusSessionOfflineFirst({
+          title,
+          duration: durationMins,
+          type: 'focus',
+          associatedType: targetTask ? 'task' : targetProj ? 'project' : 'none',
+          associatedId: targetTask?.id || targetProj?.id,
+          associatedTitle: targetTask?.title || targetProj?.title,
+          createdAt: Date.now(),
         });
       } catch (e) {
-        console.warn('Failed to update task focus minutes:', e);
+        console.warn('Failed to record completed focus session offline:', e);
       }
+
+      // 2. Increment Task Progress immediately
+      if (targetTask?.id) {
+        try {
+          const currentFocused = targetTask.focusedMinutes || 0;
+          const currentVal = targetTask.currentValue || 0;
+          await handleUpdateTask(targetTask.id, {
+            focusedMinutes: currentFocused + durationMins,
+            currentValue: targetTask.isMeasurable ? currentVal + 1 : currentVal,
+          });
+        } catch (e) {
+          console.warn('Failed to update task focus minutes:', e);
+        }
+      }
+
+      addToast(
+        lang === 'ar'
+          ? `✓ اكتملت فترة التركيز (${durationMins} دقيقة تم تسجيلها وحفظها).`
+          : `✓ Focus sprint accomplished (${durationMins} mins logged & saved).`,
+        'success'
+      );
+    } else {
+      setSharedTimerMode('focus');
+      addToast(
+        lang === 'ar'
+          ? '☕ انتهت الاستراحة — جاهز لجلسة التركيز القادمة!'
+          : '☕ Break completed — ready for your next focus sprint!',
+        'info'
+      );
     }
 
-    // 3. Reset states & storage
-    setSharedIsActive(false);
-    setSharedTimeRemaining(25 * 60);
-    setPomodoroActive(false);
-    setPomodoroTime(25 * 60);
+    // 3. Reset display back to configured Focus duration (50:00 default)
+    const nextFocusSecs = getConfiguredDurationSeconds('focus');
+    setSharedTimeRemaining(nextFocusSecs);
+    setPomodoroTime(nextFocusSecs);
     setPomodoroTarget(null);
-    clearStoredTimerState();
 
-    addToast(
-      lang === 'ar'
-        ? `✓ رائع! اكتملت فترة التركيز بنجاح (${durationMins} دقيقة تم تسجيلها وحفظها محلياً).`
-        : `✓ Spectacular! Focus sprint accomplished (${durationMins} mins logged & saved locally).`,
-      'success'
-    );
+    // 4. Notify FocusTracker UI if mounted
+    try {
+      window.dispatchEvent(
+        new CustomEvent('pomodoro_timer_completed', {
+          detail: { mode: completedMode, durationMins },
+        })
+      );
+    } catch {}
   };
 
-  // Precision background countdown for the shared Focus Station timer
+  // Global Document Title Synchronization (works across all Core tabs when timer is active)
+  useEffect(() => {
+    if (!sharedIsActive) {
+      document.title = `Core - Executive Habit & Workspace OS`;
+      return;
+    }
+    const mins = Math.floor(sharedTimeRemaining / 60).toString().padStart(2, '0');
+    const secs = (sharedTimeRemaining % 60).toString().padStart(2, '0');
+    const modeLabel =
+      sharedTimerMode === 'focus'
+        ? lang === 'ar'
+          ? 'تركيز'
+          : 'Focus'
+        : lang === 'ar'
+        ? 'استراحة'
+        : 'Break';
+    document.title = `(${mins}:${secs}) ${modeLabel} - Core`;
+    return () => {
+      document.title = `Core - Executive Habit & Workspace OS`;
+    };
+  }, [sharedIsActive, sharedTimeRemaining, sharedTimerMode, lang]);
+
+  // Cross-tab synchronization if timer is started/paused/reset in another browser tab
+  useEffect(() => {
+    const handleStorageSync = (e: StorageEvent) => {
+      if (e.key !== 'pomodoro_timer_persistent_state_v2') return;
+      const stored = getStoredTimerState();
+      if (!stored) {
+        setSharedIsActive(false);
+        const defaultSecs = getConfiguredDurationSeconds('focus');
+        setSharedTimerMode('focus');
+        setSharedTimeRemaining(defaultSecs);
+        setPomodoroTime(defaultSecs);
+        return;
+      }
+      setSharedTimerMode(stored.timerMode || 'focus');
+      setSharedIsActive(Boolean(stored.isActive && stored.targetEndTime));
+      const { isFinished, remainingSeconds } = reconcileTimerRemaining(stored);
+      setSharedTimeRemaining(isFinished ? 0 : remainingSeconds);
+      setPomodoroTime(isFinished ? 0 : remainingSeconds);
+    };
+    window.addEventListener('storage', handleStorageSync);
+    return () => window.removeEventListener('storage', handleStorageSync);
+  }, []);
+
+  // Reconcile if a running timer already finished while the app/browser was closed
+  useEffect(() => {
+    const saved = getStoredTimerState();
+    if (saved && saved.isActive && saved.targetEndTime) {
+      const { isFinished } = reconcileTimerRemaining(saved);
+      if (isFinished) {
+        handleUnifiedPomodoroCompleted();
+      }
+    }
+  }, []);
+
+  // Precision wall-clock background countdown using an unthrottled Web Worker ticker + visibility/pageshow hooks
   useEffect(() => {
     if (!sharedIsActive) return;
 
     const reconcile = () => {
       const stored = getStoredTimerState();
-      if (!stored || !stored.targetEndTime) return;
+      if (!stored || !stored.isActive || !stored.targetEndTime) return;
       const { isFinished, remainingSeconds } = reconcileTimerRemaining(stored);
-      setSharedTimeRemaining(remainingSeconds);
-      setPomodoroTime(remainingSeconds);
+      setSharedTimeRemaining((prev) => (prev === remainingSeconds ? prev : remainingSeconds));
+      setPomodoroTime((prev) => (prev === remainingSeconds ? prev : remainingSeconds));
 
       if (isFinished) {
-        setSharedIsActive(false);
-        setPomodoroActive(false);
         handleUnifiedPomodoroCompleted();
       }
     };
 
-    // Fast check every 500ms
-    const interval = setInterval(reconcile, 500);
+    reconcile();
 
-    const handleVisibilityOrFocus = () => {
+    // Web Worker timers resist browser background-tab throttling so completion & title stay exact
+    let worker: Worker | null = null;
+    let workerUrl: string | null = null;
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
+
+    try {
+      const workerCode = `
+        let timerId = null;
+        self.onmessage = function(e) {
+          if (e.data === 'start') {
+            if (timerId) clearInterval(timerId);
+            timerId = setInterval(function() { self.postMessage('tick'); }, 250);
+          } else if (e.data === 'stop') {
+            if (timerId) clearInterval(timerId);
+            timerId = null;
+          }
+        };
+      `;
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      workerUrl = URL.createObjectURL(blob);
+      worker = new Worker(workerUrl);
+      worker.onmessage = () => reconcile();
+      worker.postMessage('start');
+    } catch {
+      fallbackInterval = setInterval(reconcile, 250);
+    }
+
+    // Safety interval in case worker fails silently in restricted environments
+    const safetyInterval = setInterval(reconcile, 1000);
+
+    const handleWakeUp = () => {
       reconcile();
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
-    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleWakeUp);
+    document.addEventListener('resume', handleWakeUp);
+    window.addEventListener('focus', handleWakeUp);
+    window.addEventListener('pageshow', handleWakeUp);
+    window.addEventListener('online', handleWakeUp);
 
     return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
-      window.removeEventListener('focus', handleVisibilityOrFocus);
+      if (worker) {
+        try {
+          worker.postMessage('stop');
+          worker.terminate();
+        } catch {}
+      }
+      if (workerUrl) {
+        try {
+          URL.revokeObjectURL(workerUrl);
+        } catch {}
+      }
+      if (fallbackInterval) clearInterval(fallbackInterval);
+      clearInterval(safetyInterval);
+      document.removeEventListener('visibilitychange', handleWakeUp);
+      document.removeEventListener('resume', handleWakeUp);
+      window.removeEventListener('focus', handleWakeUp);
+      window.removeEventListener('pageshow', handleWakeUp);
+      window.removeEventListener('online', handleWakeUp);
     };
-  }, [sharedIsActive, activeFocusTaskId, pomodoroTarget, lang]);
+  }, [sharedIsActive, activeFocusTaskId, pomodoroTarget, lang, sharedTimerMode]);
 
   const handleStartFocus = (target: { id?: string; type: 'task' | 'plan' | 'custom'; title: string }) => {
-    const duration = 25 * 60;
+    const duration = getConfiguredDurationSeconds('focus');
     const targetEndTime = Date.now() + duration * 1000;
     setPomodoroTarget(target);
     setPomodoroTime(duration);
@@ -998,6 +1234,7 @@ export default function App() {
       timerMode: 'focus',
       targetEndTime,
       pausedTimeRemaining: duration,
+      pausedRemainingMs: duration * 1000,
       totalDurationSeconds: duration,
       activeTaskId: target.id || null,
       activeTaskTitle: target.title,
@@ -1013,17 +1250,25 @@ export default function App() {
   };
 
   const handlePauseFocus = () => {
+    const stored = getStoredTimerState();
+    const exactRemainingMs = stored?.targetEndTime
+      ? Math.max(0, stored.targetEndTime - Date.now())
+      : sharedTimeRemaining * 1000;
+    const exactRemaining = Math.max(1, Math.ceil(exactRemainingMs / 1000));
     setPomodoroActive(false);
     setSharedIsActive(false);
-    const stored = getStoredTimerState();
+    setSharedTimeRemaining(exactRemaining);
+    setPomodoroTime(exactRemaining);
     saveStoredTimerState({
       isActive: false,
       timerMode: stored?.timerMode || 'focus',
       targetEndTime: null,
-      pausedTimeRemaining: sharedTimeRemaining,
-      totalDurationSeconds: stored?.totalDurationSeconds || 25 * 60,
+      pausedTimeRemaining: exactRemaining,
+      pausedRemainingMs: exactRemainingMs,
+      totalDurationSeconds: stored?.totalDurationSeconds || getConfiguredDurationSeconds(stored?.timerMode || 'focus'),
       activeTaskId: stored?.activeTaskId || activeFocusTaskId,
       activeTaskTitle: stored?.activeTaskTitle,
+      selectedProjectId: stored?.selectedProjectId || null,
     });
     addToast(
       lang === 'ar' ? 'تم تعليق المؤقت' : 'Timer paused',
@@ -1035,16 +1280,25 @@ export default function App() {
     setPomodoroActive(true);
     setSharedIsActive(true);
     const stored = getStoredTimerState();
-    const remaining = sharedTimeRemaining > 0 ? sharedTimeRemaining : 25 * 60;
-    const targetEndTime = Date.now() + remaining * 1000;
+    const mode = stored?.timerMode || sharedTimerMode || 'focus';
+    const defaultDuration = getConfiguredDurationSeconds(mode);
+    const remainingMs =
+      stored?.pausedRemainingMs && stored.pausedRemainingMs > 0
+        ? stored.pausedRemainingMs
+        : (sharedTimeRemaining > 0 ? sharedTimeRemaining : defaultDuration) * 1000;
+    const remainingSecs = Math.max(1, Math.ceil(remainingMs / 1000));
+    const targetEndTime = Date.now() + remainingMs;
     saveStoredTimerState({
       isActive: true,
-      timerMode: stored?.timerMode || 'focus',
+      timerMode: mode,
       targetEndTime,
-      pausedTimeRemaining: remaining,
-      totalDurationSeconds: stored?.totalDurationSeconds || 25 * 60,
+      pausedTimeRemaining: remainingSecs,
+      pausedRemainingMs: remainingMs,
+      totalDurationSeconds: stored?.totalDurationSeconds || defaultDuration,
       activeTaskId: stored?.activeTaskId || activeFocusTaskId,
       activeTaskTitle: stored?.activeTaskTitle,
+      selectedProjectId: stored?.selectedProjectId || null,
+      startedAt: Date.now(),
     });
     addToast(
       lang === 'ar' ? 'استئناف التركيز' : 'Focus resumed',
@@ -1053,13 +1307,15 @@ export default function App() {
   };
 
   const handleStopFocus = () => {
+    const defaultFocusSecs = getConfiguredDurationSeconds('focus');
     setPomodoroActive(false);
     setSharedIsActive(false);
     setIsFocusMode(false);
     setAmbientAudio('none');
     stopAmbientSound();
-    setPomodoroTime(25 * 60);
-    setSharedTimeRemaining(25 * 60);
+    setSharedTimerMode('focus');
+    setPomodoroTime(defaultFocusSecs);
+    setSharedTimeRemaining(defaultFocusSecs);
     setPomodoroTarget(null);
     clearStoredTimerState();
     addToast(
@@ -1168,8 +1424,9 @@ export default function App() {
 
     const unsubFocusSessions = subscribeToFocusSessions(
       (data) => {
+        const pendingDeletes = new Set(getPendingFocusDeletes());
         const pending = getPendingSyncSessions();
-        const combined = [...data];
+        const combined = data.filter((item) => !item.id || !pendingDeletes.has(item.id));
         for (const p of pending) {
           const exists = combined.some(
             (c) => c.id === p.id || (Math.abs(c.createdAt - p.createdAt) < 5000 && c.title === p.title)
@@ -1195,7 +1452,21 @@ export default function App() {
         });
       }
     };
+    const handleLocalSessionUpdated = (e: any) => {
+      const { id, updates } = e.detail || {};
+      if (id && updates) {
+        setFocusSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
+      }
+    };
+    const handleLocalSessionDeleted = (e: any) => {
+      const { id } = e.detail || {};
+      if (id) {
+        setFocusSessions((prev) => prev.filter((s) => s.id !== id));
+      }
+    };
     window.addEventListener('pomodoro_session_completed_locally', handleLocalSessionAdded);
+    window.addEventListener('pomodoro_session_updated_locally', handleLocalSessionUpdated);
+    window.addEventListener('pomodoro_session_deleted_locally', handleLocalSessionDeleted);
 
     const unsubComments = subscribeToComments(
       (data) => {
@@ -1316,6 +1587,8 @@ export default function App() {
       });
       cleanupOfflineSync();
       window.removeEventListener('pomodoro_session_completed_locally', handleLocalSessionAdded);
+      window.removeEventListener('pomodoro_session_updated_locally', handleLocalSessionUpdated);
+      window.removeEventListener('pomodoro_session_deleted_locally', handleLocalSessionDeleted);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -2376,9 +2649,9 @@ export default function App() {
         />
 
       {/* Main Content Workspace */}
-      <main className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden pt-28 md:pt-6 pb-6 bg-[#FBFBFA] dark:bg-[#121316]">
-        {/* Top Floating App Bar */}
-        <header className="fixed top-0 left-0 right-0 z-20 px-3 sm:px-6 py-2.5 bg-white/90 dark:bg-[#121316]/90 backdrop-blur-md border-b border-neutral-200/80 dark:border-neutral-800 flex items-center justify-between">
+      <main className="flex-1 flex flex-col min-w-0 max-w-full overflow-x-clip pt-[116px] md:pt-0 pb-20 md:pb-6 bg-[#FBFBFA] dark:bg-[#121316]">
+        {/* Top Floating App Bar (Fixed above mobile dual-nav on <md, in-flow sticky inside <main> on >=md) */}
+        <header className="fixed md:sticky top-0 left-0 right-0 z-20 w-full shrink-0 px-3 sm:px-6 py-2.5 bg-white/95 dark:bg-[#121316]/95 backdrop-blur-md border-b border-neutral-200/80 dark:border-neutral-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             {/* Mobile App Logo */}
             <div className="md:hidden flex items-center">
@@ -2448,6 +2721,19 @@ export default function App() {
               )}
             </button>
 
+            {/* Global Stop Alarm button if continuous alarm is ringing */}
+            {isPomodoroAlarmPlaying && (
+              <button
+                type="button"
+                onClick={handleStopGlobalPomodoroAlarm}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold shadow-md shadow-rose-600/30 animate-pulse cursor-pointer"
+                title={lang === 'ar' ? 'إيقاف صوت المنبه' : 'Stop Alarm Sound'}
+              >
+                <BellOff size={12} />
+                <span>{lang === 'ar' ? 'إيقاف المنبه' : 'Stop Alarm'}</span>
+              </button>
+            )}
+
             {/* Live Pomodoro Timer - Configurable in Pomodoro Settings */}
             {showTopBarTimer && (
               <button
@@ -2457,7 +2743,7 @@ export default function App() {
                 title={lang === 'ar' ? 'عرض محطة التركيز ومؤقت بومودورو' : 'Go to Deep Focus & Pomodoro station'}
               >
                 <Timer size={13} className={sharedIsActive ? "text-emerald-500 animate-pulse" : "text-neutral-500 dark:text-neutral-400"} />
-                <span className="font-mono text-xs font-black text-neutral-800 dark:text-neutral-200">
+                <span className="font-mono text-xs font-black text-neutral-800 dark:text-neutral-200 tabular-nums">
                   {Math.floor(sharedTimeRemaining / 60).toString().padStart(2, '0')}:{(sharedTimeRemaining % 60).toString().padStart(2, '0')}
                 </span>
                 {sharedIsActive && (
@@ -3002,6 +3288,7 @@ export default function App() {
       <DeepFocusOverlay
         isOpen={isFocusMode}
         timeRemaining={pomodoroTime}
+        totalDurationSeconds={getStoredTimerState()?.totalDurationSeconds || getConfiguredDurationSeconds(sharedTimerMode)}
         isActive={pomodoroActive}
         target={pomodoroTarget}
         ambientAudio={ambientAudio}

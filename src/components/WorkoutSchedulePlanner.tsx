@@ -56,6 +56,20 @@ const DEFAULT_PRESET_TEMPLATES: WorkoutRoutineTemplate[] = [
       { name: 'Dumbbell Lateral Raises', targetSets: 3, targetReps: 15, defaultWeight: '2.5' },
       { name: 'Tricep Rope Pushdown', targetSets: 3, targetReps: 12, defaultWeight: '20' },
     ]
+  },
+  {
+    id: 'routine-c-cardio',
+    name: 'Routine C (Cardio & Conditioning)',
+    category: 'Cardio & Conditioning',
+    isFlexible: true,
+    description: 'Flexible Cardio: Treadmill, Stationary Bike, Jump Rope, Outdoor Sprint Intervals, Burpees / Kettlebell Swings',
+    exercises: [
+      { name: 'Treadmill', subtitle: 'طابي roulant', isCardio: true, isOptional: true, targetSets: 1, targetReps: 15, defaultWeight: '0', defaultDuration: 15, defaultSpeed: 8, speedUnit: 'km/h', defaultIncline: 1 },
+      { name: 'Stationary Bike', subtitle: 'Picala', isCardio: true, isOptional: true, targetSets: 1, targetReps: 15, defaultWeight: '0', defaultDuration: 15, defaultSpeed: 75, speedUnit: 'rpm', defaultIncline: 4 },
+      { name: 'Jump Rope', subtitle: 'الحبل', isCardio: true, isOptional: true, targetSets: 1, targetReps: 15, defaultWeight: '0', defaultDuration: 15, defaultSpeed: 1, speedUnit: 'level', defaultIncline: 0 },
+      { name: 'Outdoor Sprint Intervals', subtitle: 'Outside / No equipment', isCardio: true, isOptional: true, targetSets: 1, targetReps: 15, defaultWeight: '0', defaultDuration: 15, defaultSpeed: 1, speedUnit: 'level', defaultIncline: 0 },
+      { name: 'Burpees / Kettlebell Swings', subtitle: 'High-Intensity limited space', isCardio: true, isOptional: true, targetSets: 1, targetReps: 15, defaultWeight: '0', defaultDuration: 15, defaultSpeed: 1, speedUnit: 'level', defaultIncline: 0 },
+    ]
   }
 ];
 
@@ -74,7 +88,7 @@ export const WorkoutSchedulePlanner: React.FC<WorkoutSchedulePlannerProps> = ({
 
   const [currentWeekOffset, setCurrentWeekOffset] = useState<number>(0);
   const [showAddModalForDate, setShowAddModalForDate] = useState<string | null>(null);
-  const [selectedRoutineForAdd, setSelectedRoutineForAdd] = useState<'routine-a-fullbody' | 'routine-b-fullbody' | 'custom'>('routine-a-fullbody');
+  const [selectedRoutineForAdd, setSelectedRoutineForAdd] = useState<'routine-a-fullbody' | 'routine-b-fullbody' | 'routine-c-cardio' | 'custom'>('routine-a-fullbody');
   const [customRoutineName, setCustomRoutineName] = useState<string>('');
   const [scheduledTime, setScheduledTime] = useState<string>('09:00 AM');
 
@@ -128,6 +142,9 @@ export const WorkoutSchedulePlanner: React.FC<WorkoutSchedulePlannerProps> = ({
     } else if (selectedRoutineForAdd === 'routine-b-fullbody') {
       name = 'Routine B (Full Body)';
       category = 'Full Body';
+    } else if (selectedRoutineForAdd === 'routine-c-cardio') {
+      name = 'Routine C (Cardio & Conditioning)';
+      category = 'Cardio & Conditioning';
     } else {
       name = customRoutineName.trim() || (isAr ? 'حصة مخصصة' : 'Custom Session');
       category = 'Custom';
@@ -424,6 +441,19 @@ export const WorkoutSchedulePlanner: React.FC<WorkoutSchedulePlannerProps> = ({
                   >
                     <span>Routine B (Full Body)</span>
                     <span className="text-[10px] font-mono text-slate-400">5 exercises</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRoutineForAdd('routine-c-cardio')}
+                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition-colors cursor-pointer ${
+                      selectedRoutineForAdd === 'routine-c-cardio'
+                        ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-500 text-sky-800 dark:text-sky-300 font-black'
+                        : 'bg-slate-50 dark:bg-neutral-900 border-slate-200 dark:border-neutral-700 text-slate-700 dark:text-neutral-300'
+                    }`}
+                  >
+                    <span>Routine C (Cardio & Conditioning)</span>
+                    <span className="text-[10px] font-mono text-slate-400">5 flexible options</span>
                   </button>
 
                   <button

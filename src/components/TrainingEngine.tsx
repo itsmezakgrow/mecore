@@ -39,10 +39,14 @@ import {
   Activity,
   Eye,
   EyeOff,
-  Camera,
   Filter,
-  ArrowUpRight,
-  Sliders
+  Sliders,
+  Square,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
+  ShieldAlert,
+  Heart
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -63,6 +67,9 @@ import {
   WorkoutExercise, 
   WorkoutSet, 
   WorkoutRoutineTemplate,
+  WorkoutRoutineCategory,
+  CardioExerciseData,
+  RpeFeedbackRating,
   HabitItem,
   BodyMetricLog,
   BodyProfileConfig,
@@ -79,17 +86,22 @@ import {
   saveBodyProfile,
   subscribeToScheduledWorkouts,
   addScheduledWorkout,
-  updateScheduledWorkout,
   deleteScheduledWorkout,
   toggleScheduledWorkoutWithHabit
 } from '../services/firestoreService';
 import { playCelebrationChime } from '../utils/focusAudio';
-import { getCoachPrescriptionForExercise } from '../utils/progressiveOverloadCoach';
+import {
+  getCoachPrescriptionForExercise,
+  getCardioOverloadPrescription,
+  CardioPrescription,
+  analyzeSessionExecutionOrder,
+  ExecutionOrderAnalysis
+} from '../utils/progressiveOverloadCoach';
 import { WorkoutSchedulePlanner } from './WorkoutSchedulePlanner';
 import { BodyMetricsNutrition } from './BodyMetricsNutrition';
 import { NextSessionOverloadPlanner } from './NextSessionOverloadPlanner';
 import { ExercisePreviewModal } from './ExercisePreviewModal';
-import { getExerciseImagePath, getExerciseMeta } from '../utils/exerciseAssets';
+import { getExerciseImagePath, getExerciseMeta, getExerciseSpec, getExerciseBiomechanicalType, isCardioExercise, normalizeExerciseLookupKey } from '../utils/exerciseAssets';
 import { usePageViewSettings } from '../hooks/usePageViewSettings';
 import { PageViewSettingsModal, PageViewSettingItem } from './PageViewSettingsModal';
 
@@ -107,15 +119,15 @@ interface TrainingEngineProps {
  */
 function getLastRecordedExercise(exerciseName: string, workoutHistory: WorkoutSession[]): WorkoutExercise | null {
   if (!workoutHistory || workoutHistory.length === 0) return null;
-  const targetName = exerciseName.trim().toLowerCase();
+  const targetKey = normalizeExerciseLookupKey(exerciseName);
   
   // Sort sessions chronologically descending
   const sortedSessions = [...workoutHistory].sort((a, b) => b.createdAt - a.createdAt);
   
   for (const session of sortedSessions) {
     if (session.exercises && Array.isArray(session.exercises)) {
-      const match = session.exercises.find(ex => ex.name.trim().toLowerCase() === targetName);
-      if (match && match.sets && match.sets.length > 0) {
+      const match = session.exercises.find(ex => normalizeExerciseLookupKey(ex.name) === targetKey);
+      if (match && ((match.sets && match.sets.length > 0) || (match.cardioData && match.cardioData.completed === true))) {
         return match;
       }
     }
@@ -123,7 +135,7 @@ function getLastRecordedExercise(exerciseName: string, workoutHistory: WorkoutSe
   return null;
 }
 
-// Built-in Iron Engine Presets & Routines (Routine A & Routine B are prominent Hero Routines)
+// Built-in Iron Engine Presets & Routines (Routine A, Routine B & Routine C are prominent Hero Routines)
 const ROUTINE_TEMPLATES: WorkoutRoutineTemplate[] = [
   {
     id: 'routine-a-fullbody',
@@ -149,6 +161,21 @@ const ROUTINE_TEMPLATES: WorkoutRoutineTemplate[] = [
       { name: 'Incline Dumbbell Bench Press', targetSets: 3, targetReps: 10, defaultWeight: '7.5' },
       { name: 'Dumbbell Lateral Raises', targetSets: 3, targetReps: 15, defaultWeight: '2.5' },
       { name: 'Tricep Rope Pushdown', targetSets: 3, targetReps: 12, defaultWeight: '20' },
+    ]
+  },
+  {
+    id: 'routine-c-cardio',
+    name: 'Routine C (Cardio & Conditioning)',
+    category: 'Cardio & Conditioning',
+    isFlexible: true,
+    description: 'Flexible Cardio: Treadmill, Stationary Bike, Rowing Machine, Jump Rope, Outdoor Sprints, Burpees',
+    exercises: [
+      { name: 'Treadmill', subtitle: 'طابي roulant', isCardio: true, isOptional: true, targetSets: 1, targetReps: 15, defaultWeight: '0', defaultDuration: 15, defaultSpeed: 8, speedUnit: 'km/h', defaultIncline: 1 },
+      { name: 'Stationary Bike', subtitle: 'Picala', isCardio: true, isOptional: true, targetSets: 1, targetReps: 15, defaultWeight: '0', defaultDuration: 15, defaultSpeed: 75, speedUnit: 'rpm', defaultIncline: 4 },
+      { name: 'Rowing Machine', subtitle: 'Erg / Rower', isCardio: true, isOptional: true, targetSets: 1, targetReps: 15, defaultWeight: '0', defaultDuration: 15, defaultSpeed: 10, speedUnit: 'km/h', defaultIncline: 5 },
+      { name: 'Jump Rope', subtitle: 'الحبل', isCardio: true, isOptional: true, targetSets: 1, targetReps: 15, defaultWeight: '0', defaultDuration: 15, defaultSpeed: 1, speedUnit: 'level', defaultIncline: 0 },
+      { name: 'Outdoor Sprint Intervals', subtitle: 'Outside / No equipment', isCardio: true, isOptional: true, targetSets: 1, targetReps: 15, defaultWeight: '0', defaultDuration: 15, defaultSpeed: 1, speedUnit: 'level', defaultIncline: 0 },
+      { name: 'Burpees / Kettlebell Swings', subtitle: 'High-Intensity limited space', isCardio: true, isOptional: true, targetSets: 1, targetReps: 15, defaultWeight: '0', defaultDuration: 15, defaultSpeed: 1, speedUnit: 'level', defaultIncline: 0 },
     ]
   },
   {
@@ -202,6 +229,12 @@ const ROUTINE_TEMPLATES: WorkoutRoutineTemplate[] = [
 ];
 
 const POPULAR_EXERCISES = [
+  'Treadmill',
+  'Stationary Bike',
+  'Rowing Machine',
+  'Jump Rope',
+  'Outdoor Sprint Intervals',
+  'Burpees / Kettlebell Swings',
   'Leg Press',
   'Flat Dumbbell Bench Press',
   'Wide Grip Lat Pulldown',
@@ -250,6 +283,28 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       return null;
     }
   });
+  const [linkedCardioHabitId, setLinkedCardioHabitId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('iron_engine_cardio_habit') || null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Flexible Routine C equipment/exercise checklist before starting session
+  const [selectedRoutineCExercises, setSelectedRoutineCExercises] = useState<string[]>([
+    'Treadmill',
+    'Stationary Bike',
+    'Rowing Machine',
+    'Jump Rope',
+    'Outdoor Sprint Intervals',
+    'Burpees / Kettlebell Swings'
+  ]);
+  const handleToggleRoutineCOption = (name: string) => {
+    setSelectedRoutineCExercises((prev) =>
+      prev.includes(name) ? prev.filter((item) => item !== name) : [...prev, name]
+    );
+  };
 
   // Subscribe to real-time Firestore collections
   useEffect(() => {
@@ -266,7 +321,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
   // Active workout logger states
   const [isSessionActive, setIsSessionActive] = useState<boolean>(false);
   const [routineName, setRoutineName] = useState<string>('Routine A (Full Body)');
-  const [routineCategory, setRoutineCategory] = useState<'Push' | 'Pull' | 'Legs' | 'Full Body' | 'Calisthenics Skills' | 'Core & Mobility' | 'Custom'>('Full Body');
+  const [routineCategory, setRoutineCategory] = useState<WorkoutRoutineCategory>('Full Body');
   const [workoutDate, setWorkoutDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [workoutNotes, setWorkoutNotes] = useState<string>('');
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
@@ -342,7 +397,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
 
   // Analytics Filter States
   const [selectedExerciseFilter, setSelectedExerciseFilter] = useState<string>('All');
-  const [selectedRoutineFilter, setSelectedRoutineFilter] = useState<'All' | 'Routine A' | 'Routine B'>('All');
+  const [selectedRoutineFilter, setSelectedRoutineFilter] = useState<'All' | 'Routine A' | 'Routine B' | 'Routine C'>('All');
   const [selectedTimeframe, setSelectedTimeframe] = useState<'7' | '30' | '90' | 'all'>('30');
   const [analyticsMetric, setAnalyticsMetric] = useState<'load_1rm' | 'volume' | 'reps'>('load_1rm');
   const [analyticsSubView, setAnalyticsSubView] = useState<'gameplan' | 'charts'>('charts');
@@ -350,6 +405,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
   // Saving state & notifications
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
 
   // Cancellation confirm modal & deleting state (NO browser window.confirm!)
   const [showCancelConfirmModal, setShowCancelConfirmModal] = useState<boolean>(false);
@@ -359,6 +415,27 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
   const [collapsedExercises, setCollapsedExercises] = useState<Record<string, boolean>>({});
   const handleToggleCollapse = (id: string) => {
     setCollapsedExercises((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Drag & Drop + Reorder state for Dynamic Execution Order
+  const [draggedExIdx, setDraggedExIdx] = useState<number | null>(null);
+  const [dragOverExIdx, setDragOverExIdx] = useState<number | null>(null);
+  const handleMoveExercise = (fromIdx: number, toIdx: number) => {
+    setExercises((prev) => {
+      if (
+        fromIdx < 0 ||
+        toIdx < 0 ||
+        fromIdx >= prev.length ||
+        toIdx >= prev.length ||
+        fromIdx === toIdx
+      ) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
   };
 
   // Start / stop active workout elapsed timer
@@ -415,12 +492,59 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
     return `${mins.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Load a preset routine template (e.g. Routine A or Routine B) with calculated targets
+  // Load a preset routine template (Routine A, Routine B, Routine C, or Specialist) with calculated targets
   const handleLoadPreset = (template: WorkoutRoutineTemplate) => {
     setRoutineName(template.name);
     setRoutineCategory(template.category);
     setCollapsedExercises({});
-    const newExs: WorkoutExercise[] = template.exercises.map((item, idx) => {
+
+    const sourceExercises =
+      template.id === 'routine-c-cardio' && selectedRoutineCExercises.length > 0
+        ? template.exercises.filter((item) => selectedRoutineCExercises.includes(item.name))
+        : template.exercises;
+
+    const newExs: WorkoutExercise[] = sourceExercises.map((item, idx) => {
+      const isCardioItem = !!item.isCardio || isCardioExercise(item.name);
+
+      if (isCardioItem) {
+        const cardioRx = getCardioOverloadPrescription(item.name, workouts, {
+          durationMinutes: item.defaultDuration,
+          speedRpm: item.defaultSpeed,
+          speedUnit: item.speedUnit,
+          inclineResistance: item.defaultIncline
+        });
+        const unitLabel = cardioRx.speedUnit === 'km/h' ? 'km/h' : cardioRx.speedUnit === 'rpm' ? 'RPM' : cardioRx.speedUnit === 'spm' ? 'SPM' : 'Lv';
+        const hasPastSummary =
+          cardioRx.lastDurationMinutes !== null ||
+          cardioRx.lastSpeedRpm !== null ||
+          cardioRx.lastHeartRateBpm !== null;
+        return {
+          id: `ex-cardio-${Date.now()}-${idx}`,
+          name: item.name,
+          exerciseType: 'cardio',
+          executionCategory: 'cardio',
+          subtitle: item.subtitle,
+          isOptional: item.isOptional,
+          category: 'Cardio & Conditioning',
+          sets: [],
+          isAutoFilled: true,
+          previousPerformanceSummary: hasPastSummary ? (isAr ? cardioRx.lastSummaryAr : cardioRx.lastSummaryEn) : undefined,
+          nextTargetSummary: `${cardioRx.suggestedDurationMinutes} mins @ ${cardioRx.suggestedSpeedRpm} ${unitLabel}`,
+          cardioData: {
+            // Leave logged actuals empty so unentered metrics are never counted
+            speedUnit: cardioRx.speedUnit,
+            completed: false,
+            targetDurationMinutes: cardioRx.suggestedDurationMinutes,
+            targetSpeedRpm: cardioRx.suggestedSpeedRpm,
+            targetInclineResistance: cardioRx.suggestedInclineResistance,
+            previousDurationMinutes: cardioRx.lastDurationMinutes ?? undefined,
+            previousSpeedRpm: cardioRx.lastSpeedRpm ?? undefined,
+            previousInclineResistance: cardioRx.lastInclineResistance ?? undefined,
+            previousHeartRateBpm: cardioRx.lastHeartRateBpm ?? undefined
+          }
+        };
+      }
+
       const lastRecorded = getLastRecordedExercise(item.name, workouts);
       const prescription = getCoachPrescriptionForExercise(
         item.name,
@@ -472,6 +596,8 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       return {
         id: `ex-${Date.now()}-${idx}`,
         name: item.name,
+        exerciseType: 'strength',
+        executionCategory: getExerciseBiomechanicalType(item.name),
         sets: targetSets,
         isAutoFilled: true,
         previousWeight: pastWeightStr,
@@ -484,9 +610,11 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       };
     });
     setExercises(newExs);
+    setSaveErrorMessage(null);
     setElapsedSeconds(0);
     setIsTimerRunning(false); // DO NOT auto-start stopwatch!
-    setManualDurationMinutes(45);
+    const cardioSum = newExs.reduce((sum, ex) => sum + (ex.cardioData?.durationMinutes || 0), 0);
+    setManualDurationMinutes(template.category === 'Cardio & Conditioning' && cardioSum > 0 ? Math.min(180, cardioSum) : 45);
     setIsSessionActive(true);
     setActiveTab('logger');
   };
@@ -496,6 +624,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
     setRoutineName(isAr ? 'تمرين مخصص جديد' : 'Custom Workout Session');
     setRoutineCategory('Custom');
     setExercises([]);
+    setSaveErrorMessage(null);
     setCollapsedExercises({});
     setElapsedSeconds(0);
     setIsTimerRunning(false); // DO NOT auto-start stopwatch!
@@ -530,6 +659,46 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
   const handleAddExercise = (exerciseName: string) => {
     if (!exerciseName.trim()) return;
     const cleanName = exerciseName.trim();
+
+    if (isCardioExercise(cleanName)) {
+      const spec = getExerciseSpec(cleanName);
+      const cardioRx = getCardioOverloadPrescription(cleanName, workouts);
+      const unitLabel = cardioRx.speedUnit === 'km/h' ? 'km/h' : cardioRx.speedUnit === 'rpm' ? 'RPM' : cardioRx.speedUnit === 'spm' ? 'SPM' : 'Lv';
+      const hasPastSummary =
+        cardioRx.lastDurationMinutes !== null ||
+        cardioRx.lastSpeedRpm !== null ||
+        cardioRx.lastHeartRateBpm !== null;
+      const newCardioEx: WorkoutExercise = {
+        id: `ex-cardio-${Date.now()}`,
+        name: cleanName,
+        exerciseType: 'cardio',
+        executionCategory: 'cardio',
+        subtitle: isAr ? spec.subtitleAr : spec.subtitleEn,
+        isOptional: true,
+        category: 'Cardio & Conditioning',
+        sets: [],
+        isAutoFilled: true,
+        previousPerformanceSummary: hasPastSummary ? (isAr ? cardioRx.lastSummaryAr : cardioRx.lastSummaryEn) : undefined,
+        nextTargetSummary: `${cardioRx.suggestedDurationMinutes} mins @ ${cardioRx.suggestedSpeedRpm} ${unitLabel}`,
+        cardioData: {
+          // Actuals stay empty until entered by user or applied via Apply Target
+          speedUnit: cardioRx.speedUnit,
+          completed: false,
+          targetDurationMinutes: cardioRx.suggestedDurationMinutes,
+          targetSpeedRpm: cardioRx.suggestedSpeedRpm,
+          targetInclineResistance: cardioRx.suggestedInclineResistance,
+          previousDurationMinutes: cardioRx.lastDurationMinutes ?? undefined,
+          previousSpeedRpm: cardioRx.lastSpeedRpm ?? undefined,
+          previousInclineResistance: cardioRx.lastInclineResistance ?? undefined,
+          previousHeartRateBpm: cardioRx.lastHeartRateBpm ?? undefined
+        }
+      };
+      setExercises((prev) => [...prev, newCardioEx]);
+      setCustomExerciseName('');
+      setShowExerciseSuggestions(false);
+      return;
+    }
+
     const lastRecorded = getLastRecordedExercise(cleanName, workouts);
     
     let defaultSets: WorkoutSet[] = [];
@@ -553,6 +722,8 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
     const newEx: WorkoutExercise = {
       id: `ex-${Date.now()}`,
       name: cleanName,
+      exerciseType: 'strength',
+      executionCategory: getExerciseBiomechanicalType(cleanName),
       sets: defaultSets,
       isAutoFilled: !!lastRecorded
     };
@@ -611,29 +782,131 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
     );
   };
 
-  // Toggle set completed checkbox with audio chime
+  // Toggle set completed checkbox with audio chime & exact chronological completedAt timestamp
   const handleToggleSetComplete = (exerciseId: string, setId: string) => {
+    const now = Date.now();
+    setExercises((prev) =>
+      prev.map((ex) => {
+        if (ex.id !== exerciseId) return ex;
+        let triggeredComplete = false;
+        const nextSets = ex.sets.map((s) => {
+          if (s.id === setId) {
+            const nextState = !s.completed;
+            if (nextState) triggeredComplete = true;
+            return {
+              ...s,
+              completed: nextState,
+              completedAt: nextState ? now : undefined
+            };
+          }
+          return s;
+        });
+
+        if (triggeredComplete) {
+          try {
+            playCelebrationChime();
+          } catch {}
+          startRestTimer(60);
+        }
+
+        const allSetsCompleted = nextSets.length > 0 && nextSets.every((s) => s.completed);
+        return {
+          ...ex,
+          sets: nextSets,
+          completedAt: allSetsCompleted ? (ex.completedAt && !triggeredComplete ? ex.completedAt : now) : undefined
+        };
+      })
+    );
+  };
+
+  // Set or toggle post-exercise RPE / RIR feedback rating
+  const handleSetExerciseRpe = (exerciseId: string, rating: RpeFeedbackRating) => {
     setExercises((prev) =>
       prev.map((ex) => {
         if (ex.id !== exerciseId) return ex;
         return {
           ...ex,
-          sets: ex.sets.map((s) => {
-            if (s.id === setId) {
-              const nextState = !s.completed;
-              if (nextState) {
-                try {
-                  playCelebrationChime();
-                } catch {}
-                startRestTimer(60);
-              }
-              return { ...s, completed: nextState };
-            }
-            return s;
-          })
+          rpeFeedback: ex.rpeFeedback === rating ? undefined : rating
         };
       })
     );
+  };
+
+  // Update cardio exercise metrics (keeps omitted fields strictly undefined, never 0)
+  const handleUpdateCardio = (exerciseId: string, updates: Partial<CardioExerciseData>) => {
+    setExercises((prev) =>
+      prev.map((ex) => {
+        if (ex.id !== exerciseId) return ex;
+        const spec = getExerciseSpec(ex.name);
+        const currentCardio: CardioExerciseData = ex.cardioData || {
+          speedUnit: spec.speedUnit ?? 'level',
+          completed: false
+        };
+        return {
+          ...ex,
+          cardioData: { ...currentCardio, ...updates }
+        };
+      })
+    );
+  };
+
+  // Toggle cardio exercise completed with celebration chime & completion timestamp
+  const handleToggleCardioComplete = (exerciseId: string) => {
+    const now = Date.now();
+    setSaveErrorMessage(null);
+    setExercises((prev) =>
+      prev.map((ex) => {
+        if (ex.id !== exerciseId) return ex;
+        const spec = getExerciseSpec(ex.name);
+        const currentCardio: CardioExerciseData = ex.cardioData || {
+          speedUnit: spec.speedUnit ?? 'level',
+          completed: false
+        };
+        const nextState = !currentCardio.completed;
+        if (nextState) {
+          try {
+            playCelebrationChime();
+          } catch {}
+        }
+        return {
+          ...ex,
+          completedAt: nextState ? now : undefined,
+          cardioData: { ...currentCardio, completed: nextState }
+        };
+      })
+    );
+  };
+
+  // Apply cardio coach prescription to active cardio exercise
+  const handleApplyCardioTarget = (exerciseId: string, prescription: CardioPrescription) => {
+    setExercises((prev) =>
+      prev.map((ex) => {
+        if (ex.id !== exerciseId) return ex;
+        const currentCardio: CardioExerciseData = ex.cardioData || {
+          durationMinutes: prescription.suggestedDurationMinutes,
+          speedRpm: prescription.suggestedSpeedRpm,
+          speedUnit: prescription.speedUnit,
+          inclineResistance: prescription.suggestedInclineResistance,
+          completed: false
+        };
+        return {
+          ...ex,
+          cardioData: {
+            ...currentCardio,
+            durationMinutes: prescription.suggestedDurationMinutes,
+            speedRpm: prescription.suggestedSpeedRpm,
+            speedUnit: prescription.speedUnit,
+            inclineResistance: prescription.suggestedInclineResistance,
+            targetDurationMinutes: prescription.suggestedDurationMinutes,
+            targetSpeedRpm: prescription.suggestedSpeedRpm,
+            targetInclineResistance: prescription.suggestedInclineResistance
+          }
+        };
+      })
+    );
+    try {
+      playCelebrationChime();
+    } catch {}
   };
 
   // Apply Coach Target Prescription to an exercise
@@ -671,64 +944,186 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
     } catch {}
   };
 
-  // Active workout summary stats
+  // Active workout summary stats (strictly counts ONLY checked exercises and entered metrics)
   const sessionStats = useMemo(() => {
     let totalSets = 0;
     let completedSets = 0;
     let totalReps = 0;
     let calculatedVolume = 0;
+    let cardioExercisesCount = 0;
+    let completedCardioCount = 0;
+    let totalCardioMinutes = 0;
+    let bpmSum = 0;
+    let bpmCount = 0;
 
     exercises.forEach((ex) => {
-      ex.sets.forEach((s) => {
+      const isCardio = ex.exerciseType === 'cardio' || !!ex.cardioData || isCardioExercise(ex.name);
+      if (isCardio) {
+        cardioExercisesCount++;
         totalSets++;
-        if (s.completed) {
+        if (ex.cardioData?.completed) {
           completedSets++;
-          const reps = Number(s.reps) || 0;
-          totalReps += reps;
-          const weightNum = parseFloat(s.weight || '0');
-          if (!isNaN(weightNum) && weightNum > 0) {
-            calculatedVolume += reps * weightNum;
+          completedCardioCount++;
+          const dur = Number(ex.cardioData.durationMinutes);
+          if (Number.isFinite(dur) && dur > 0) {
+            totalCardioMinutes += dur;
+          }
+          const bpm = Number(ex.cardioData.heartRateBpm);
+          if (Number.isFinite(bpm) && bpm > 0) {
+            bpmSum += bpm;
+            bpmCount++;
           }
         }
-      });
+      } else {
+        ex.sets.forEach((s) => {
+          totalSets++;
+          if (s.completed) {
+            completedSets++;
+            const reps = Number(s.reps) || 0;
+            totalReps += reps;
+            const weightNum = parseFloat(String(s.weight || '0'));
+            if (!isNaN(weightNum) && weightNum > 0) {
+              calculatedVolume += reps * weightNum;
+            }
+          }
+        });
+      }
     });
 
     const completionRate = totalSets > 0 ? Math.round((completedSets / totalSets) * 100) : 0;
-    return { totalSets, completedSets, totalReps, calculatedVolume, completionRate };
+    const avgHeartRateBpm = bpmCount > 0 ? Math.round(bpmSum / bpmCount) : undefined;
+    return {
+      totalSets,
+      completedSets,
+      totalReps,
+      calculatedVolume,
+      completionRate,
+      cardioExercisesCount,
+      completedCardioCount,
+      totalCardioMinutes,
+      avgHeartRateBpm
+    };
   }, [exercises]);
 
-  // Save workout session to Firestore and batch check-off habit
+  // Save workout session to Firestore (strictly includes ONLY checked exercises & entered metrics)
   const handleSaveWorkout = async () => {
-    if (exercises.length === 0) {
-      alert(isAr ? 'يرجى إضافة تمرين واحد على الأقل قبل الحفظ' : 'Please add at least one exercise before saving.');
+    setSaveErrorMessage(null);
+
+    const checkedExercisesOnly: WorkoutExercise[] = exercises
+      .map((ex): WorkoutExercise | null => {
+        const isCardio = ex.exerciseType === 'cardio' || !!ex.cardioData || isCardioExercise(ex.name);
+        if (isCardio) {
+          if (!ex.cardioData?.completed) return null;
+          const dur = Number(ex.cardioData.durationMinutes);
+          const spd = Number(ex.cardioData.speedRpm);
+          const inc = Number(ex.cardioData.inclineResistance);
+          const bpm = Number(ex.cardioData.heartRateBpm);
+
+          const cleanCardio: CardioExerciseData = {
+            ...ex.cardioData,
+            durationMinutes: Number.isFinite(dur) && dur > 0 ? dur : undefined,
+            speedRpm: Number.isFinite(spd) && spd > 0 ? spd : undefined,
+            inclineResistance: Number.isFinite(inc) && inc > 0 ? inc : undefined,
+            heartRateBpm: Number.isFinite(bpm) && bpm > 0 ? bpm : undefined,
+            completed: true
+          };
+          return {
+            ...ex,
+            exerciseType: 'cardio',
+            executionCategory: 'cardio',
+            cardioData: cleanCardio
+          };
+        }
+
+        const completedSetsOnly = (ex.sets || []).filter((s) => s.completed === true);
+        if (completedSetsOnly.length === 0) return null;
+        return {
+          ...ex,
+          sets: completedSetsOnly.map((s, idx) => ({ ...s, setNumber: idx + 1 }))
+        };
+      })
+      .filter((item): item is WorkoutExercise => item !== null);
+
+    if (checkedExercisesOnly.length === 0) {
+      setShowCancelConfirmModal(false);
+      setSaveErrorMessage(
+        isAr
+          ? 'يرجى تحديد التمرين أو المجموعات التي أنجزتها فقط قبل الحفظ. التمارين غير المحددة لا يتم احتسابها.'
+          : 'Check off at least one exercise or set before finishing. Unchecked exercises are excluded from your session.'
+      );
       return;
     }
 
     setIsSaving(true);
     try {
-      // Use timer if it ran, otherwise use manualDurationMinutes for retrospective logging
-      const durationMins = elapsedSeconds >= 60 
-        ? Math.round(elapsedSeconds / 60) 
+      const isPureCardioSession = checkedExercisesOnly.every(
+        (ex) => ex.exerciseType === 'cardio' || !!ex.cardioData || isCardioExercise(ex.name)
+      );
+
+      // Recompute strictly from checkedExercisesOnly and entered metrics (never fabricate omitted cardio metrics!)
+      let savedVolume = 0;
+      let savedReps = 0;
+      let savedSetsCount = 0;
+      let savedCardioMins = 0;
+      let savedBpmSum = 0;
+      let savedBpmCount = 0;
+
+      checkedExercisesOnly.forEach((ex) => {
+        const isCardio = ex.exerciseType === 'cardio' || !!ex.cardioData;
+        if (isCardio && ex.cardioData) {
+          savedSetsCount++;
+          if (ex.cardioData.durationMinutes && ex.cardioData.durationMinutes > 0) {
+            savedCardioMins += ex.cardioData.durationMinutes;
+          }
+          if (ex.cardioData.heartRateBpm && ex.cardioData.heartRateBpm > 0) {
+            savedBpmSum += ex.cardioData.heartRateBpm;
+            savedBpmCount++;
+          }
+        } else {
+          ex.sets.forEach((s) => {
+            savedSetsCount++;
+            const reps = Number(s.reps) || 0;
+            savedReps += reps;
+            const weightNum = parseFloat(String(s.weight || '0'));
+            if (!isNaN(weightNum) && weightNum > 0) {
+              savedVolume += reps * weightNum;
+            }
+          });
+        }
+      });
+
+      const savedAvgHeartRate = savedBpmCount > 0 ? Math.round(savedBpmSum / savedBpmCount) : undefined;
+
+      // For cardio sessions, only store durationMinutes when timer ran or cardio duration was entered
+      const durationMins = elapsedSeconds >= 60
+        ? Math.round(elapsedSeconds / 60)
+        : isPureCardioSession
+        ? (savedCardioMins > 0 ? savedCardioMins : undefined)
         : (manualDurationMinutes || 45);
 
       const targetDate = workoutDate || new Date().toISOString().split('T')[0];
-      
+      const executionOrder = analyzeSessionExecutionOrder(checkedExercisesOnly);
+
       const payload: Omit<WorkoutSession, 'id'> = {
         routineName: routineName.trim(),
         routineCategory,
-        exercises,
+        exercises: checkedExercisesOnly,
         durationMinutes: durationMins,
         date: targetDate,
         createdAt: Date.now(),
         notes: workoutNotes.trim() || undefined,
-        totalVolume: sessionStats.calculatedVolume,
-        totalReps: sessionStats.totalReps,
-        totalSets: sessionStats.completedSets,
+        totalVolume: savedVolume,
+        totalReps: savedReps,
+        totalSets: savedSetsCount,
+        totalCardioMinutes: savedCardioMins > 0 ? savedCardioMins : undefined,
+        avgHeartRateBpm: savedAvgHeartRate,
+        hasExecutionOrderAlert: executionOrder.hasAlert,
+        executionOrderAlertDetails: executionOrder.hasAlert ? executionOrder.detailsEn : undefined,
       };
 
       // Check linked habits for automatic batch completion
       const gymHabitId = linkedHabitId || (typeof window !== 'undefined' ? localStorage.getItem('iron_engine_gym_habit') || undefined : undefined);
-      const cardioHabitId = typeof window !== 'undefined' ? localStorage.getItem('iron_engine_cardio_habit') || undefined : undefined;
+      const cardioHabitId = linkedCardioHabitId || (typeof window !== 'undefined' ? localStorage.getItem('iron_engine_cardio_habit') || undefined : undefined);
 
       if (gymHabitId || cardioHabitId) {
         await addWorkoutWithHabitBatch(payload, gymHabitId, cardioHabitId);
@@ -737,14 +1132,15 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       }
 
       playCelebrationChime();
-      
+
       setSaveSuccessMessage(
         isAr
-          ? '🎉 تم تسجيل التمرين وتحديث العادة المرتبطة بنجاح!'
-          : '🎉 Workout logged & linked habit checked off!'
+          ? `🎉 تم حفظ ${checkedExercisesOnly.length} تمرين/تمارين منجزة وتحديث العادة المرتبطة بنجاح!`
+          : `🎉 Saved ${checkedExercisesOnly.length} checked exercise(s) & updated linked habit!`
       );
       setTimeout(() => setSaveSuccessMessage(null), 4000);
 
+      setShowCancelConfirmModal(false);
       setIsTimerRunning(false);
       setElapsedSeconds(0);
       cancelRestTimer();
@@ -753,7 +1149,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       setActiveTab('analytics');
     } catch (err) {
       console.error('Failed to log workout session:', err);
-      alert(isAr ? 'حدث خطأ أثناء حفظ التمرين' : 'Error saving workout session. Please retry.');
+      setSaveErrorMessage(isAr ? 'حدث خطأ أثناء حفظ التمرين، يرجى المحاولة مرة أخرى.' : 'Error saving workout session. Please retry.');
     } finally {
       setIsSaving(false);
     }
@@ -782,11 +1178,28 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       session.exercises.map((ex, idx) => ({
         ...ex,
         id: `ex-clone-${Date.now()}-${idx}`,
-        sets: ex.sets.map((s, sIdx) => ({
+        executionCategory: ex.executionCategory || getExerciseBiomechanicalType(ex.name),
+        completedAt: undefined,
+        rpeFeedback: undefined,
+        sets: (ex.sets || []).map((s, sIdx) => ({
           ...s,
           id: `s-clone-${Date.now()}-${idx}-${sIdx}`,
-          completed: false
-        }))
+          completed: false,
+          completedAt: undefined
+        })),
+        cardioData: ex.cardioData
+          ? {
+              speedUnit: ex.cardioData.speedUnit,
+              completed: false,
+              targetDurationMinutes: ex.cardioData.targetDurationMinutes ?? ex.cardioData.durationMinutes,
+              targetSpeedRpm: ex.cardioData.targetSpeedRpm ?? ex.cardioData.speedRpm,
+              targetInclineResistance: ex.cardioData.targetInclineResistance ?? ex.cardioData.inclineResistance,
+              previousDurationMinutes: ex.cardioData.durationMinutes,
+              previousSpeedRpm: ex.cardioData.speedRpm,
+              previousInclineResistance: ex.cardioData.inclineResistance,
+              previousHeartRateBpm: ex.cardioData.heartRateBpm
+            }
+          : undefined
       }))
     );
     setActiveTab('logger');
@@ -827,6 +1240,10 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
     let routineAVolume = 0;
     let routineBCount = 0;
     let routineBVolume = 0;
+    let routineCCount = 0;
+    let routineCMins = 0;
+    let routineCBpmSum = 0;
+    let routineCBpmCount = 0;
 
     const now = new Date();
     const timeframeDays = selectedTimeframe === 'all' ? 99999 : parseInt(selectedTimeframe, 10);
@@ -838,23 +1255,44 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       // 1. Timeframe filter
       if (selectedTimeframe !== 'all' && w.date < cutoffISO) return false;
 
-      // 2. Routine filter (Routine A vs Routine B vs All)
+      // 2. Routine filter (Routine A vs Routine B vs Routine C vs All)
       if (selectedRoutineFilter === 'Routine A') {
         const rName = (w.routineName || '').toLowerCase();
         if (!rName.includes('routine a') && !rName.includes('routine-a')) return false;
       } else if (selectedRoutineFilter === 'Routine B') {
         const rName = (w.routineName || '').toLowerCase();
         if (!rName.includes('routine b') && !rName.includes('routine-b')) return false;
+      } else if (selectedRoutineFilter === 'Routine C') {
+        const rName = (w.routineName || '').toLowerCase();
+        if (!rName.includes('routine c') && !rName.includes('routine-c') && w.routineCategory !== 'Cardio & Conditioning') return false;
       }
 
       return true;
     });
 
+    const executionOrderAlerts: {
+      id?: string;
+      date: string;
+      routineName: string;
+      analysis: ExecutionOrderAnalysis;
+    }[] = [];
+
     // Gather statistics
     filteredWorkouts.forEach((w) => {
+      const orderCheck = analyzeSessionExecutionOrder(w.exercises || []);
+      if (orderCheck.hasAlert) {
+        executionOrderAlerts.push({
+          id: w.id,
+          date: w.date,
+          routineName: w.routineName,
+          analysis: orderCheck
+        });
+      }
+
       const rName = (w.routineName || '').toLowerCase();
       const isRoutineA = rName.includes('routine a') || rName.includes('routine-a');
       const isRoutineB = rName.includes('routine b') || rName.includes('routine-b');
+      const isRoutineC = rName.includes('routine c') || rName.includes('routine-c') || w.routineCategory === 'Cardio & Conditioning';
 
       if (isRoutineA) {
         routineACount++;
@@ -862,13 +1300,33 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       } else if (isRoutineB) {
         routineBCount++;
         routineBVolume += (w.totalVolume || 0);
+      } else if (isRoutineC) {
+        routineCCount++;
+        const exCardioSum = (w.exercises || []).reduce((acc, ex) => {
+          const d = ex.cardioData?.completed ? Number(ex.cardioData.durationMinutes) : 0;
+          return acc + (Number.isFinite(d) && d > 0 ? d : 0);
+        }, 0);
+        // Strictly sum only entered cardio minutes; never fabricate from missing durations
+        routineCMins += (w.totalCardioMinutes && w.totalCardioMinutes > 0 ? w.totalCardioMinutes : exCardioSum);
+
+        (w.exercises || []).forEach((ex) => {
+          const bpm = ex.cardioData?.completed ? Number(ex.cardioData.heartRateBpm) : 0;
+          if (Number.isFinite(bpm) && bpm > 0) {
+            routineCBpmSum += bpm;
+            routineCBpmCount++;
+          }
+        });
       }
 
       let sessionHadMatch = false;
 
       w.exercises?.forEach((ex) => {
         const exName = ex.name.trim();
-        const isMatch = selectedExerciseFilter === 'All' || exName.toLowerCase() === selectedExerciseFilter.toLowerCase();
+        const isMatch = selectedExerciseFilter === 'All' || normalizeExerciseLookupKey(exName) === normalizeExerciseLookupKey(selectedExerciseFilter);
+
+        if (isMatch && ex.cardioData?.completed) {
+          sessionHadMatch = true;
+        }
 
         ex.sets?.forEach((s) => {
           const reps = Number(s.reps) || 0;
@@ -913,6 +1371,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
     const avgWeightPerSet = totalWorkingSets > 0 
       ? Math.round(selectedFilterTotalVolume / Math.max(1, totalRepsInSelected))
       : 0;
+    const routineCAvgBpm = routineCBpmCount > 0 ? Math.round(routineCBpmSum / routineCBpmCount) : null;
 
     return {
       globalMaxWeight,
@@ -928,9 +1387,18 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       avgWeightPerSet,
       routineAStats: { count: routineACount, volume: routineAVolume },
       routineBStats: { count: routineBCount, volume: routineBVolume },
+      routineCStats: { count: routineCCount, totalMinutes: routineCMins, avgHeartRateBpm: routineCAvgBpm },
+      executionOrderAlerts,
       filteredWorkouts,
     };
   }, [workouts, selectedExerciseFilter, selectedRoutineFilter, selectedTimeframe]);
+
+  const isCardioChartMode = useMemo(() => {
+    return (
+      selectedRoutineFilter === 'Routine C' ||
+      (selectedExerciseFilter !== 'All' && isCardioExercise(selectedExerciseFilter))
+    );
+  }, [selectedRoutineFilter, selectedExerciseFilter]);
 
   const chartData = useMemo(() => {
     const rawMap: Record<string, { 
@@ -941,6 +1409,9 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       volume: number; 
       maxReps: number; 
       totalReps: number; 
+      cardioMinutes: number | null;
+      cardioSpeed: number | null;
+      heartRateBpm: number | null;
       routine: string;
       isPR?: boolean;
     }> = {};
@@ -955,10 +1426,37 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
       let sessionMaxReps = 0;
       let sessionTotalReps = 0;
       let sessionCalculatedVolume = 0;
+      let sessionCardioMinutes = 0;
+      let hasCardioMinutes = false;
+      let sessionCardioSpeedSum = 0;
+      let sessionCardioSpeedCount = 0;
+      let sessionBpmSum = 0;
+      let sessionBpmCount = 0;
+      let matchedCompletedCardio = false;
 
       w.exercises?.forEach((ex) => {
-        const isMatch = selectedExerciseFilter === 'All' || ex.name.trim().toLowerCase() === selectedExerciseFilter.toLowerCase();
+        const isMatch =
+          selectedExerciseFilter === 'All' ||
+          normalizeExerciseLookupKey(ex.name) === normalizeExerciseLookupKey(selectedExerciseFilter);
         if (isMatch) {
+          if (ex.cardioData?.completed) {
+            matchedCompletedCardio = true;
+            const dur = Number(ex.cardioData.durationMinutes);
+            if (Number.isFinite(dur) && dur > 0) {
+              sessionCardioMinutes += dur;
+              hasCardioMinutes = true;
+            }
+            const spd = Number(ex.cardioData.speedRpm);
+            if (Number.isFinite(spd) && spd > 0) {
+              sessionCardioSpeedSum += spd;
+              sessionCardioSpeedCount++;
+            }
+            const bpm = Number(ex.cardioData.heartRateBpm);
+            if (Number.isFinite(bpm) && bpm > 0) {
+              sessionBpmSum += bpm;
+              sessionBpmCount++;
+            }
+          }
           ex.sets?.forEach((s) => {
             const reps = Number(s.reps) || 0;
             let weightVal = 0;
@@ -980,13 +1478,28 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
         }
       });
 
-      if (selectedExerciseFilter === 'All' || sessionTotalReps > 0 || sessionMaxWeight > 0) {
+      if (
+        selectedExerciseFilter === 'All' ||
+        sessionTotalReps > 0 ||
+        sessionMaxWeight > 0 ||
+        matchedCompletedCardio
+      ) {
         const parts = w.date.split('-');
         const dObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
         const shortDate = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' });
 
         const isPR = sessionMaxWeight > rollingPeakWeight && rollingPeakWeight > 0;
         if (sessionMaxWeight > rollingPeakWeight) rollingPeakWeight = sessionMaxWeight;
+
+        const finalCardioMins = hasCardioMinutes
+          ? sessionCardioMinutes
+          : (selectedExerciseFilter === 'All' && w.totalCardioMinutes && w.totalCardioMinutes > 0 ? w.totalCardioMinutes : null);
+        const finalCardioSpeed = sessionCardioSpeedCount > 0
+          ? Number((sessionCardioSpeedSum / sessionCardioSpeedCount).toFixed(1))
+          : null;
+        const finalHeartRateBpm = sessionBpmCount > 0
+          ? Math.round(sessionBpmSum / sessionBpmCount)
+          : (selectedExerciseFilter === 'All' && w.avgHeartRateBpm && w.avgHeartRateBpm > 0 ? w.avgHeartRateBpm : null);
 
         rawMap[w.date] = {
           date: shortDate,
@@ -996,6 +1509,9 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
           volume: selectedExerciseFilter === 'All' ? (w.totalVolume || sessionCalculatedVolume) : Math.round(sessionCalculatedVolume),
           maxReps: sessionMaxReps,
           totalReps: sessionTotalReps > 0 ? sessionTotalReps : (w.totalReps || 0),
+          cardioMinutes: finalCardioMins,
+          cardioSpeed: finalCardioSpeed,
+          heartRateBpm: finalHeartRateBpm,
           routine: w.routineName,
           isPR
         };
@@ -1182,45 +1698,159 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
             </div>
           </div>
 
-          {/* DUAL HERO CARDS: Routine A & Routine B Side-by-Side Prominent */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {ROUTINE_TEMPLATES.slice(0, 2).map((routine, idx) => {
+          {/* PRIMARY HERO CARDS: Routine A, Routine B & Routine C (Cardio & Conditioning) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+            {ROUTINE_TEMPLATES.slice(0, 3).map((routine, idx) => {
               const isRoutineA = idx === 0;
+              const isRoutineC = routine.id === 'routine-c-cardio';
+              const selectedCardioCount = isRoutineC
+                ? routine.exercises.filter((ex) => selectedRoutineCExercises.includes(ex.name)).length
+                : routine.exercises.length;
+
               return (
                 <div
                   key={routine.id}
                   className={`p-6 rounded-3xl border transition-all relative overflow-hidden flex flex-col justify-between group ${
                     isRoutineA
                       ? 'bg-gradient-to-br from-emerald-500/10 via-slate-900/5 to-transparent dark:from-emerald-950/40 dark:via-[#18191D] dark:to-[#121316] border-emerald-500/30 shadow-lg shadow-emerald-500/5'
+                      : isRoutineC
+                      ? 'bg-gradient-to-br from-amber-500/10 via-slate-900/5 to-transparent dark:from-amber-950/35 dark:via-[#18191D] dark:to-[#121316] border-amber-500/30 shadow-lg shadow-amber-500/5 md:col-span-2 xl:col-span-1'
                       : 'bg-gradient-to-br from-teal-500/10 via-slate-900/5 to-transparent dark:from-teal-950/40 dark:via-[#18191D] dark:to-[#121316] border-teal-500/30 shadow-lg shadow-teal-500/5'
                   }`}
                 >
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className={`px-3 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider ${
                         isRoutineA
                           ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                          : isRoutineC
+                          ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30'
                           : 'bg-teal-500/20 text-teal-600 dark:text-teal-400 border border-teal-500/30'
                       }`}>
                         {routine.name}
                       </span>
-                      <span className="text-xs font-mono font-bold text-slate-400">
-                        {routine.exercises.length} {isAr ? 'تمارين مستهدفة' : 'exercises'}
+                      <span className="text-xs font-mono tabular-nums font-bold text-slate-400">
+                        {isRoutineC
+                          ? `${selectedCardioCount}/${routine.exercises.length} ${isAr ? 'مختارة' : 'selected'}`
+                          : `${routine.exercises.length} ${isAr ? 'تمارين مستهدفة' : 'exercises'}`}
                       </span>
                     </div>
 
                     <div className="space-y-1.5">
-                      <h3 className="text-xl font-black text-slate-900 dark:text-white group-hover:text-emerald-500 dark:group-hover:text-emerald-400 transition-colors">
+                      <h3 className={`text-xl font-black text-slate-900 dark:text-white transition-colors ${
+                        isRoutineC
+                          ? 'group-hover:text-amber-500 dark:group-hover:text-amber-400'
+                          : 'group-hover:text-emerald-500 dark:group-hover:text-emerald-400'
+                      }`}>
                         {routine.name}
                       </h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
                         {routine.description}
                       </p>
+                      {isRoutineC && (
+                        <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                          {isAr
+                            ? 'روتين مرن: اختر الأجهزة المتاحة لك اليوم (15 إلى 30 دقيقة، +2 د للتحمل / +1 مستوى عند الإتقان مرتين)'
+                            : 'Flexible options: toggle available gear for today (15–30 min progressive endurance)'}
+                        </p>
+                      )}
                     </div>
 
                     {/* Exercise List preview with Prev & Next Targets */}
                     <div className="space-y-2 pt-2 border-t border-slate-200/60 dark:border-neutral-800/80">
                       {routine.exercises.map((ex, exI) => {
+                        if (isRoutineC || ex.isCardio) {
+                          const isSelected = selectedRoutineCExercises.includes(ex.name);
+                          const cardioRx = getCardioOverloadPrescription(ex.name, workouts, {
+                            durationMinutes: ex.defaultDuration,
+                            speedRpm: ex.defaultSpeed,
+                            speedUnit: ex.speedUnit,
+                            inclineResistance: ex.defaultIncline
+                          });
+                          const unitLabel =
+                            cardioRx.speedUnit === 'km/h'
+                              ? 'km/h'
+                              : cardioRx.speedUnit === 'rpm'
+                              ? 'RPM'
+                              : cardioRx.speedUnit === 'spm'
+                              ? 'SPM'
+                              : 'Lv';
+
+                          return (
+                            <div
+                              key={ex.name}
+                              className={`flex flex-col sm:flex-row sm:items-center justify-between text-xs py-2 px-3 rounded-xl border gap-1.5 transition-opacity ${
+                                isSelected
+                                  ? 'bg-white/80 dark:bg-neutral-900/70 border-slate-200/60 dark:border-neutral-800'
+                                  : 'bg-white/30 dark:bg-neutral-900/30 border-slate-200/30 dark:border-neutral-800/40 opacity-60'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleRoutineCOption(ex.name)}
+                                  aria-label={`Toggle ${ex.name}`}
+                                  className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
+                                    isSelected
+                                      ? 'bg-amber-500 border-amber-500 text-white'
+                                      : 'bg-white dark:bg-neutral-800 border-slate-300 dark:border-neutral-700 text-transparent'
+                                  }`}
+                                >
+                                  <Check size={12} className="stroke-[3]" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPreviewModalData({
+                                      name: ex.name,
+                                      targetReps: cardioRx.suggestedDurationMinutes
+                                    })
+                                  }
+                                  className="font-bold text-slate-800 dark:text-slate-200 hover:text-amber-500 transition-colors text-left rtl:text-right cursor-pointer flex items-center gap-1.5 min-w-0"
+                                  title={isAr ? 'معاينة التمرين وقواعد الكارديو' : 'View cardio exercise details'}
+                                >
+                                  <span className="truncate">
+                                    {exI + 1}. {ex.name}
+                                  </span>
+                                  {ex.subtitle && (
+                                    <span className="text-[10px] font-semibold text-slate-400 shrink-0">
+                                      ({ex.subtitle})
+                                    </span>
+                                  )}
+                                  <Eye size={12} className="text-slate-400 opacity-60 hover:opacity-100 shrink-0" />
+                                </button>
+                              </div>
+
+                              {showTargetsAndHistory ? (
+                                <div className="flex items-center gap-1.5 font-mono tabular-nums text-[11px] shrink-0">
+                                  {cardioRx.lastDurationMinutes !== null ? (
+                                    <span
+                                      className="text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-neutral-800 px-2 py-0.5 rounded-md"
+                                      title={isAr ? cardioRx.lastSummaryAr : cardioRx.lastSummaryEn}
+                                    >
+                                      {cardioRx.lastDurationMinutes}m @ {cardioRx.lastSpeedRpm}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 bg-slate-100 dark:bg-neutral-800 px-2 py-0.5 rounded-md text-[10px] font-sans">
+                                      {isAr ? 'بداية' : 'Start'}
+                                    </span>
+                                  )}
+
+                                  <span className="text-slate-300 dark:text-neutral-600">➔</span>
+
+                                  <span className="text-amber-600 dark:text-amber-400 font-black bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                                    {cardioRx.suggestedDurationMinutes}m @ {cardioRx.suggestedSpeedRpm} {unitLabel}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="font-mono tabular-nums text-[11px] text-amber-600 dark:text-amber-400 font-black shrink-0">
+                                  {ex.defaultDuration ?? 15}m • {ex.defaultSpeed ?? 1} {unitLabel}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+
                         const prescription = getCoachPrescriptionForExercise(
                           ex.name,
                           ex.targetSets,
@@ -1251,7 +1881,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                             </button>
 
                             {showTargetsAndHistory ? (
-                              <div className="flex items-center gap-1.5 font-mono text-[11px] shrink-0">
+                              <div className="flex items-center gap-1.5 font-mono tabular-nums text-[11px] shrink-0">
                                 {prescription.lastWeight > 0 ? (
                                   <span className="text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-neutral-800 px-2 py-0.5 rounded-md" title={prescription.lastRepsSummary}>
                                     <span className="text-[10px] font-sans font-bold text-slate-400 mr-1">{isAr ? 'السابق:' : 'Prev:'}</span>
@@ -1271,7 +1901,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                                 </span>
                               </div>
                             ) : (
-                              <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-black">
+                              <span className="font-mono tabular-nums text-[11px] text-emerald-600 dark:text-emerald-400 font-black">
                                 {ex.targetSets}x{ex.targetReps} • {ex.defaultWeight}kg
                               </span>
                             )}
@@ -1284,15 +1914,22 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                   <div className="mt-6 pt-4">
                     <button
                       type="button"
+                      disabled={isRoutineC && selectedCardioCount === 0}
                       onClick={() => handleLoadPreset(routine)}
-                      className={`w-full py-4 px-6 rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg active:scale-[0.98] ${
+                      className={`w-full py-4 px-6 rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${
                         isRoutineA
                           ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/25'
+                          : isRoutineC
+                          ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/25'
                           : 'bg-teal-600 hover:bg-teal-500 text-white shadow-teal-600/25'
                       }`}
                     >
                       <Play size={16} className="fill-current stroke-[2.5]" />
-                      <span>{isAr ? `بدء تمرين ${routine.name}` : `Start ${routine.name}`}</span>
+                      <span>
+                        {isRoutineC
+                          ? (isAr ? `بدء الكارديو (${selectedCardioCount})` : `Start Routine C (${selectedCardioCount})`)
+                          : (isAr ? `بدء تمرين ${routine.name}` : `Start ${routine.name}`)}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -1300,46 +1937,78 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
             })}
           </div>
 
-          {/* Linked Habit Quick Selector / Status */}
-          <div className="p-4 rounded-3xl bg-white dark:bg-[#18191D] border border-slate-200/80 dark:border-neutral-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Linked Habit Quick Selector / Status (Gym + Cardio) */}
+          <div className="p-4 rounded-3xl bg-white dark:bg-[#18191D] border border-slate-200/80 dark:border-neutral-800 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
                 <Flame size={20} />
               </div>
               <div>
                 <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
-                  {isAr ? 'العادة المرتبطة بالتمارين الرياضية' : 'Linked Gym Habit'}
+                  {isAr ? 'العادات المرتبطة بالتمارين والكارديو' : 'Linked Gym & Cardio Habits'}
                 </h4>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
                   {isAr 
-                    ? 'يتم وضع علامة إنجاز أوتوماتيكياً على هذه العادة فور إنهاء أي تمرين بنجاح.' 
+                    ? 'يتم وضع علامة إنجاز أوتوماتيكياً على هذه العادات فور إنهاء أي تمرين بنجاح.' 
                     : 'Automatically checked off in Habit Tracker when a workout is finished.'}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <select
-                aria-label="Linked Gym Habit"
-                value={linkedHabitId || ''}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  setLinkedHabitId(id || null);
-                  if (id) {
-                    localStorage.setItem('iron_engine_gym_habit', id);
-                  } else {
-                    localStorage.removeItem('iron_engine_gym_habit');
-                  }
-                }}
-                className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden cursor-pointer"
-              >
-                <option value="">{isAr ? 'غير مرتبط بأي عادة' : 'None (No habit linked)'}</option>
-                {habits.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.icon || '🏋️'} {h.title}
-                  </option>
-                ))}
-              </select>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                  {isAr ? 'الحديد:' : 'Gym:'}
+                </span>
+                <select
+                  aria-label="Linked Gym Habit"
+                  value={linkedHabitId || ''}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setLinkedHabitId(id || null);
+                    if (id) {
+                      localStorage.setItem('iron_engine_gym_habit', id);
+                    } else {
+                      localStorage.removeItem('iron_engine_gym_habit');
+                    }
+                  }}
+                  className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden cursor-pointer"
+                >
+                  <option value="">{isAr ? 'غير مرتبط' : 'None'}</option>
+                  {habits.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.icon || '🏋️'} {h.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                  {isAr ? 'الكارديو:' : 'Cardio:'}
+                </span>
+                <select
+                  aria-label="Linked Cardio Habit"
+                  value={linkedCardioHabitId || ''}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setLinkedCardioHabitId(id || null);
+                    if (id) {
+                      localStorage.setItem('iron_engine_cardio_habit', id);
+                    } else {
+                      localStorage.removeItem('iron_engine_cardio_habit');
+                    }
+                  }}
+                  className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden cursor-pointer"
+                >
+                  <option value="">{isAr ? 'غير مرتبط' : 'None'}</option>
+                  {habits.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.icon || '🏃'} {h.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -1351,7 +2020,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {ROUTINE_TEMPLATES.slice(2).map((tmpl) => (
+              {ROUTINE_TEMPLATES.slice(3).map((tmpl) => (
                 <div
                   key={tmpl.id}
                   className="p-5 rounded-3xl bg-white dark:bg-[#18191D] border border-slate-200/80 dark:border-neutral-800 shadow-xs flex flex-col justify-between hover:border-emerald-500/40 transition-colors"
@@ -1610,35 +2279,134 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                 </div>
               ) : (
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-2xl bg-slate-50 dark:bg-neutral-900/70 border border-slate-200/70 dark:border-neutral-800 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                    <span className="flex items-center gap-1.5">
+                      <GripVertical size={14} className="text-emerald-500 shrink-0" />
+                      <span>
+                        {isAr
+                          ? 'اسحب التمارين أو استخدم الأسهم لتغيير الترتيب حسب الأجهزة المتاحة. يتم تسجيل وقت الإنجاز تلقائياً.'
+                          : 'Drag & drop or use arrows to reorder anytime based on gym equipment. Completion order is timestamped.'}
+                      </span>
+                    </span>
+                  </div>
+
                   {exercises.map((exercise, exIdx) => {
+                    const isCardio =
+                      exercise.exerciseType === 'cardio' ||
+                      !!exercise.cardioData ||
+                      isCardioExercise(exercise.name);
+
+                    const bioType = exercise.executionCategory || getExerciseBiomechanicalType(exercise.name);
+                    const completedOrderList = exercises
+                      .filter((item) => !!item.completedAt)
+                      .sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0));
+                    const completedRank = exercise.completedAt
+                      ? completedOrderList.findIndex((item) => item.id === exercise.id) + 1
+                      : 0;
+
+                    const spec = isCardio ? getExerciseSpec(exercise.name) : null;
+                    const cardioRx = isCardio
+                      ? getCardioOverloadPrescription(
+                          exercise.name,
+                          workouts,
+                          exercise.cardioData
+                            ? {
+                                durationMinutes: exercise.cardioData.targetDurationMinutes ?? spec?.defaultDurationMinutes,
+                                speedRpm: exercise.cardioData.targetSpeedRpm ?? spec?.defaultSpeedRpm,
+                                speedUnit: exercise.cardioData.speedUnit ?? spec?.speedUnit,
+                                inclineResistance: exercise.cardioData.targetInclineResistance ?? spec?.defaultInclineResistance
+                              }
+                            : undefined
+                        )
+                      : null;
+
+                    const cd: CardioExerciseData = exercise.cardioData || {
+                      speedUnit: cardioRx?.speedUnit ?? spec?.speedUnit ?? 'level',
+                      completed: false
+                    };
+                    const unitLabel = cd.speedUnit === 'km/h' ? 'km/h' : cd.speedUnit === 'rpm' ? 'RPM' : cd.speedUnit === 'spm' ? 'SPM' : 'Lv';
+                    const inclineLabel = spec
+                      ? (isAr ? spec.inclineLabelAr : spec.inclineLabelEn) || (isAr ? 'الميلان / المقاومة (اختياري)' : 'Incline / Resistance (Optional)')
+                      : isAr
+                      ? 'الميلان / المقاومة (اختياري)'
+                      : 'Incline / Resistance (Optional)';
+
                     const isCollapsed = !!collapsedExercises[exercise.id];
-                    const completedSetsCount = exercise.sets.filter((s) => s.completed).length;
-                    const totalSetsCount = exercise.sets.length;
+                    const completedSetsCount = isCardio
+                      ? cd.completed
+                        ? 1
+                        : 0
+                      : exercise.sets.filter((s) => s.completed).length;
+                    const totalSetsCount = isCardio ? 1 : exercise.sets.length;
                     const isAllCompleted = completedSetsCount === totalSetsCount && totalSetsCount > 0;
-                    
-                    // Scientific Progressive Overload Coach prescription
+
+                    // Scientific Progressive Overload Coach prescription (Strength)
                     const targetSetsCount = exercise.sets.length || 3;
                     const targetRepsCount = exercise.sets[0]?.reps || 10;
                     const defaultWeight = exercise.previousWeight || (exercise.sets[0]?.weight ? exercise.sets[0].weight.toString() : '7.5');
-                    const prescription = getCoachPrescriptionForExercise(
-                      exercise.name,
-                      targetSetsCount,
-                      targetRepsCount,
-                      defaultWeight,
-                      workouts
-                    );
+                    const prescription = !isCardio
+                      ? getCoachPrescriptionForExercise(
+                          exercise.name,
+                          targetSetsCount,
+                          targetRepsCount,
+                          defaultWeight,
+                          workouts
+                        )
+                      : null;
+
+                    const isDraggingThis = draggedExIdx === exIdx;
+                    const isDropTargetThis = dragOverExIdx === exIdx && draggedExIdx !== exIdx;
 
                     return (
                       <div
                         key={exercise.id}
-                        className={`bg-white dark:bg-[#18191D] rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs transition-all ${
-                          isCollapsed ? 'p-4' : 'p-5 sm:p-6 space-y-4'
-                        }`}
+                        draggable
+                        onDragStart={(e) => {
+                          setDraggedExIdx(exIdx);
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.dataTransfer.setData('text/plain', String(exIdx));
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          if (dragOverExIdx !== exIdx) setDragOverExIdx(exIdx);
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverExIdx === exIdx) setDragOverExIdx(null);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const from = draggedExIdx !== null ? draggedExIdx : parseInt(e.dataTransfer.getData('text/plain'), 10);
+                          if (!isNaN(from)) {
+                            handleMoveExercise(from, exIdx);
+                          }
+                          setDraggedExIdx(null);
+                          setDragOverExIdx(null);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedExIdx(null);
+                          setDragOverExIdx(null);
+                        }}
+                        className={`bg-white dark:bg-[#18191D] rounded-3xl border shadow-xs transition-all ${
+                          isDraggingThis
+                            ? 'opacity-60 scale-[0.99] border-emerald-500'
+                            : isDropTargetThis
+                            ? 'border-emerald-500 ring-2 ring-emerald-500/30'
+                            : isCardio && cd.completed
+                            ? 'border-emerald-500/40 dark:border-emerald-700/50'
+                            : 'border-slate-200/80 dark:border-neutral-800'
+                        } ${isCollapsed ? 'p-4' : 'p-5 sm:p-6 space-y-4'}`}
                       >
                         {/* Collapsed View */}
                         {isCollapsed ? (
                           <div className="flex items-center justify-between gap-3 animate-fadeIn">
-                            <div className="flex items-center gap-3 overflow-hidden">
+                            <div className="flex items-center gap-2.5 overflow-hidden">
+                              <span
+                                className="p-1 text-slate-400 hover:text-emerald-500 cursor-grab active:cursor-grabbing shrink-0"
+                                title={isAr ? 'اسحب لإعادة الترتيب' : 'Drag to reorder'}
+                              >
+                                <GripVertical size={16} />
+                              </span>
                               <button
                                 type="button"
                                 onClick={() => handleToggleCollapse(exercise.id)}
@@ -1653,14 +2421,50 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                               <div className="truncate">
                                 <h4 className="text-sm font-black text-slate-900 dark:text-white truncate">
                                   {exercise.name}
+                                  {exercise.subtitle && (
+                                    <span className="text-xs font-semibold text-slate-400 ml-1.5">
+                                      ({exercise.subtitle})
+                                    </span>
+                                  )}
                                 </h4>
-                                <p className="text-[10px] font-bold text-slate-400 font-mono">
-                                  {completedSetsCount}/{totalSetsCount} {isAr ? 'مجموعات منجزة' : 'sets completed'}
+                                <p className="text-[10px] font-bold text-slate-400 font-mono tabular-nums">
+                                  {isCardio
+                                    ? [
+                                        cd.durationMinutes && cd.durationMinutes > 0 ? `${cd.durationMinutes} mins` : null,
+                                        cd.speedRpm && cd.speedRpm > 0 ? `${cd.speedRpm} ${unitLabel}` : null,
+                                        cd.heartRateBpm && cd.heartRateBpm > 0 ? `♥ ${cd.heartRateBpm} bpm` : null,
+                                        cd.inclineResistance && cd.inclineResistance > 0 ? `Inc ${cd.inclineResistance}` : null,
+                                        cd.completed ? '✓ Done' : (isAr ? 'غير محدد بعد' : 'Unchecked')
+                                      ]
+                                        .filter(Boolean)
+                                        .join(' · ')
+                                    : `${completedSetsCount}/${totalSetsCount} ${isAr ? 'مجموعات منجزة' : 'sets completed'}`}
+                                  {exercise.completedAt && completedRank > 0
+                                    ? ` · #${completedRank} ${new Date(exercise.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                                    : ''}
                                 </p>
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleMoveExercise(exIdx, exIdx - 1)}
+                                disabled={exIdx === 0}
+                                className="p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-neutral-800 disabled:opacity-30 cursor-pointer"
+                                title={isAr ? 'نقل للأعلى' : 'Move up'}
+                              >
+                                <ArrowUp size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleMoveExercise(exIdx, exIdx + 1)}
+                                disabled={exIdx === exercises.length - 1}
+                                className="p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-neutral-800 disabled:opacity-30 cursor-pointer"
+                                title={isAr ? 'نقل للأسفل' : 'Move down'}
+                              >
+                                <ArrowDown size={14} />
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleToggleCollapse(exercise.id)}
@@ -1682,19 +2486,35 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                           <div className="animate-fadeIn space-y-4">
                             {/* Exercise Card Header */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-neutral-800/80">
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2.5 sm:gap-3">
+                                <span
+                                  className="p-1.5 rounded-xl bg-slate-50 dark:bg-neutral-900 border border-slate-200/70 dark:border-neutral-800 text-slate-400 hover:text-emerald-500 cursor-grab active:cursor-grabbing shrink-0"
+                                  title={isAr ? 'اسحب لتغيير ترتيب التمرين' : 'Drag & drop to reorder exercise'}
+                                >
+                                  <GripVertical size={16} />
+                                </span>
+
                                 {/* Interactive Exercise Image Thumbnail */}
                                 <button
                                   type="button"
-                                  onClick={() => setPreviewModalData({
-                                    name: exercise.name,
-                                    targetWeightKg: exercise.targetWeight ?? (parseFloat(exercise.sets[0]?.weight) || 20),
-                                    previousWeightKg: exercise.previousWeight,
-                                    previousRepsSummary: exercise.previousPerformanceSummary,
-                                    targetReps: exercise.targetReps ?? (parseInt(exercise.sets[0]?.reps, 10) || 10)
-                                  })}
+                                  onClick={() =>
+                                    setPreviewModalData(
+                                      isCardio
+                                        ? {
+                                            name: exercise.name,
+                                            targetReps: cd.durationMinutes
+                                          }
+                                        : {
+                                            name: exercise.name,
+                                            targetWeightKg: exercise.targetWeight ?? (parseFloat(exercise.sets[0]?.weight) || 20),
+                                            previousWeightKg: exercise.previousWeight,
+                                            previousRepsSummary: exercise.previousPerformanceSummary,
+                                            targetReps: exercise.targetReps ?? (parseInt(String(exercise.sets[0]?.reps || 10), 10) || 10)
+                                          }
+                                    )
+                                  }
                                   className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 overflow-hidden shrink-0 flex items-center justify-center relative group cursor-pointer hover:border-emerald-500 transition-all shadow-2xs"
-                                  title={isAr ? 'انقر لمعاينة حركة التمرين والتكنيك وحاسبة الأوزان' : 'Click to preview exercise technique and per-rep load'}
+                                  title={isAr ? 'انقر لمعاينة حركة التمرين والتفاصيل' : 'Click to preview exercise details'}
                                 >
                                   <img
                                     src={getExerciseImagePath(exercise.name)}
@@ -1718,36 +2538,88 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                                 </button>
 
                                 <div>
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex flex-wrap items-center gap-2">
                                     <span className="text-xs font-mono font-black text-slate-400">#{exIdx + 1}</span>
                                     <button
                                       type="button"
-                                      onClick={() => setPreviewModalData({
-                                        name: exercise.name,
-                                        targetWeightKg: exercise.targetWeight ?? (parseFloat(exercise.sets[0]?.weight) || 20),
-                                        previousWeightKg: exercise.previousWeight,
-                                        previousRepsSummary: exercise.previousPerformanceSummary,
-                                        targetReps: exercise.targetReps ?? (parseInt(exercise.sets[0]?.reps, 10) || 10)
-                                      })}
+                                      onClick={() =>
+                                        setPreviewModalData(
+                                          isCardio
+                                            ? {
+                                                name: exercise.name,
+                                                targetReps: cd.durationMinutes
+                                              }
+                                            : {
+                                                name: exercise.name,
+                                                targetWeightKg: exercise.targetWeight ?? (parseFloat(exercise.sets[0]?.weight) || 20),
+                                                previousWeightKg: exercise.previousWeight,
+                                                previousRepsSummary: exercise.previousPerformanceSummary,
+                                                targetReps: exercise.targetReps ?? (parseInt(String(exercise.sets[0]?.reps || 10), 10) || 10)
+                                              }
+                                        )
+                                      }
                                       className="text-base font-black text-slate-900 dark:text-white hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors flex items-center gap-1.5 cursor-pointer text-left rtl:text-right"
                                     >
                                       <span>{exercise.name}</span>
+                                      {exercise.subtitle && (
+                                        <span className="text-xs font-semibold text-slate-400">
+                                          ({exercise.subtitle})
+                                        </span>
+                                      )}
                                       <Eye size={15} className="text-slate-400 hover:text-emerald-500" />
                                     </button>
                                   </div>
-                                  {exercise.isAutoFilled && (
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 inline-block mt-0.5">
-                                      {isAr ? 'الأهداف مجهزة مسبقاً' : 'Prescribed Targets Preloaded'}
-                                    </span>
-                                  )}
+                                  <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[10px] font-bold">
+                                    {exercise.isAutoFilled && (
+                                      <span className={`px-2 py-0.5 rounded-md border ${
+                                        isCardio
+                                          ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                                          : 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                                      }`}>
+                                        {isCardio
+                                          ? (isAr ? 'كارديو • تحمّل تدريجي' : 'Cardio • Conditioning Overload')
+                                          : (isAr ? 'الأهداف مجهزة مسبقاً' : 'Prescribed Targets Preloaded')}
+                                      </span>
+                                    )}
+                                    {!isCardio && (
+                                      <span className="font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                        {bioType === 'compound'
+                                          ? (isAr ? '• مركّب (Compound)' : '• Compound')
+                                          : (isAr ? '• عزل (Isolation)' : '• Isolation')}
+                                      </span>
+                                    )}
+                                    {exercise.completedAt && completedRank > 0 && (
+                                      <span className="font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+                                        ✓ #{completedRank} {isAr ? 'منجز' : 'Done'} · {new Date(exercise.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-2 self-end sm:self-auto">
+                              <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveExercise(exIdx, exIdx - 1)}
+                                  disabled={exIdx === 0}
+                                  className="min-h-[36px] min-w-[36px] p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-neutral-800 disabled:opacity-30 transition-colors cursor-pointer flex items-center justify-center"
+                                  title={isAr ? 'نقل للأعلى' : 'Move up'}
+                                >
+                                  <ArrowUp size={15} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveExercise(exIdx, exIdx + 1)}
+                                  disabled={exIdx === exercises.length - 1}
+                                  className="min-h-[36px] min-w-[36px] p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-neutral-800 disabled:opacity-30 transition-colors cursor-pointer flex items-center justify-center"
+                                  title={isAr ? 'نقل للأسفل' : 'Move down'}
+                                >
+                                  <ArrowDown size={15} />
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => handleToggleCollapse(exercise.id)}
-                                  className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                                  className="min-h-[36px] min-w-[36px] p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer flex items-center justify-center"
                                   title={isAr ? 'طي التمرين' : 'Collapse'}
                                 >
                                   <ChevronUp size={16} />
@@ -1755,7 +2627,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveExercise(exercise.id)}
-                                  className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                                  className="min-h-[36px] min-w-[36px] p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer flex items-center justify-center"
                                   title={isAr ? 'حذف التمرين' : 'Remove'}
                                 >
                                   <Trash2 size={16} />
@@ -1763,188 +2635,512 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                               </div>
                             </div>
 
-                            {/* Previous Session vs Next Target Summary Bar */}
-                            {showTargetsAndHistory && (
-                              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-neutral-900/70 border border-slate-200/70 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2.5 text-xs">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                                    <History size={12} className="text-slate-400" />
-                                    <span>{isAr ? 'الحصة السابقة:' : 'Past Session:'}</span>
-                                  </span>
-                                  <span className="font-mono font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-neutral-800 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-neutral-700">
-                                    {exercise.previousPerformanceSummary || (exercise.previousWeight ? `${exercise.previousWeight}kg × ${exercise.previousReps} reps` : (prescription.lastWeight > 0 ? `${prescription.lastWeight}kg (${prescription.lastRepsSummary})` : (isAr ? 'أول حصة لهذا التمرين' : 'Baseline')))}
-                                  </span>
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                    <Target size={12} className="text-emerald-500" />
-                                    <span>{isAr ? 'الهدف الموصوف:' : 'Prescribed Target:'}</span>
-                                  </span>
-                                  <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-lg border border-emerald-500/20">
-                                    {exercise.targetWeight || prescription.suggestedWeight}kg × {exercise.targetReps || prescription.suggestedReps} reps
-                                  </span>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Scientific Progressive Overload Coach Box */}
-                            <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                              prescription.hasWarningFlag
-                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300'
-                                : prescription.isReadyForOverload
-                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
-                                : 'bg-slate-50 dark:bg-neutral-900/60 border-slate-200 dark:border-neutral-800 text-slate-700 dark:text-slate-300'
-                            }`}>
-                              <div className="flex items-center gap-2.5">
-                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                                  prescription.hasWarningFlag
-                                    ? 'bg-amber-500 text-white'
-                                    : prescription.isReadyForOverload
-                                    ? 'bg-emerald-500 text-white'
-                                    : 'bg-slate-200 dark:bg-neutral-800 text-slate-600 dark:text-slate-400'
-                                }`}>
-                                  {prescription.hasWarningFlag ? <AlertCircle size={16} /> : <TrendingUp size={16} />}
-                                </div>
-                                <div className="text-xs">
-                                  <div className="flex items-center gap-1.5 font-black uppercase text-[10px]">
-                                    <span>{isAr ? 'توجيه الكوتش (Double Progression):' : 'Iron Coach Target:'}</span>
-                                    <span className={`px-1.5 py-0.2 rounded font-bold ${
-                                      prescription.hasWarningFlag
-                                        ? 'bg-amber-500/20 text-amber-900 dark:text-amber-200'
-                                        : 'bg-black/10 dark:bg-white/10'
-                                    }`}>
-                                      {isAr ? prescription.headlineAr : prescription.headlineEn}
-                                    </span>
-                                  </div>
-                                  <p className="mt-0.5">{isAr ? prescription.detailsAr : prescription.detailsEn}</p>
-                                </div>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => handleApplyCoachTarget(exercise.id, prescription.suggestedWeight, prescription.suggestedReps, prescription.targetSetReps)}
-                                className={`px-3 py-1.5 rounded-xl text-white text-xs font-black transition-all cursor-pointer shrink-0 shadow-xs flex items-center justify-center gap-1 ${
-                                  prescription.hasWarningFlag
-                                    ? 'bg-amber-600 hover:bg-amber-500'
-                                    : 'bg-emerald-600 hover:bg-emerald-500'
-                                }`}
-                              >
-                                <Zap size={12} className="fill-current" />
-                                <span>{isAr ? 'تطبيق هدف الكوتش' : 'Apply Targets'}</span>
-                              </button>
-                            </div>
-
-                            {/* Sets Table */}
-                            <div className="space-y-2.5">
-                              <div className="grid grid-cols-12 gap-2 text-[10px] font-black uppercase text-slate-400 px-2 tracking-wider">
-                                <span className="col-span-2">{isAr ? 'المجموعة' : 'SET'}</span>
-                                <span className="col-span-4">{isAr ? 'الوزن (kg)' : 'WEIGHT (KG)'}</span>
-                                <span className="col-span-3">{isAr ? 'التكرار' : 'REPS'}</span>
-                                <span className="col-span-3 text-center">{isAr ? 'تم' : 'DONE'}</span>
-                              </div>
-
-                              {exercise.sets.map((set, sIdx) => {
-                                const isDone = !!set.completed;
-                                const prevSetWeight = set.previousWeight || exercise.previousWeight || (prescription.lastWeight > 0 ? prescription.lastWeight.toString() : '');
-                                const prevSetReps = set.previousReps !== undefined ? set.previousReps : (exercise.previousReps || 0);
-                                const targetSetWeight = set.targetWeight || exercise.targetWeight || prescription.suggestedWeight;
-                                const targetSetReps = set.targetReps || exercise.targetReps || prescription.suggestedReps;
-
-                                return (
-                                  <div
-                                    key={set.id}
-                                    className={`p-3 rounded-2xl border transition-all space-y-2 ${
-                                      isDone
-                                        ? 'bg-emerald-500/10 dark:bg-emerald-950/25 border-emerald-500/30'
-                                        : 'bg-slate-50 dark:bg-neutral-900 border-slate-200/70 dark:border-neutral-800'
-                                    }`}
-                                  >
-                                    {/* Set-Level Target & History Sub-line */}
-                                    {showTargetsAndHistory && (
-                                      <div className="flex items-center justify-between text-[11px] font-mono px-1 pb-1 border-b border-slate-200/60 dark:border-neutral-800/80">
-                                        <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                                          <span className="text-[10px] font-sans font-bold text-slate-400 uppercase">{isAr ? 'السابق:' : 'Prev:'}</span>
-                                          <span>{prevSetWeight ? `${prevSetWeight}kg × ${prevSetReps}` : (isAr ? 'لا يوجد' : '—')}</span>
-                                        </div>
-
-                                        <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
-                                          <span className="text-[10px] font-sans font-bold uppercase">{isAr ? 'هدف المجموعة:' : 'Next Target:'}</span>
-                                          <span>{targetSetWeight}kg × {targetSetReps} reps</span>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    <div className="grid grid-cols-12 gap-2 items-center">
-                                      {/* Set Number */}
-                                      <span className="col-span-2 font-mono font-black text-xs text-slate-700 dark:text-slate-300">
-                                        Set {sIdx + 1}
+                            {/* CARDIO VIEW vs STRENGTH VIEW */}
+                            {isCardio && cardioRx ? (
+                              <>
+                                {/* Previous Cardio Session vs Prescribed Target */}
+                                {showTargetsAndHistory && (
+                                  <div className="p-3 rounded-2xl bg-slate-50 dark:bg-neutral-900/70 border border-slate-200/70 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                                        <History size={12} className="text-slate-400" />
+                                        <span>{isAr ? 'الحصة السابقة:' : 'Past Session:'}</span>
                                       </span>
+                                      <span className="font-mono tabular-nums font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-neutral-800 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-neutral-700">
+                                        {exercise.previousPerformanceSummary ||
+                                          (cardioRx.lastDurationMinutes !== null || cardioRx.lastSpeedRpm !== null || cardioRx.lastHeartRateBpm !== null
+                                            ? (isAr ? cardioRx.lastSummaryAr : cardioRx.lastSummaryEn)
+                                            : (isAr ? 'أول حصة لهذا التمرين' : 'Baseline (15 mins)'))}
+                                      </span>
+                                    </div>
 
-                                      {/* Weight Input (Pre-filled with Target Weight!) */}
-                                      <div className="col-span-4 flex items-center gap-1">
-                                        <input
-                                          type="number"
-                                          step="0.5"
-                                          value={set.weight !== undefined ? set.weight : ''}
-                                          onChange={(e) => handleUpdateSet(exercise.id, set.id, { weight: e.target.value })}
-                                          placeholder="kg"
-                                          className="w-full text-sm font-black font-mono px-3 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                                        />
-                                      </div>
-
-                                      {/* Reps Input (Pre-filled with Target Reps!) */}
-                                      <div className="col-span-3 flex items-center gap-1">
-                                        <input
-                                          type="number"
-                                          min="1"
-                                          value={set.reps !== undefined ? set.reps : ''}
-                                          onChange={(e) => handleUpdateSet(exercise.id, set.id, { reps: parseInt(e.target.value, 10) || 0 })}
-                                          placeholder="reps"
-                                          className="w-full text-sm font-black font-mono px-3 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                                        />
-                                      </div>
-
-                                      {/* Satisfying Big Check/Complete Button */}
-                                      <div className="col-span-3 flex items-center justify-center gap-1">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleToggleSetComplete(exercise.id, set.id)}
-                                          className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all cursor-pointer active:scale-90 ${
-                                            isDone
-                                              ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30'
-                                              : 'bg-white dark:bg-neutral-800 text-slate-300 hover:text-emerald-500 border border-slate-200 dark:border-neutral-700'
-                                          }`}
-                                          title={isDone ? 'Mark as incomplete' : 'Complete set'}
-                                        >
-                                          <Check size={20} className="stroke-[3]" />
-                                        </button>
-                                        
-                                        {exercise.sets.length > 1 && (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleRemoveSet(exercise.id, set.id)}
-                                            className="p-1 text-slate-300 hover:text-rose-500 transition-colors cursor-pointer"
-                                          >
-                                            <Trash2 size={12} />
-                                          </button>
-                                        )}
-                                      </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                        <Target size={12} className="text-amber-500" />
+                                        <span>{isAr ? 'الهدف الموصوف:' : 'Prescribed Target:'}</span>
+                                      </span>
+                                      <span className="font-mono tabular-nums font-black text-amber-700 dark:text-amber-300 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
+                                        {cardioRx.suggestedDurationMinutes} mins @ {cardioRx.suggestedSpeedRpm} {unitLabel}
+                                        {cardioRx.suggestedInclineResistance > 0 ? ` • Inc ${cardioRx.suggestedInclineResistance}` : ''}
+                                      </span>
                                     </div>
                                   </div>
-                                );
-                              })}
-                            </div>
+                                )}
 
-                            {/* Add Set Button */}
-                            <button
-                              type="button"
-                              onClick={() => handleAddSet(exercise.id)}
-                              className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-neutral-700 hover:border-emerald-500 text-slate-600 dark:text-slate-400 hover:text-emerald-500 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                            >
-                              <Plus size={14} />
-                              <span>{isAr ? 'إضافة مجموعة جديدة' : '+ Add Set'}</span>
-                            </button>
+                                {/* Cardio Progressive Overload Coach Banner */}
+                                <div
+                                  className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                    cardioRx.isReadyForLevelUp
+                                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                                      : 'bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-200'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <div
+                                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-white ${
+                                        cardioRx.isReadyForLevelUp ? 'bg-emerald-500' : 'bg-amber-500'
+                                      }`}
+                                    >
+                                      <TrendingUp size={16} />
+                                    </div>
+                                    <div className="text-xs">
+                                      <div className="flex flex-wrap items-center gap-1.5 font-black uppercase text-[10px]">
+                                        <span>{isAr ? 'توجيه الكوتش (تطور الكارديو):' : 'Cardio Overload Plan:'}</span>
+                                        <span className="px-1.5 py-0.5 rounded font-bold bg-black/10 dark:bg-white/10">
+                                          {isAr ? cardioRx.headlineAr : cardioRx.headlineEn}
+                                        </span>
+                                      </div>
+                                      <p className="mt-0.5">{isAr ? cardioRx.detailsAr : cardioRx.detailsEn}</p>
+                                    </div>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApplyCardioTarget(exercise.id, cardioRx)}
+                                    className={`px-3 py-1.5 rounded-xl text-white text-xs font-black transition-all cursor-pointer shrink-0 shadow-xs flex items-center justify-center gap-1 ${
+                                      cardioRx.isReadyForLevelUp
+                                        ? 'bg-emerald-600 hover:bg-emerald-500'
+                                        : 'bg-amber-600 hover:bg-amber-500'
+                                    }`}
+                                  >
+                                    <Zap size={12} className="fill-current" />
+                                    <span>{isAr ? 'تطبيق هدف الكوتش' : 'Apply Target'}</span>
+                                  </button>
+                                </div>
+
+                                {/* Cardio Input Fields (Sets / Reps / Weight HIDDEN) */}
+                                <div
+                                  className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                                    cd.completed
+                                      ? 'bg-emerald-500/10 dark:bg-emerald-950/25 border-emerald-500/30'
+                                      : 'bg-slate-50 dark:bg-neutral-900 border-slate-200/70 dark:border-neutral-800'
+                                  }`}
+                                >
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                                    {/* 1. Duration (mins) */}
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center justify-between gap-1">
+                                        <span>{isAr ? 'المدة (دقيقة)' : 'Duration (mins)'}</span>
+                                        <span className="text-[10px] font-normal text-slate-400">
+                                          {isAr ? 'اختياري' : 'Optional'}
+                                        </span>
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        max="240"
+                                        step="1"
+                                        value={cd.durationMinutes ?? ''}
+                                        onChange={(e) => {
+                                          const raw = e.target.value.trim();
+                                          if (raw === '') {
+                                            handleUpdateCardio(exercise.id, { durationMinutes: undefined });
+                                            return;
+                                          }
+                                          const parsed = parseInt(raw, 10);
+                                          handleUpdateCardio(exercise.id, {
+                                            durationMinutes: !isNaN(parsed) && parsed > 0 ? parsed : undefined
+                                          });
+                                        }}
+                                        placeholder={cd.targetDurationMinutes ? `${cd.targetDurationMinutes}` : '15'}
+                                        className="w-full text-sm font-black font-mono tabular-nums px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                                      />
+                                    </div>
+
+                                    {/* 2. Speed (Average Speed) */}
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center justify-between gap-1">
+                                        <span>{isAr ? 'متوسط السرعة' : 'Avg Speed'}</span>
+                                        <span className="text-[10px] font-mono text-slate-400">{unitLabel}</span>
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.5"
+                                        value={cd.speedRpm ?? ''}
+                                        onChange={(e) => {
+                                          const raw = e.target.value.trim();
+                                          if (raw === '') {
+                                            handleUpdateCardio(exercise.id, { speedRpm: undefined });
+                                            return;
+                                          }
+                                          const parsed = parseFloat(raw);
+                                          handleUpdateCardio(exercise.id, {
+                                            speedRpm: !isNaN(parsed) && parsed > 0 ? parsed : undefined
+                                          });
+                                        }}
+                                        placeholder={cd.targetSpeedRpm ? `${cd.targetSpeedRpm} ${unitLabel}` : unitLabel}
+                                        className="w-full text-sm font-black font-mono tabular-nums px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                                      />
+                                    </div>
+
+                                    {/* 3. Heart Pumps (Cospo Chest Strap / App BPM) */}
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 flex items-center justify-between gap-1">
+                                        <span className="flex items-center gap-1 truncate">
+                                          <Heart size={12} className="shrink-0" />
+                                          <span className="truncate">{isAr ? 'نبضات القلب (Cospo)' : 'Heart Pumps (Cospo)'}</span>
+                                        </span>
+                                        <span className="text-[10px] font-mono text-rose-500 dark:text-rose-400 shrink-0">BPM</span>
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="30"
+                                        max="240"
+                                        step="1"
+                                        value={cd.heartRateBpm ?? ''}
+                                        onChange={(e) => {
+                                          const raw = e.target.value.trim();
+                                          if (raw === '') {
+                                            handleUpdateCardio(exercise.id, { heartRateBpm: undefined });
+                                            return;
+                                          }
+                                          const parsed = parseInt(raw, 10);
+                                          handleUpdateCardio(exercise.id, {
+                                            heartRateBpm: !isNaN(parsed) && parsed > 0 ? parsed : undefined
+                                          });
+                                        }}
+                                        placeholder={cd.previousHeartRateBpm ? `${cd.previousHeartRateBpm} BPM` : (isAr ? 'مثال 145 BPM' : 'e.g. 145 BPM')}
+                                        className="w-full text-sm font-black font-mono tabular-nums px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-rose-200 dark:border-rose-900/60 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-rose-500"
+                                      />
+                                    </div>
+
+                                    {/* 4. Incline / Resistance (Optional) */}
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center justify-between gap-1">
+                                        <span className="truncate">{inclineLabel}</span>
+                                        <span className="text-[10px] font-normal text-slate-400 shrink-0">
+                                          {isAr ? 'اختياري' : 'Optional'}
+                                        </span>
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.5"
+                                        value={cd.inclineResistance ?? ''}
+                                        onChange={(e) => {
+                                          const raw = e.target.value.trim();
+                                          if (raw === '') {
+                                            handleUpdateCardio(exercise.id, { inclineResistance: undefined });
+                                            return;
+                                          }
+                                          const parsed = parseFloat(raw);
+                                          handleUpdateCardio(exercise.id, {
+                                            inclineResistance: !isNaN(parsed) && parsed > 0 ? parsed : undefined
+                                          });
+                                        }}
+                                        placeholder={cd.targetInclineResistance && cd.targetInclineResistance > 0 ? `${cd.targetInclineResistance}` : (isAr ? 'اختياري' : 'Optional')}
+                                        className="w-full text-sm font-black font-mono tabular-nums px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <p className="text-[11px] text-slate-500 dark:text-neutral-400">
+                                    {isAr
+                                      ? 'اترك أي خانة فارغة إذا لم تقم بقياسها — لن يتم احتساب أي رقم غير مدخل، ولن يتم حفظ التمارين غير المحددة عند الإنهاء.'
+                                      : 'Leave any metric blank if skipped — unentered fields are not counted, and unchecked exercises are excluded on Finish.'}
+                                  </p>
+
+                                  {/* Check / Complete Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleCardioComplete(exercise.id)}
+                                    className={`w-full py-3 px-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.99] ${
+                                      cd.completed
+                                        ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/25'
+                                        : 'bg-white dark:bg-neutral-800 text-slate-700 dark:text-slate-200 hover:border-emerald-500 hover:text-emerald-600 border border-slate-200 dark:border-neutral-700'
+                                    }`}
+                                  >
+                                    {cd.completed ? <CheckCircle2 size={18} /> : <Square size={16} />}
+                                    <span>
+                                      {cd.completed
+                                        ? (isAr ? 'تم إنجاز تمرين الكارديو ✓' : 'Completed • Click to Undo')
+                                        : (isAr ? 'تحديد التمرين كمكتمل (Check / Complete)' : 'Check / Complete')}
+                                    </span>
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                {/* Previous Session vs Next Target Summary Bar (Strength) */}
+                                {showTargetsAndHistory && prescription && (
+                                  <div className="p-3 rounded-2xl bg-slate-50 dark:bg-neutral-900/70 border border-slate-200/70 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                                        <History size={12} className="text-slate-400" />
+                                        <span>{isAr ? 'الحصة السابقة:' : 'Past Session:'}</span>
+                                      </span>
+                                      <span className="font-mono font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-neutral-800 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-neutral-700">
+                                        {exercise.previousPerformanceSummary || (exercise.previousWeight ? `${exercise.previousWeight}kg × ${exercise.previousReps} reps` : (prescription.lastWeight > 0 ? `${prescription.lastWeight}kg (${prescription.lastRepsSummary})` : (isAr ? 'أول حصة لهذا التمرين' : 'Baseline')))}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                        <Target size={12} className="text-emerald-500" />
+                                        <span>{isAr ? 'الهدف الموصوف:' : 'Prescribed Target:'}</span>
+                                      </span>
+                                      <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-lg border border-emerald-500/20">
+                                        {exercise.targetWeight || prescription.suggestedWeight}kg × {exercise.targetReps || prescription.suggestedReps} reps
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Scientific Progressive Overload Coach Box (Strength) */}
+                                {prescription && (
+                                  <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                    prescription.hasWarningFlag
+                                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300'
+                                      : prescription.isReadyForOverload
+                                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                                      : 'bg-slate-50 dark:bg-neutral-900/60 border-slate-200 dark:border-neutral-800 text-slate-700 dark:text-slate-300'
+                                  }`}>
+                                    <div className="flex items-center gap-2.5">
+                                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                                        prescription.hasWarningFlag
+                                          ? 'bg-amber-500 text-white'
+                                          : prescription.isReadyForOverload
+                                          ? 'bg-emerald-500 text-white'
+                                          : 'bg-slate-200 dark:bg-neutral-800 text-slate-600 dark:text-slate-400'
+                                      }`}>
+                                        {prescription.hasWarningFlag ? <AlertCircle size={16} /> : <TrendingUp size={16} />}
+                                      </div>
+                                      <div className="text-xs">
+                                        <div className="flex items-center gap-1.5 font-black uppercase text-[10px]">
+                                          <span>{isAr ? 'توجيه الكوتش (Double Progression):' : 'Iron Coach Target:'}</span>
+                                          <span className={`px-1.5 py-0.2 rounded font-bold ${
+                                            prescription.hasWarningFlag
+                                              ? 'bg-amber-500/20 text-amber-900 dark:text-amber-200'
+                                              : 'bg-black/10 dark:bg-white/10'
+                                          }`}>
+                                            {isAr ? prescription.headlineAr : prescription.headlineEn}
+                                          </span>
+                                        </div>
+                                        <p className="mt-0.5">{isAr ? prescription.detailsAr : prescription.detailsEn}</p>
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApplyCoachTarget(exercise.id, prescription.suggestedWeight, prescription.suggestedReps, prescription.targetSetReps)}
+                                      className={`px-3 py-1.5 rounded-xl text-white text-xs font-black transition-all cursor-pointer shrink-0 shadow-xs flex items-center justify-center gap-1 ${
+                                        prescription.hasWarningFlag
+                                          ? 'bg-amber-600 hover:bg-amber-500'
+                                          : 'bg-emerald-600 hover:bg-emerald-500'
+                                      }`}
+                                    >
+                                      <Zap size={12} className="fill-current" />
+                                      <span>{isAr ? 'تطبيق هدف الكوتش' : 'Apply Targets'}</span>
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Sets Table (Strength Only) */}
+                                <div className="space-y-2.5">
+                                  <div className="grid grid-cols-12 gap-2 text-[10px] font-black uppercase text-slate-400 px-2 tracking-wider">
+                                    <span className="col-span-2">{isAr ? 'المجموعة' : 'SET'}</span>
+                                    <span className="col-span-4">{isAr ? 'الوزن (kg)' : 'WEIGHT (KG)'}</span>
+                                    <span className="col-span-3">{isAr ? 'التكرار' : 'REPS'}</span>
+                                    <span className="col-span-3 text-center">{isAr ? 'تم' : 'DONE'}</span>
+                                  </div>
+
+                                  {exercise.sets.map((set, sIdx) => {
+                                    const isDone = !!set.completed;
+                                    const prevSetWeight = set.previousWeight || exercise.previousWeight || (prescription && prescription.lastWeight > 0 ? prescription.lastWeight.toString() : '');
+                                    const prevSetReps = set.previousReps !== undefined ? set.previousReps : (exercise.previousReps || 0);
+                                    const targetSetWeight = set.targetWeight || exercise.targetWeight || prescription?.suggestedWeight;
+                                    const targetSetReps = set.targetReps || exercise.targetReps || prescription?.suggestedReps;
+
+                                    return (
+                                      <div
+                                        key={set.id}
+                                        className={`p-3 rounded-2xl border transition-all space-y-2 ${
+                                          isDone
+                                            ? 'bg-emerald-500/10 dark:bg-emerald-950/25 border-emerald-500/30'
+                                            : 'bg-slate-50 dark:bg-neutral-900 border-slate-200/70 dark:border-neutral-800'
+                                        }`}
+                                      >
+                                        {/* Set-Level Target & History Sub-line */}
+                                        {showTargetsAndHistory && (
+                                          <div className="flex items-center justify-between text-[11px] font-mono px-1 pb-1 border-b border-slate-200/60 dark:border-neutral-800/80">
+                                            <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                                              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase">{isAr ? 'السابق:' : 'Prev:'}</span>
+                                              <span>{prevSetWeight ? `${prevSetWeight}kg × ${prevSetReps}` : (isAr ? 'لا يوجد' : '—')}</span>
+                                            </div>
+
+                                            <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
+                                              <span className="text-[10px] font-sans font-bold uppercase">{isAr ? 'هدف المجموعة:' : 'Next Target:'}</span>
+                                              <span>{targetSetWeight}kg × {targetSetReps} reps</span>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        <div className="grid grid-cols-12 gap-2 items-center">
+                                          {/* Set Number */}
+                                          <span className="col-span-2 font-mono font-black text-xs text-slate-700 dark:text-slate-300">
+                                            Set {sIdx + 1}
+                                          </span>
+
+                                          {/* Weight Input (Pre-filled with Target Weight!) */}
+                                          <div className="col-span-4 flex items-center gap-1">
+                                            <input
+                                              type="number"
+                                              step="0.5"
+                                              value={set.weight !== undefined ? set.weight : ''}
+                                              onChange={(e) => handleUpdateSet(exercise.id, set.id, { weight: e.target.value })}
+                                              placeholder="kg"
+                                              className="w-full text-sm font-black font-mono px-3 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                                            />
+                                          </div>
+
+                                          {/* Reps Input (Pre-filled with Target Reps!) */}
+                                          <div className="col-span-3 flex items-center gap-1">
+                                            <input
+                                              type="number"
+                                              min="1"
+                                              value={set.reps !== undefined ? set.reps : ''}
+                                              onChange={(e) => handleUpdateSet(exercise.id, set.id, { reps: parseInt(e.target.value, 10) || 0 })}
+                                              placeholder="reps"
+                                              className="w-full text-sm font-black font-mono px-3 py-2.5 rounded-xl bg-white dark:bg-[#18191D] border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                                            />
+                                          </div>
+
+                                          {/* Satisfying Big Check/Complete Button */}
+                                          <div className="col-span-3 flex items-center justify-center gap-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleToggleSetComplete(exercise.id, set.id)}
+                                              className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all cursor-pointer active:scale-90 ${
+                                                isDone
+                                                  ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30'
+                                                  : 'bg-white dark:bg-neutral-800 text-slate-300 hover:text-emerald-500 border border-slate-200 dark:border-neutral-700'
+                                              }`}
+                                              title={isDone ? 'Mark as incomplete' : 'Complete set'}
+                                            >
+                                              <Check size={20} className="stroke-[3]" />
+                                            </button>
+                                            
+                                            {exercise.sets.length > 1 && (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleRemoveSet(exercise.id, set.id)}
+                                                className="p-1 text-slate-300 hover:text-rose-500 transition-colors cursor-pointer"
+                                              >
+                                                <Trash2 size={12} />
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+
+                                {/* Add Set Button (Strength Only) */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddSet(exercise.id)}
+                                  className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-neutral-700 hover:border-emerald-500 text-slate-600 dark:text-slate-400 hover:text-emerald-500 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                >
+                                  <Plus size={14} />
+                                  <span>{isAr ? 'إضافة مجموعة جديدة' : '+ Add Set'}</span>
+                                </button>
+
+                                {/* Feature 2: Live Dynamic Rep Over-Performance Detection (+2 above maxReps) */}
+                                {prescription &&
+                                  exercise.rpeFeedback !== 'failure' &&
+                                  exercise.sets.some((s) => Number(s.reps) >= prescription.maxReps + 2) && (
+                                    <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 animate-fadeIn">
+                                      <Zap size={16} className="text-emerald-500 shrink-0" />
+                                      <span>
+                                        {isAr
+                                          ? `تجاوزت سقف التكرارات (${prescription.maxReps} + 2 فأكثر)! سيتم تفعيل قفزة وزن مضاعفة (2x) في الحصة القادمة لمطابقة قوتك الفعلية.`
+                                          : `Over-Performance detected (+2 reps above ${prescription.maxReps} ceiling): Immediate Double Weight Jump (2x step) queued for next session!`}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                {/* Feature 3: Post-Exercise RPE / RIR Micro-UI ("How did that feel?") */}
+                                {isAllCompleted && (
+                                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-neutral-900/90 border border-slate-200 dark:border-neutral-700/80 space-y-2.5 animate-fadeIn">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <span className="text-xs font-black text-slate-900 dark:text-white">
+                                        {isAr ? 'كيف كان شعورك في المجموعة الأخيرة؟ (RPE / RIR)' : 'How did that feel?'}
+                                      </span>
+                                      <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                        {isAr ? 'يضبط توصية الوزن القادمة' : 'Calibrates next session load'}
+                                      </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSetExerciseRpe(exercise.id, 'easy')}
+                                        className={`min-h-[44px] px-3 py-2 rounded-xl text-xs font-black border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                          exercise.rpeFeedback === 'easy'
+                                            ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
+                                            : 'bg-white dark:bg-[#18191D] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-neutral-700 hover:border-emerald-500'
+                                        }`}
+                                      >
+                                        <span>🟢</span>
+                                        <span>{isAr ? 'سهل (RIR 3+)' : 'Easy (RIR 3+)'}</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSetExerciseRpe(exercise.id, 'perfect')}
+                                        className={`min-h-[44px] px-3 py-2 rounded-xl text-xs font-black border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                          exercise.rpeFeedback === 'perfect'
+                                            ? 'bg-amber-500 text-white border-amber-400 shadow-sm'
+                                            : 'bg-white dark:bg-[#18191D] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-neutral-700 hover:border-amber-500'
+                                        }`}
+                                      >
+                                        <span>🟡</span>
+                                        <span>{isAr ? 'مثالي (RIR 1-2)' : 'Perfect (RIR 1-2)'}</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSetExerciseRpe(exercise.id, 'failure')}
+                                        className={`min-h-[44px] px-3 py-2 rounded-xl text-xs font-black border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                          exercise.rpeFeedback === 'failure'
+                                            ? 'bg-rose-600 text-white border-rose-500 shadow-sm'
+                                            : 'bg-white dark:bg-[#18191D] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-neutral-700 hover:border-rose-500'
+                                        }`}
+                                      >
+                                        <span>🔴</span>
+                                        <span>{isAr ? 'فشل عضلي (RIR 0)' : 'Failure (RIR 0)'}</span>
+                                      </button>
+                                    </div>
+
+                                    {exercise.rpeFeedback && (
+                                      <p
+                                        className={`text-[11px] font-bold ${
+                                          exercise.rpeFeedback === 'easy'
+                                            ? 'text-emerald-600 dark:text-emerald-400'
+                                            : exercise.rpeFeedback === 'failure'
+                                            ? 'text-rose-600 dark:text-rose-400'
+                                            : 'text-amber-600 dark:text-amber-400'
+                                        }`}
+                                      >
+                                        {exercise.rpeFeedback === 'easy'
+                                          ? isAr
+                                            ? '🟢 وزن خفيف جداً: سيتم اقتراح زيادة الوزن تلقائياً في الحصة القادمة.'
+                                            : '🟢 Easy (RIR 3+): Next session will automatically suggest a weight increase.'
+                                          : exercise.rpeFeedback === 'failure'
+                                          ? isAr
+                                            ? '🔴 حماية من الإجهاد العصبي: سيتم تثبيت الوزن أو تخفيفه قليلاً في الحصة القادمة.'
+                                            : '🔴 Failure Guard: Next session holds weight steady or applies a micro-deload to protect CNS recovery.'
+                                          : isAr
+                                          ? '🟡 جهد مثالي للبناء العضلي (RIR 1-2): سيستمر نظام التدرج القياسي.'
+                                          : '🟡 Optimal hypertrophy zone (RIR 1-2): Standard Double Progression applies.'}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1964,7 +3160,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                     type="text"
                     value={customExerciseName}
                     onChange={(e) => setCustomExerciseName(e.target.value)}
-                    placeholder={isAr ? 'اكتب اسم التمرين (مثال: Incline DB Press)' : 'Type exercise name or pick below...'}
+                    placeholder={isAr ? 'اكتب اسم التمرين (مثال: Treadmill أو Incline DB Press)' : 'Type exercise name (e.g. Treadmill or Incline DB Press)...'}
                     className="w-full text-xs sm:text-sm font-bold px-4 py-3 rounded-2xl bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
                   />
                   <button
@@ -1979,7 +3175,10 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  {POPULAR_EXERCISES.slice(0, 8).map((ex) => (
+                  {(routineCategory === 'Cardio & Conditioning'
+                    ? POPULAR_EXERCISES.slice(0, 6)
+                    : POPULAR_EXERCISES.slice(0, 10)
+                  ).map((ex) => (
                     <button
                       key={ex}
                       type="button"
@@ -1992,30 +3191,88 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                 </div>
               </div>
 
+              {/* Inline Save Validation / Error Alert (no window.alert) */}
+              {saveErrorMessage && (
+                <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800/60 flex items-center justify-between gap-3 text-rose-800 dark:text-rose-200 animate-fadeIn">
+                  <div className="flex items-center gap-2.5">
+                    <AlertCircle size={18} className="text-rose-600 dark:text-rose-400 shrink-0" />
+                    <span className="text-xs sm:text-sm font-bold">{saveErrorMessage}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSaveErrorMessage(null)}
+                    className="text-xs underline font-semibold cursor-pointer shrink-0"
+                  >
+                    {isAr ? 'إغلاق' : 'Dismiss'}
+                  </button>
+                </div>
+              )}
+
               {/* Bottom Sticky Action Bar with Mobile Safe-Area Margin */}
               <div className="p-4 sm:p-5 rounded-3xl bg-slate-900 text-white shadow-2xl border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-16 sm:mb-4">
-                <div className="flex items-center gap-6">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">{isAr ? 'المجموعات' : 'SETS'}</span>
-                    <p className="text-xl sm:text-2xl font-black font-mono text-emerald-400">
-                      {sessionStats.completedSets} <span className="text-xs text-slate-400">/ {sessionStats.totalSets}</span>
-                    </p>
-                  </div>
+                {sessionStats.cardioExercisesCount > 0 && sessionStats.cardioExercisesCount === exercises.length ? (
+                  <div className="flex flex-wrap items-center gap-6">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400">{isAr ? 'المكتمل' : 'CHECKED'}</span>
+                      <p className="text-xl sm:text-2xl font-black font-mono tabular-nums text-emerald-400">
+                        {sessionStats.completedCardioCount} <span className="text-xs text-slate-400">/ {sessionStats.cardioExercisesCount}</span>
+                      </p>
+                    </div>
 
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">{isAr ? 'التكرارات' : 'TOTAL REPS'}</span>
-                    <p className="text-xl sm:text-2xl font-black font-mono text-white">
-                      {sessionStats.totalReps}
-                    </p>
-                  </div>
+                    {sessionStats.totalCardioMinutes > 0 && (
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400">{isAr ? 'مدة الكارديو' : 'CARDIO TIME'}</span>
+                        <p className="text-xl sm:text-2xl font-black font-mono tabular-nums text-amber-400">
+                          {sessionStats.totalCardioMinutes} <span className="text-xs text-slate-400">{isAr ? 'د' : 'mins'}</span>
+                        </p>
+                      </div>
+                    )}
 
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">{isAr ? 'الحجم' : 'VOLUME'}</span>
-                    <p className="text-xl sm:text-2xl font-black font-mono text-emerald-300">
-                      {sessionStats.calculatedVolume} <span className="text-xs text-slate-400">kg</span>
-                    </p>
+                    {sessionStats.avgHeartRateBpm && (
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400">{isAr ? 'متوسط النبض (Cospo)' : 'COSPO AVG'}</span>
+                        <p className="text-xl sm:text-2xl font-black font-mono tabular-nums text-rose-400">
+                          ♥ {sessionStats.avgHeartRateBpm} <span className="text-xs text-slate-400">BPM</span>
+                        </p>
+                      </div>
+                    )}
                   </div>
-                </div>
+                ) : (
+                  <div className="flex items-center gap-6">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400">{isAr ? 'المجموعات' : 'SETS'}</span>
+                      <p className="text-xl sm:text-2xl font-black font-mono tabular-nums text-emerald-400">
+                        {sessionStats.completedSets} <span className="text-xs text-slate-400">/ {sessionStats.totalSets}</span>
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400">{isAr ? 'التكرارات' : 'TOTAL REPS'}</span>
+                      <p className="text-xl sm:text-2xl font-black font-mono tabular-nums text-white">
+                        {sessionStats.totalReps}
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400">
+                        {sessionStats.totalCardioMinutes > 0
+                          ? (isAr ? 'كارديو' : 'CARDIO')
+                          : (isAr ? 'الحجم' : 'VOLUME')}
+                      </span>
+                      <p className="text-xl sm:text-2xl font-black font-mono tabular-nums text-emerald-300">
+                        {sessionStats.totalCardioMinutes > 0 ? (
+                          <>
+                            {sessionStats.totalCardioMinutes} <span className="text-xs text-slate-400">m</span>
+                          </>
+                        ) : (
+                          <>
+                            {sessionStats.calculatedVolume} <span className="text-xs text-slate-400">kg</span>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto shrink-0">
                   <button
@@ -2129,11 +3386,13 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
               profile={bodyProfile}
               onLaunchWorkoutWithTargets={(template, targetExercises, date) => {
                 setRoutineName(template.name);
-                setRoutineCategory(template.category as any);
+                setRoutineCategory(template.category as WorkoutRoutineCategory);
                 setExercises(targetExercises);
                 setWorkoutDate(date);
                 setIsTimerRunning(false);
                 setElapsedSeconds(0);
+                const cardioSum = targetExercises.reduce((sum, ex) => sum + (ex.cardioData?.durationMinutes || 0), 0);
+                setManualDurationMinutes(template.category === 'Cardio & Conditioning' && cardioSum > 0 ? Math.min(180, cardioSum) : 45);
                 setIsSessionActive(true);
                 setActiveTab('logger');
                 setCollapsedExercises({});
@@ -2143,8 +3402,8 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
             />
           ) : (
             <div className="space-y-5 animate-fadeIn">
-              {/* Routine A vs Routine B Comparative Analysis Card */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Routine A vs Routine B vs Routine C Comparative Analysis Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Routine A Card */}
                 <div 
                   onClick={() => setSelectedRoutineFilter(selectedRoutineFilter === 'Routine A' ? 'All' : 'Routine A')}
@@ -2168,7 +3427,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                         </p>
                       </div>
                     </div>
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 ${
                       selectedRoutineFilter === 'Routine A'
                         ? 'bg-emerald-500 text-white'
                         : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-400'
@@ -2180,13 +3439,13 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                   <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-slate-100 dark:border-neutral-800/80">
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-400 block">{isAr ? 'الحصص المنجزة' : 'Sessions Done'}</span>
-                      <p className="text-base font-black font-mono text-slate-900 dark:text-white mt-0.5">
+                      <p className="text-base font-black font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
                         {prAnalytics.routineAStats.count} {isAr ? 'حصة' : 'sessions'}
                       </p>
                     </div>
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-400 block">{isAr ? 'إجمالي الحجم' : 'Total Volume'}</span>
-                      <p className="text-base font-black font-mono text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      <p className="text-base font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">
                         {prAnalytics.routineAStats.volume.toLocaleString()} kg
                       </p>
                     </div>
@@ -2216,7 +3475,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                         </p>
                       </div>
                     </div>
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 ${
                       selectedRoutineFilter === 'Routine B'
                         ? 'bg-sky-500 text-white'
                         : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-400'
@@ -2228,14 +3487,71 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                   <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-slate-100 dark:border-neutral-800/80">
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-400 block">{isAr ? 'الحصص المنجزة' : 'Sessions Done'}</span>
-                      <p className="text-base font-black font-mono text-slate-900 dark:text-white mt-0.5">
+                      <p className="text-base font-black font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
                         {prAnalytics.routineBStats.count} {isAr ? 'حصة' : 'sessions'}
                       </p>
                     </div>
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-400 block">{isAr ? 'إجمالي الحجم' : 'Total Volume'}</span>
-                      <p className="text-base font-black font-mono text-sky-600 dark:text-sky-400 mt-0.5">
+                      <p className="text-base font-black font-mono tabular-nums text-sky-600 dark:text-sky-400 mt-0.5">
                         {prAnalytics.routineBStats.volume.toLocaleString()} kg
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Routine C Card (Cardio & Conditioning) */}
+                <div 
+                  onClick={() => setSelectedRoutineFilter(selectedRoutineFilter === 'Routine C' ? 'All' : 'Routine C')}
+                  className={`p-4 sm:p-5 rounded-3xl border transition-all cursor-pointer ${
+                    selectedRoutineFilter === 'Routine C'
+                      ? 'bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/10 ring-2 ring-amber-500/20'
+                      : 'bg-white dark:bg-[#18191D] border-slate-200/80 dark:border-neutral-800 hover:border-amber-500/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-xs">
+                        C
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                          Routine C (Cardio)
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-neutral-400">
+                          Treadmill • Bike • Rowing • Jump Rope • Sprints • Burpees
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 ${
+                      selectedRoutineFilter === 'Routine C'
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-400'
+                    }`}>
+                      {selectedRoutineFilter === 'Routine C' ? (isAr ? 'مُحدد' : 'Filtered') : (isAr ? 'تصفية' : 'Filter')}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-slate-100 dark:border-neutral-800/80">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">{isAr ? 'حصص الكارديو' : 'Cardio Sessions'}</span>
+                      <p className="text-base font-black font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
+                        {prAnalytics.routineCStats.count} {isAr ? 'حصة' : 'sessions'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                        {prAnalytics.routineCStats.avgHeartRateBpm
+                          ? (isAr ? 'المدة • نبض Cospo' : 'Mins · Cospo BPM')
+                          : (isAr ? 'إجمالي المدة' : 'Logged Duration')}
+                      </span>
+                      <p className="text-base font-black font-mono tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
+                        {prAnalytics.routineCStats.totalMinutes.toLocaleString()} {isAr ? 'د' : 'm'}
+                        {prAnalytics.routineCStats.avgHeartRateBpm ? (
+                          <span className="text-rose-500 dark:text-rose-400 text-xs font-bold ml-1.5">
+                            · ♥ {prAnalytics.routineCStats.avgHeartRateBpm}
+                          </span>
+                        ) : null}
                       </p>
                     </div>
                   </div>
@@ -2313,6 +3629,64 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                 </div>
               </div>
 
+              {/* Feature 1: Biomechanical Execution Order Telemetry & Warning Tooltip */}
+              {prAnalytics.executionOrderAlerts.length > 0 && (
+                <div className="bg-amber-50/90 dark:bg-amber-950/25 p-4 sm:p-5 rounded-3xl border border-amber-300 dark:border-amber-700/60 shadow-xs space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                        <ShieldAlert size={18} />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-xs sm:text-sm font-black text-amber-900 dark:text-amber-200">
+                            {isAr ? 'تنبيه ترتيب التمارين في الحصة (Execution Order)' : 'Biomechanical Execution Order Telemetry'}
+                          </h4>
+                          <div className="relative group inline-block">
+                            <button
+                              type="button"
+                              className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-800 dark:text-amber-300 text-[10px] font-bold border border-amber-500/30 cursor-help flex items-center gap-1"
+                              title="⚠️ Efficiency Alert: You fatigued small muscles before heavy compounds. This reduces strength output."
+                            >
+                              <Info size={12} />
+                              <span>{isAr ? 'تفاصيل التحذير' : 'Warning Tooltip'}</span>
+                            </button>
+                            <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 transition-opacity absolute left-0 rtl:left-auto rtl:right-0 top-full mt-1.5 w-72 sm:w-80 p-3 rounded-2xl bg-slate-900 text-amber-100 text-xs font-medium shadow-xl border border-amber-500/40 z-30 pointer-events-none">
+                              {isAr
+                                ? prAnalytics.executionOrderAlerts[0].analysis.alertMessageAr
+                                : '⚠️ Efficiency Alert: You fatigued small muscles before heavy compounds. This reduces strength output.'}
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                          ⚠️ Efficiency Alert: You fatigued small muscles before heavy compounds. This reduces strength output.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-mono tabular-nums font-black text-amber-700 dark:text-amber-300 shrink-0">
+                      {prAnalytics.executionOrderAlerts.length} {isAr ? 'حصص مرصودة' : 'flagged sessions'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {prAnalytics.executionOrderAlerts.slice(0, 4).map((item, idx) => (
+                      <div
+                        key={item.id || `${item.date}-${idx}`}
+                        className="p-3 rounded-2xl bg-white/80 dark:bg-[#18191D] border border-amber-200 dark:border-amber-800/40 text-xs space-y-1"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-black text-slate-900 dark:text-white truncate">{item.routineName}</span>
+                          <span className="font-mono tabular-nums text-[11px] text-slate-500">{item.date}</span>
+                        </div>
+                        <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                          {isAr ? item.analysis.detailsAr : item.analysis.detailsEn}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Progressive Overload & Trajectory Chart Card */}
               <div className="bg-white dark:bg-[#18191D] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-neutral-800 shadow-xs space-y-4">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-neutral-800/80">
@@ -2334,7 +3708,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                   <div className="flex flex-wrap items-center gap-2">
                     {/* Routine Selector Dropdown */}
                     <div className="flex items-center gap-1 bg-slate-50 dark:bg-neutral-900 p-1 rounded-xl border border-slate-200 dark:border-neutral-700 text-xs font-bold">
-                      {(['All', 'Routine A', 'Routine B'] as const).map((r) => (
+                      {(['All', 'Routine A', 'Routine B', 'Routine C'] as const).map((r) => (
                         <button
                           key={r}
                           onClick={() => setSelectedRoutineFilter(r)}
@@ -2429,6 +3803,71 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                       <Activity size={32} className="opacity-40 animate-pulse" />
                       <p className="text-xs">{isAr ? 'لا توجد بيانات كافية مطابقة لهذا الفلتر' : 'No workout data logged matching this filter'}</p>
                     </div>
+                  ) : isCardioChartMode ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorAmberCardio" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#F59E0B" stopOpacity={0.4} />
+                            <stop offset="95%" stopColor="#F59E0B" stopOpacity={0.0} />
+                          </linearGradient>
+                          <linearGradient id="colorRoseBpm" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.28} />
+                            <stop offset="95%" stopColor="#F43F5E" stopOpacity={0.0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#262626' : '#f1f5f9'} />
+                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                        <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
+                        <Tooltip
+                          cursor={false}
+                          contentStyle={{
+                            backgroundColor: isDark ? '#18191D' : '#ffffff',
+                            borderColor: isDark ? '#333333' : '#e2e8f0',
+                            borderRadius: '16px',
+                            fontSize: '12px',
+                            boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                          }}
+                          formatter={(val: any, name: any) =>
+                            name === 'cardioMinutes'
+                              ? [`${val} mins`, isAr ? 'مدة الكارديو' : 'Cardio Duration']
+                              : name === 'heartRateBpm'
+                              ? [`${val} BPM`, isAr ? 'نبضات القلب (Cospo)' : 'Cospo Heart Pumps']
+                              : [`${val}`, isAr ? 'متوسط السرعة' : 'Avg Speed']
+                          }
+                        />
+                        <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                        <Area
+                          type="monotone"
+                          dataKey="cardioMinutes"
+                          name={isAr ? 'مدة الكارديو (د)' : 'Cardio Duration (mins)'}
+                          stroke="#F59E0B"
+                          strokeWidth={3}
+                          fillOpacity={1}
+                          fill="url(#colorAmberCardio)"
+                          connectNulls
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="heartRateBpm"
+                          name={isAr ? 'نبضات القلب (Cospo BPM)' : 'Cospo Heart Pumps (BPM)'}
+                          stroke="#F43F5E"
+                          strokeWidth={2.5}
+                          fillOpacity={1}
+                          fill="url(#colorRoseBpm)"
+                          connectNulls
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="cardioSpeed"
+                          name={isAr ? 'متوسط السرعة' : 'Avg Speed'}
+                          stroke="#0EA5E9"
+                          strokeWidth={2}
+                          fillOpacity={0}
+                          connectNulls
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       {analyticsMetric === 'load_1rm' ? (
@@ -2582,6 +4021,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                   day: 'numeric',
                   year: 'numeric'
                 });
+                const sessionOrderAnalysis = analyzeSessionExecutionOrder(session.exercises || []);
 
                 return (
                   <div
@@ -2590,7 +4030,7 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-neutral-800/80">
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <h4 className="text-base font-black text-slate-900 dark:text-white">
                             {session.routineName}
                           </h4>
@@ -2599,6 +4039,28 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                               {session.routineCategory}
                             </span>
                           )}
+                          {(sessionOrderAnalysis.hasAlert || session.hasExecutionOrderAlert) && (
+                            <div className="relative group inline-block">
+                              <button
+                                type="button"
+                                className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-black flex items-center gap-1 cursor-help"
+                                title="⚠️ Efficiency Alert: You fatigued small muscles before heavy compounds. This reduces strength output."
+                              >
+                                <ShieldAlert size={11} />
+                                <span>{isAr ? 'تنبيه الترتيب' : 'Efficiency Alert'}</span>
+                              </button>
+                              <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 transition-opacity absolute left-0 rtl:left-auto rtl:right-0 top-full mt-1.5 w-72 p-3 rounded-2xl bg-slate-900 text-amber-100 text-xs font-medium shadow-xl border border-amber-500/40 z-30 pointer-events-none space-y-1">
+                                <p className="font-bold">
+                                  ⚠️ Efficiency Alert: You fatigued small muscles before heavy compounds. This reduces strength output.
+                                </p>
+                                <p className="text-[11px] text-amber-200/80">
+                                  {sessionOrderAnalysis.hasAlert
+                                    ? (isAr ? sessionOrderAnalysis.detailsAr : sessionOrderAnalysis.detailsEn)
+                                    : session.executionOrderAlertDetails}
+                                </p>
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <span className="text-xs font-mono text-slate-400">{formattedDate}</span>
                       </div>
@@ -2606,8 +4068,16 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
                       <div className="flex items-center gap-3">
                         <div className="text-right">
                           <span className="text-[10px] uppercase font-bold text-slate-400">{isAr ? 'الإنجاز' : 'OUTPUT'}</span>
-                          <p className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                            {session.totalReps || 0} reps • {session.durationMinutes || 45}m
+                          <p className="text-xs font-mono tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
+                            {session.routineCategory === 'Cardio & Conditioning' || session.totalCardioMinutes || session.avgHeartRateBpm
+                              ? ([
+                                  session.totalCardioMinutes && session.totalCardioMinutes > 0 ? `${session.totalCardioMinutes}m cardio` : null,
+                                  session.avgHeartRateBpm && session.avgHeartRateBpm > 0 ? `♥ ${session.avgHeartRateBpm} BPM` : null,
+                                  session.durationMinutes && session.durationMinutes > 0 && session.durationMinutes !== session.totalCardioMinutes ? `${session.durationMinutes}m` : null
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ') || `${session.exercises?.length || 0} ${isAr ? 'تمارين' : 'completed'}`)
+                              : `${session.totalReps || 0} reps${session.durationMinutes ? ` • ${session.durationMinutes}m` : ''}`}
                           </p>
                         </div>
 
@@ -2637,32 +4107,78 @@ export const TrainingEngine: React.FC<TrainingEngineProps> = ({
 
                     {/* Breakdown of exercises in past workout */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                      {session.exercises?.map((ex, exI) => (
-                        <div
-                          key={ex.id || exI}
-                          className="p-3 rounded-2xl bg-slate-50 dark:bg-neutral-900/60 border border-slate-200/60 dark:border-neutral-800/80 space-y-1.5"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">
-                              {ex.name}
-                            </span>
-                            <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                              {ex.sets?.length || 0} sets
-                            </span>
-                          </div>
-                          
-                          <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono text-slate-500 dark:text-slate-400">
-                            {ex.sets?.map((s, sI) => (
-                              <span
-                                key={s.id || sI}
-                                className="px-1.5 py-0.5 rounded bg-white dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 font-bold"
-                              >
-                                {s.reps}r {s.weight && s.weight !== '0' ? `(${s.weight}kg)` : ''}
+                      {session.exercises?.map((ex, exI) => {
+                        const isCardioEx = ex.exerciseType === 'cardio' || !!ex.cardioData || isCardioExercise(ex.name);
+                        const cd = ex.cardioData;
+                        const unitLabel = cd?.speedUnit === 'km/h' ? 'km/h' : cd?.speedUnit === 'rpm' ? 'RPM' : cd?.speedUnit === 'spm' ? 'SPM' : 'Lv';
+                        const hasDur = !!(cd?.durationMinutes && cd.durationMinutes > 0);
+                        const hasSpd = !!(cd?.speedRpm && cd.speedRpm > 0);
+                        const hasInc = !!(cd?.inclineResistance && cd.inclineResistance > 0);
+                        const hasBpm = !!(cd?.heartRateBpm && cd.heartRateBpm > 0);
+
+                        return (
+                          <div
+                            key={ex.id || exI}
+                            className="p-3 rounded-2xl bg-slate-50 dark:bg-neutral-900/60 border border-slate-200/60 dark:border-neutral-800/80 space-y-1.5"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">
+                                {ex.name}
                               </span>
-                            ))}
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {ex.rpeFeedback && (
+                                  <span className="text-[10px] font-bold">
+                                    {ex.rpeFeedback === 'easy' ? '🟢 Easy' : ex.rpeFeedback === 'failure' ? '🔴 Fail' : '🟡 Perf'}
+                                  </span>
+                                )}
+                                <span className={`text-[10px] font-mono tabular-nums font-bold ${
+                                  isCardioEx ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'
+                                }`}>
+                                  {isCardioEx && cd
+                                    ? (hasDur ? `${cd.durationMinutes} mins` : (isAr ? 'كارديو' : 'Cardio'))
+                                    : `${ex.sets?.length || 0} sets`}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {isCardioEx && cd ? (
+                              <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                                {hasSpd && (
+                                  <span className="px-1.5 py-0.5 rounded bg-white dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 font-bold">
+                                    {cd.speedRpm} {unitLabel} avg
+                                  </span>
+                                )}
+                                {hasBpm && (
+                                  <span className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-bold">
+                                    ♥ {cd.heartRateBpm} BPM (Cospo)
+                                  </span>
+                                )}
+                                {hasInc && (
+                                  <span className="px-1.5 py-0.5 rounded bg-white dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 font-bold">
+                                    Inc/Res {cd.inclineResistance}
+                                  </span>
+                                )}
+                                {cd.completed && (
+                                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold">
+                                    ✓ Done
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                {ex.sets?.map((s, sI) => (
+                                  <span
+                                    key={s.id || sI}
+                                    className="px-1.5 py-0.5 rounded bg-white dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 font-bold"
+                                  >
+                                    {s.reps}r {s.weight && s.weight !== '0' ? `(${s.weight}kg)` : ''}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     {session.notes && (
