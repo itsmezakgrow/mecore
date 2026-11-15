@@ -35,8 +35,9 @@ import {
   ChevronRight,
   Sparkles,
 } from 'lucide-react';
-import { HabitItem, HabitRoutineTime, GoalItem } from '../types';
+import { HabitItem, HabitRoutineTime, GoalItem, DayProfileConfig } from '../types';
 import { calculateHabitStats, isHabitDateFrozen } from '../utils/habitAnalytics';
+import { getLocalIsoDate, getHabitPolicyMeta } from '../utils/dayModeHelpers';
 
 interface HabitAnalyticsDashboardProps {
   habits: HabitItem[];
@@ -44,6 +45,7 @@ interface HabitAnalyticsDashboardProps {
   goals?: GoalItem[];
   allLoggedExcuses: { habitTitle: string; habitIcon: string; dateKey: string; excuse: string }[];
   todayIso: string;
+  dayProfileConfig?: DayProfileConfig | null;
   isAr: boolean;
   onOpenDetail: (habit: HabitItem) => void;
   onOpenBulkExcuse: () => void;
@@ -64,6 +66,8 @@ interface DailyTrendPoint {
   adherenceRate: number; // 0-100%
   movingAverage: number; // 7-day rolling avg
   excusedCount: number;
+  bonusWinsCount: number;
+  shieldedCount: number;
 }
 
 export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = ({
@@ -72,6 +76,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
   goals = [],
   allLoggedExcuses,
   todayIso,
+  dayProfileConfig = null,
   isAr,
   onOpenDetail,
   onOpenBulkExcuse,
@@ -116,7 +121,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
     for (let i = daysCount - 1; i >= 0; i--) {
       const d = new Date(baseDate);
       d.setDate(baseDate.getDate() - i);
-      const iso = d.toISOString().split('T')[0];
+      const iso = getLocalIsoDate(d);
       dates.push({ iso, date: d });
     }
     return dates;
@@ -143,26 +148,34 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
     const weekdaysEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const weekdaysAr = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
-    dateRangeList.forEach((item, index) => {
+    dateRangeList.forEach((item) => {
       const { iso, date } = item;
       let completedCount = 0;
       let excusedCount = 0;
+      let bonusWinsCount = 0;
+      let shieldedCount = 0;
       let activeForHabitCount = 0;
 
       habitPool.forEach((h) => {
-        // Check if habit was created or valid for this date
-        const isFrozen = isHabitDateFrozen(h, iso, date.getTime());
-        if (h.history && h.history[iso]) {
-          completedCount++;
-        }
+        const isCompleted = Boolean(h.history && h.history[iso]);
+        const isFrozen = isHabitDateFrozen(h, iso, date.getTime(), dayProfileConfig);
         if (isFrozen) {
-          excusedCount++;
+          shieldedCount++;
+          if (isCompleted) bonusWinsCount++;
+          else excusedCount++;
         }
-        activeForHabitCount++;
+        if (!isFrozen || isCompleted) {
+          activeForHabitCount++;
+          if (isCompleted) completedCount++;
+        }
       });
 
-      const totalActive = Math.max(1, activeForHabitCount);
-      const adherenceRate = Math.min(100, Math.round((completedCount / totalActive) * 100));
+      const adherenceRate =
+        activeForHabitCount > 0
+          ? Math.min(100, Math.round((completedCount / activeForHabitCount) * 100))
+          : shieldedCount > 0
+          ? 100
+          : 0;
 
       const dayNum = date.getDay();
       const weekday = isAr ? weekdaysAr[dayNum] : weekdaysEn[dayNum];
@@ -177,10 +190,12 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
         dayLabel,
         weekday,
         completedCount,
-        totalActive,
+        totalActive: activeForHabitCount,
         adherenceRate,
         movingAverage: 0,
         excusedCount,
+        bonusWinsCount,
+        shieldedCount,
       });
     });
 
@@ -195,7 +210,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
     }
 
     return points;
-  }, [filteredHabits, activeHabits, dateRangeList, isAr]);
+  }, [filteredHabits, activeHabits, dateRangeList, isAr, dayProfileConfig]);
 
   // Aggregated Summary Metrics across the selected timeframe
   const summaryMetrics = useMemo(() => {
@@ -203,15 +218,23 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
     let totalChecks = 0;
     let totalOpportunities = 0;
     let totalExcuses = 0;
+    let totalBonusWins = 0;
+    let totalShieldedDays = 0;
 
     trendData.forEach((day) => {
       totalChecks += day.completedCount;
       totalOpportunities += day.totalActive;
       totalExcuses += day.excusedCount;
+      totalBonusWins += day.bonusWinsCount;
+      totalShieldedDays += day.shieldedCount;
     });
 
     const overallAdherence =
-      totalOpportunities > 0 ? Math.round((totalChecks / totalOpportunities) * 100) : 0;
+      totalOpportunities > 0
+        ? Math.min(100, Math.round((totalChecks / totalOpportunities) * 100))
+        : totalShieldedDays > 0
+        ? 100
+        : 0;
 
     // Previous window comparison
     const halfLen = Math.floor(trendData.length / 2);
@@ -229,7 +252,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
     const momentumDelta = Math.round(secondHalfAvg - firstHalfAvg);
 
     // Streaks metrics
-    const streaks = habitPool.map((h) => calculateHabitStats(h));
+    const streaks = habitPool.map((h) => calculateHabitStats(h, dayProfileConfig));
     const bestStreak = streaks.reduce((max, s) => Math.max(max, s.bestStreak), 0);
     const currentStreaks = streaks.map((s) => s.currentStreak);
     const avgStreak =
@@ -258,6 +281,8 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
       totalChecks,
       totalOpportunities,
       totalExcuses,
+      totalBonusWins,
+      totalShieldedDays,
       momentumDelta,
       bestStreak,
       avgStreak,
@@ -266,7 +291,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
       statusColor,
       totalActiveHabits: habitPool.length,
     };
-  }, [filteredHabits, activeHabits, trendData, isAr]);
+  }, [filteredHabits, activeHabits, trendData, isAr, dayProfileConfig]);
 
   // Day of Week Analysis (Monday to Sunday)
   const weekdayAnalysis = useMemo(() => {
@@ -322,20 +347,23 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
   const categoryBreakdown = useMemo(() => {
     const catsMap: Record<
       string,
-      { count: number; completedInPeriod: number; opportunitiesInPeriod: number }
+      { count: number; completedInPeriod: number; opportunitiesInPeriod: number; shieldedInPeriod: number }
     > = {};
 
     activeHabits.forEach((h) => {
       const cat = h.category || 'General';
       if (!catsMap[cat]) {
-        catsMap[cat] = { count: 0, completedInPeriod: 0, opportunitiesInPeriod: 0 };
+        catsMap[cat] = { count: 0, completedInPeriod: 0, opportunitiesInPeriod: 0, shieldedInPeriod: 0 };
       }
       catsMap[cat].count++;
 
       dateRangeList.forEach((d) => {
-        catsMap[cat].opportunitiesInPeriod++;
-        if (h.history && h.history[d.iso]) {
-          catsMap[cat].completedInPeriod++;
+        const isDone = Boolean(h.history && h.history[d.iso]);
+        const isFrozen = isHabitDateFrozen(h, d.iso, d.date.getTime(), dayProfileConfig);
+        if (isFrozen) catsMap[cat].shieldedInPeriod++;
+        if (!isFrozen || isDone) {
+          catsMap[cat].opportunitiesInPeriod++;
+          if (isDone) catsMap[cat].completedInPeriod++;
         }
       });
     });
@@ -344,7 +372,9 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
       const data = catsMap[catName];
       const rate =
         data.opportunitiesInPeriod > 0
-          ? Math.round((data.completedInPeriod / data.opportunitiesInPeriod) * 100)
+          ? Math.min(100, Math.round((data.completedInPeriod / data.opportunitiesInPeriod) * 100))
+          : data.shieldedInPeriod > 0
+          ? 100
           : 0;
       return {
         category: catName,
@@ -355,7 +385,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
         total: data.opportunitiesInPeriod,
       };
     }).sort((a, b) => b.rate - a.rate);
-  }, [activeHabits, dateRangeList, getCategoryLabel]);
+  }, [activeHabits, dateRangeList, getCategoryLabel, dayProfileConfig]);
 
   // Routine Time Breakdown (Morning, Afternoon, Evening, Anytime)
   const routineBreakdown = useMemo(() => {
@@ -372,15 +402,21 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
       );
       let completed = 0;
       let total = 0;
+      let shielded = 0;
 
       matchingHabits.forEach((h) => {
         dateRangeList.forEach((d) => {
-          total++;
-          if (h.history && h.history[d.iso]) completed++;
+          const isDone = Boolean(h.history && h.history[d.iso]);
+          const isFrozen = isHabitDateFrozen(h, d.iso, d.date.getTime(), dayProfileConfig);
+          if (isFrozen) shielded++;
+          if (!isFrozen || isDone) {
+            total++;
+            if (isDone) completed++;
+          }
         });
       });
 
-      const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+      const rate = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : (shielded > 0 ? 100 : 0);
       return {
         ...r,
         habitCount: matchingHabits.length,
@@ -389,34 +425,52 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
         total,
       };
     });
-  }, [activeHabits, dateRangeList, isAr]);
+  }, [activeHabits, dateRangeList, isAr, dayProfileConfig]);
 
   // Individual Habits Performance Table Data
   const habitLeaderboard = useMemo(() => {
     const habitPool = filteredHabits.length > 0 ? filteredHabits : activeHabits;
     return habitPool.map((h) => {
-      const stats = calculateHabitStats(h);
+      const stats = calculateHabitStats(h, dayProfileConfig);
       let completedInPeriod = 0;
-      const recent7DaysStatus: { iso: string; completed: boolean; frozen: boolean }[] = [];
+      let activeOpportunities = 0;
+      let shieldedInPeriod = 0;
+      let bonusWinsInPeriod = 0;
+      const recent7DaysStatus: { iso: string; completed: boolean; frozen: boolean; bonus: boolean }[] = [];
 
       // Last 7 days status for sparkline dots
       const last7Days = dateRangeList.slice(-7);
       last7Days.forEach((d) => {
         const isDone = Boolean(h.history && h.history[d.iso]);
-        const isFrozen = isHabitDateFrozen(h, d.iso, d.date.getTime());
+        const isFrozen = isHabitDateFrozen(h, d.iso, d.date.getTime(), dayProfileConfig);
         recent7DaysStatus.push({
           iso: d.iso,
           completed: isDone,
           frozen: isFrozen,
+          bonus: isDone && isFrozen,
         });
       });
 
       dateRangeList.forEach((d) => {
-        if (h.history && h.history[d.iso]) completedInPeriod++;
+        const isDone = Boolean(h.history && h.history[d.iso]);
+        const isFrozen = isHabitDateFrozen(h, d.iso, d.date.getTime(), dayProfileConfig);
+        if (isFrozen) {
+          shieldedInPeriod++;
+          if (isDone) bonusWinsInPeriod++;
+        }
+        if (!isFrozen || isDone) {
+          activeOpportunities++;
+          if (isDone) completedInPeriod++;
+        }
       });
 
-      const totalOpportunities = Math.max(1, dateRangeList.length);
-      const periodRate = Math.round((completedInPeriod / totalOpportunities) * 100);
+      const totalOpportunities = activeOpportunities;
+      const periodRate =
+        totalOpportunities > 0
+          ? Math.min(100, Math.round((completedInPeriod / totalOpportunities) * 100))
+          : shieldedInPeriod > 0
+          ? 100
+          : 0;
 
       // Performance badge
       let badgeLabel = isAr ? 'قيد البناء' : 'Building';
@@ -439,12 +493,14 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
         periodRate,
         completedInPeriod,
         totalOpportunities,
+        bonusWinsInPeriod,
+        shieldedInPeriod,
         recent7DaysStatus,
         badgeLabel,
         badgeClass,
       };
     }).sort((a, b) => b.periodRate - a.periodRate);
-  }, [filteredHabits, activeHabits, dateRangeList, isAr]);
+  }, [filteredHabits, activeHabits, dateRangeList, isAr, dayProfileConfig]);
 
   return (
     <div className={`space-y-6 animate-fadeIn ${isAr ? 'text-right' : 'text-left'}`}>
@@ -660,7 +716,10 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
             />
           </div>
           <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-2 font-mono">
-            {summaryMetrics.totalChecks} / {summaryMetrics.totalOpportunities} {isAr ? 'إنجاز محقق' : 'logged check-ins'}
+            {summaryMetrics.totalChecks} / {summaryMetrics.totalOpportunities} {isAr ? 'إنجاز نشط' : 'active check-ins'}
+            {summaryMetrics.totalBonusWins > 0 && (
+              <span className="text-amber-600 dark:text-amber-400 font-bold"> (+{summaryMetrics.totalBonusWins} ✨)</span>
+            )}
           </p>
         </div>
 
@@ -844,11 +903,19 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
                           <span className="font-bold text-emerald-400 text-sm">{data.adherenceRate}%</span>
                         </div>
                         <div className="flex items-center justify-between gap-3 font-mono">
-                          <span className="text-neutral-400">{isAr ? 'العادات المنجزة:' : 'Completed:'}</span>
+                          <span className="text-neutral-400">{isAr ? 'العادات المطلوبة:' : 'Completed:'}</span>
                           <span className="font-bold text-white">
-                            {data.completedCount} / {data.totalActive}
+                            {data.totalActive === 0 && data.shieldedCount > 0
+                              ? (isAr ? 'يوم محمي 🛡️' : 'Protected 🛡️')
+                              : `${data.completedCount} / ${data.totalActive}`}
                           </span>
                         </div>
+                        {data.bonusWinsCount > 0 && (
+                          <div className="flex items-center justify-between gap-3 font-mono text-[11px] text-amber-300">
+                            <span>{isAr ? 'مكاسب إضافية:' : 'Bonus Wins:'}</span>
+                            <span className="font-bold">+{data.bonusWinsCount} ✨</span>
+                          </div>
+                        )}
                         {showMovingAverage && (
                           <div className="flex items-center justify-between gap-3 font-mono pt-1 border-t border-neutral-700/60 text-[11px]">
                             <span className="text-purple-400">{isAr ? 'المتوسط المتحرك:' : 'Rolling 7d Avg:'}</span>
@@ -858,7 +925,7 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
                         {data.excusedCount > 0 && (
                           <div className="text-[10px] text-blue-300 flex items-center gap-1 font-semibold pt-0.5">
                             <Shield size={10} />
-                            <span>{data.excusedCount} {isAr ? 'عذر مسجل' : 'excused context'}</span>
+                            <span>{data.excusedCount} {isAr ? 'محمية / معفية' : 'shielded / excused'}</span>
                           </div>
                         )}
                       </div>
@@ -1120,8 +1187,9 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
               </thead>
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
                 {habitLeaderboard.map((item, idx) => {
-                  const { habit, stats, periodRate, recent7DaysStatus, badgeLabel, badgeClass } = item;
+                  const { habit, stats, periodRate, bonusWinsInPeriod, recent7DaysStatus, badgeLabel, badgeClass } = item;
                   const colorTheme = getColorClasses(habit.color || 'amber');
+                  const policyMeta = getHabitPolicyMeta(habit, isAr);
 
                   return (
                     <tr
@@ -1138,10 +1206,18 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
                             <span className="font-bold text-neutral-900 dark:text-white block hover:text-indigo-600 cursor-pointer" onClick={() => onOpenDetail(habit)}>
                               {habit.title}
                             </span>
-                            <div className="flex items-center gap-1.5 mt-0.5">
+                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                               <span className={`px-1.5 py-0.2 rounded text-[10px] font-semibold border ${colorTheme.badge}`}>
                                 {getCategoryLabel(habit.category)}
                               </span>
+                              <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${policyMeta.badgeClass}`} title={policyMeta.tooltip}>
+                                {policyMeta.icon} {policyMeta.label}
+                              </span>
+                              {bonusWinsInPeriod > 0 && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                  ✨ +{bonusWinsInPeriod}
+                                </span>
+                              )}
                               {habit.routineTime && (
                                 <span className="text-[10px] text-neutral-500">
                                   {habit.routineTime === 'morning' ? '☀️' : habit.routineTime === 'afternoon' ? '🌤️' : habit.routineTime === 'evening' ? '🌙' : '⚡'}
@@ -1181,9 +1257,11 @@ export const HabitAnalyticsDashboard: React.FC<HabitAnalyticsDashboardProps> = (
                           {recent7DaysStatus.map((day, dIdx) => (
                             <span
                               key={`dot-${dIdx}`}
-                              title={`${day.iso}: ${day.completed ? 'Completed' : day.frozen ? 'Excused' : 'Missed'}`}
+                              title={`${day.iso}: ${day.bonus ? 'Bonus Win ✨' : day.completed ? 'Completed' : day.frozen ? 'Shielded / Excused' : 'Missed'}`}
                               className={`w-2.5 h-2.5 rounded-full transition-all ${
-                                day.completed
+                                day.bonus
+                                  ? 'bg-amber-400 ring-2 ring-amber-400/30'
+                                  : day.completed
                                   ? 'bg-emerald-500 ring-2 ring-emerald-500/20'
                                   : day.frozen
                                   ? 'bg-blue-400 ring-2 ring-blue-400/20'

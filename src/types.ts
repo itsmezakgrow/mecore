@@ -241,6 +241,7 @@ export interface TaskItem {
   unit?: string; // e.g. 'pages', 'pomodoros', 'chapters', 'km', 'reps'
   rolloverCount?: number; // how many times rolled over
   skipReasons?: TaskSkipReason[]; // reasons when postponed/skipped
+  doAnywayOnOffDay?: boolean; // Stay active even on Rest / Life & Errands / Travel days
   archived?: boolean;
   archivedAt?: number;
 }
@@ -306,6 +307,8 @@ export interface HabitItem {
   category: string;
   icon?: string; // Emoji or icon identifier e.g. '💧', '📚', '🏋️', '🧘'
   routineTime?: HabitRoutineTime; // Morning, Afternoon, Evening, Anytime
+  dayModePolicy?: HabitDayModePolicy; // 'execution_only', 'always_active', 'portable', or 'custom'
+  activeOnModes?: DayModeType[]; // When dayModePolicy === 'custom', off-day modes where this habit stays required (e.g. ['rest', 'travel'])
   targetPerWeek: number; // e.g., 7
   history: Record<string, boolean>; // date key: 'YYYY-MM-DD' -> boolean
   freezes?: Record<string, boolean>; // date key: 'YYYY-MM-DD' -> boolean for streak freeze/pass days
@@ -745,3 +748,35 @@ export interface Affirmation {
   createdAt: number;
 }
 
+export type DayModeType = 'execution' | 'life_errands' | 'rest' | 'travel';
+
+export type HabitDayModePolicy = 'execution_only' | 'always_active' | 'portable' | 'custom';
+
+export interface LifeMaintenanceItem {
+  id: string;
+  title: string;
+  completed: boolean;
+  category?: 'cleaning' | 'market' | 'errands' | 'prep' | 'custom';
+}
+
+export interface ErrandsTemplateItem {
+  id: string;
+  title: string;
+  titleAr?: string;
+  category: 'cleaning' | 'market' | 'errands' | 'prep' | 'custom';
+}
+
+export interface DayProfileEntry {
+  mode: DayModeType;
+  label?: string;
+  errandsChecklist?: LifeMaintenanceItem[];
+  updatedAt: number;
+}
+
+export interface DayProfileConfig {
+  id?: string;
+  recurringWeekdayModes?: Record<string, DayModeType>; // '0' (Sun) .. '6' (Sat)
+  dateOverrides?: Record<string, DayProfileEntry>; // 'YYYY-MM-DD' -> entry
+  defaultErrandsTemplate?: ErrandsTemplateItem[];
+  updatedAt?: number;
+}

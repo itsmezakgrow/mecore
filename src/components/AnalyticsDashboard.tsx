@@ -70,11 +70,13 @@ import {
   LineChart,
   Line,
 } from 'recharts';
-import { TaskItem, HabitItem, ProjectItem, WeeklyPlanSlot, ChecklistGroup, GoalItem, ModuleType, FocusSession, ReviewEntry, DailyBlockItem, WorkoutSession, ModuleLifecycleEvent, DailySleepLog, SleepScheduleConfig } from '../types';
+import { TaskItem, HabitItem, ProjectItem, WeeklyPlanSlot, ChecklistGroup, GoalItem, ModuleType, FocusSession, ReviewEntry, DailyBlockItem, WorkoutSession, ModuleLifecycleEvent, DailySleepLog, SleepScheduleConfig, DayProfileConfig } from '../types';
 import { deleteFocusSessionOfflineFirst } from '../utils/pomodoroOfflineStorage';
 import { getDisabledModules, getModuleLifecycleHistory, ALL_CONTROLLABLE_MODULES } from '../utils/moduleLifecycle';
 import { analyzeSessionExecutionOrder, ExecutionOrderAnalysis } from '../utils/progressiveOverloadCoach';
 import { isCardioExercise } from '../utils/exerciseAssets';
+import { getErrandsProgressForDate, getLocalIsoDate, isHabitFrozenByDayMode, resolveDayModeForDate } from '../utils/dayModeHelpers';
+import { calculateHabitStats, isHabitDateFrozen } from '../utils/habitAnalytics';
 
 interface AnalyticsDashboardProps {
   tasks: TaskItem[];
@@ -95,6 +97,8 @@ interface AnalyticsDashboardProps {
   onOpenReviewModal?: (tab: 'weekly' | 'monthly' | 'archive') => void;
   onNavigateModule: (module: ModuleType) => void;
   initialTab?: 'overview' | 'habits' | 'tasks' | 'focus' | 'sleep' | 'blocks' | 'reviews' | 'goals';
+  dayProfileConfig?: DayProfileConfig | null;
+  lang?: 'en' | 'ar';
 }
 
 const CustomCorrelationTooltip = ({ active, payload, isAr }: any) => {
@@ -160,6 +164,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   appStartDate,
   onOpenReviewModal,
   onNavigateModule,
+  dayProfileConfig = null,
   lang = 'en',
   initialTab = 'overview',
 }) => {
@@ -381,12 +386,19 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
     let sleepTargetMetCount = 0;
     let reflectionRatingSum = 0;
     let reflectionCount = 0;
+    let executionDaysCount = 0;
+    let intentionalOffDaysCount = 0;
 
     const timelineData = datesToInspect.map((pt) => {
       const isYearScope = timeScope === 'year';
       const datePrefix = pt.dateIso;
+      const dayModeInfo = isYearScope ? { mode: 'execution' as const } : resolveDayModeForDate(datePrefix, dayProfileConfig);
+      if (!isYearScope) {
+        if (dayModeInfo.mode === 'execution') executionDaysCount++;
+        else intentionalOffDaysCount++;
+      }
 
-      // A. HABITS SCORE
+      // A. HABITS SCORE (Respects Day-Mode shielding so Rest/Errands/Travel days never penalize)
       let habitsPct = 0;
       let habitsRaw = '0/0';
       if (isYearScope) {
@@ -405,9 +417,27 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         habitsPct = monthPossible > 0 ? Math.round((monthChecked / monthPossible) * 100) : (activeHabits.length > 0 ? 50 : 0);
         habitsRaw = `${habitsPct}%`;
       } else {
+        const requiredHabits = activeHabits.filter(h => !isHabitFrozenByDayMode(h, datePrefix, dayProfileConfig));
+        const reqDoneCount = requiredHabits.filter(h => Boolean(h.history?.[datePrefix] || h.completedDates?.includes(datePrefix))).length;
         const doneCount = activeHabits.filter(h => Boolean(h.history?.[datePrefix] || h.completedDates?.includes(datePrefix))).length;
-        habitsPct = activeHabits.length > 0 ? Math.round((doneCount / activeHabits.length) * 100) : 0;
-        habitsRaw = `${doneCount}/${activeHabits.length}`;
+        const bonusWins = activeHabits.filter(
+          h => isHabitFrozenByDayMode(h, datePrefix, dayProfileConfig) && Boolean(h.history?.[datePrefix] || h.completedDates?.includes(datePrefix))
+        ).length;
+        const effectiveDenom = requiredHabits.length + bonusWins;
+
+        if (effectiveDenom > 0) {
+          habitsPct = Math.min(100, Math.round(((reqDoneCount + bonusWins) / effectiveDenom) * 100));
+          habitsRaw =
+            dayModeInfo.mode !== 'execution'
+              ? `${reqDoneCount}/${requiredHabits.length}${bonusWins > 0 ? ` +${bonusWins}✨` : ''} 🛡️`
+              : `${doneCount}/${activeHabits.length}`;
+        } else if (activeHabits.length > 0 && dayModeInfo.mode !== 'execution') {
+          habitsPct = 100;
+          habitsRaw = doneCount > 0 ? `+${doneCount} ✨` : '🛡️';
+        } else {
+          habitsPct = 0;
+          habitsRaw = `0/${activeHabits.length}`;
+        }
         totalHabitsChecked += doneCount;
       }
 
@@ -427,8 +457,14 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
           }
           return datePrefix === todayIso;
         }).length;
-        tasksPct = Math.min(100, tasksOnDay * 25);
-        tasksRaw = `${tasksOnDay}`;
+        if (dayModeInfo.mode === 'life_errands') {
+          const errands = getErrandsProgressForDate(datePrefix, dayProfileConfig);
+          tasksPct = errands.total > 0 ? Math.max(errands.rate, Math.min(100, tasksOnDay * 25)) : Math.min(100, Math.max(70, tasksOnDay * 25));
+          tasksRaw = errands.total > 0 ? `${errands.completed}/${errands.total} 🧹` : `${tasksOnDay}`;
+        } else {
+          tasksPct = Math.min(100, tasksOnDay * 25);
+          tasksRaw = `${tasksOnDay}`;
+        }
         totalTasksDoneInPeriod += tasksOnDay;
       }
 
@@ -496,9 +532,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         blocksRaw = `${comp}/${dBlocks.length}`;
       }
 
-      // G. COMPOSITE EXECUTIVE SCORE
+      // G. COMPOSITE EXECUTIVE SCORE (Respects Intentional Rest / Travel / Errands Days)
       const hasAnyData = activeHabits.length > 0 || tasks.length > 0 || focusMins > 0 || sleepLogCountInPeriod > 0 || dBlocks.length > 0 || Boolean(ref);
-      const compositeScore = hasAnyData
+      let compositeScore = hasAnyData
         ? Math.round(
             (activeHabits.length > 0 ? habitsPct * 0.30 : 0) +
             (tasks.length > 0 ? tasksPct * 0.25 : 0) +
@@ -507,6 +543,10 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
             (dBlocks.length > 0 ? blocksPct * 0.10 : 0)
           )
         : 0;
+
+      if (!isYearScope && datePrefix <= todayIso && (dayModeInfo.mode === 'rest' || dayModeInfo.mode === 'travel')) {
+        compositeScore = Math.max(compositeScore, Math.min(100, Math.round(55 + habitsPct * 0.35 + (focusPct > 0 ? 10 : 0))));
+      }
 
       return {
         key: pt.dateIso,
@@ -563,26 +603,42 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         avgRating,
         ratingPct,
         overallVelocityRate,
+        executionDaysCount,
+        intentionalOffDaysCount,
       }
     };
-  }, [timeScope, scopeOffset, habits, tasks, focusSessions, sleepLogs, reviews, dailyBlocks, appStartDate, isAr, todayStr]);
+  }, [timeScope, scopeOffset, habits, tasks, focusSessions, sleepLogs, reviews, dailyBlocks, appStartDate, isAr, todayStr, dayProfileConfig]);
 
   // ----------------------------------------------------
   // Executive Performance Index (Clean Quantitative Metric Engine)
   // ----------------------------------------------------
   const executiveMetrics = useMemo(() => {
-    // 1. Discipline (Habit Completion & Streak Continuity)
+    // 1. Discipline (Habit Completion & Streak Continuity, Day-Mode Aware)
     let disciplineScore = 0;
-    if (habits.length > 0) {
-      const avgStreak = habits.reduce((acc, h) => acc + (h.streak || 0), 0) / habits.length;
+    const activeHabitsList = habits.filter(h => !h.archived);
+    const habitStatsList = activeHabitsList.map(h => calculateHabitStats(h, dayProfileConfig));
+
+    if (activeHabitsList.length > 0) {
+      const avgStreak = habitStatsList.reduce((acc, s) => acc + s.currentStreak, 0) / activeHabitsList.length;
       let totalCompletions = 0;
-      habits.forEach(h => {
+      activeHabitsList.forEach(h => {
         if (h.history) {
           totalCompletions += Object.values(h.history).filter(Boolean).length;
         }
       });
-      const todayDone = habits.filter(h => h.history?.[todayStr]).length;
-      const todayRatio = todayDone / habits.length;
+
+      const todayRequired = activeHabitsList.filter(h => !isHabitDateFrozen(h, todayStr, undefined, dayProfileConfig));
+      const todayReqDone = todayRequired.filter(h => Boolean(h.history?.[todayStr])).length;
+      const todayBonusWins = activeHabitsList.filter(
+        h => isHabitDateFrozen(h, todayStr, undefined, dayProfileConfig) && Boolean(h.history?.[todayStr])
+      ).length;
+      const todayDenom = todayRequired.length + todayBonusWins;
+      const todayRatio =
+        todayDenom > 0
+          ? Math.min(1, (todayReqDone + todayBonusWins) / todayDenom)
+          : resolveDayModeForDate(todayStr, dayProfileConfig).mode !== 'execution'
+          ? 1
+          : 0;
 
       // Pure ratio and streak progress, scaling dynamically to 100
       const completionFactor = todayRatio * 50 + Math.min(50, totalCompletions * 5);
@@ -654,8 +710,8 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
     }
 
     // 6. Consistency / Momentum (Longest Active Streak)
-    const maxStreak = habits.length > 0 ? Math.max(...habits.map(h => h.streak || 0)) : 0;
-    const momentumScore = habits.length > 0 ? Math.min(100, Math.round(maxStreak * 10)) : 0;
+    const maxStreak = habitStatsList.length > 0 ? Math.max(...habitStatsList.map(s => s.currentStreak)) : 0;
+    const momentumScore = activeHabitsList.length > 0 ? Math.min(100, Math.round(maxStreak * 10)) : 0;
 
     // 7. Daily Blocks Execution
     let blocksScore = 0;
@@ -706,7 +762,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
       radarData,
       disabledModulesList: disabled,
     };
-  }, [habits, tasks, plans, goals, projects, checklists, dailyBlocks, todayStr, isAr]);
+  }, [habits, tasks, plans, goals, projects, checklists, dailyBlocks, todayStr, isAr, dayProfileConfig]);
 
   // Daily Blocks Metrics Engine
   const dailyBlocksMetrics = useMemo(() => {
@@ -777,31 +833,43 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
     for (let i = daysToShow - 1; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      const isoStr = d.toISOString().split('T')[0];
+      const isoStr = getLocalIsoDate(d);
       const monthNames = isAr
         ? ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
         : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const display = isAr ? `${d.getDate()} ${monthNames[d.getMonth()]}` : `${monthNames[d.getMonth()]} ${d.getDate()}`;
 
+      let activeDenom = 0;
+      let activeCompleted = 0;
       let completedCount = 0;
-      habits.forEach(h => {
-        if (h.history && h.history[isoStr]) {
-          completedCount++;
+      const activePool = habits.filter(h => !h.archived);
+      activePool.forEach(h => {
+        const isDone = Boolean(h.history && h.history[isoStr]);
+        const isFrozen = isHabitDateFrozen(h, isoStr, d.getTime(), dayProfileConfig);
+        if (isDone) completedCount++;
+        if (!isFrozen || isDone) {
+          activeDenom++;
+          if (isDone) activeCompleted++;
         }
       });
 
-      const total = habits.length || 1;
-      const rate = habits.length > 0 ? Math.round((completedCount / habits.length) * 100) : 0;
+      const dayMode = resolveDayModeForDate(isoStr, dayProfileConfig).mode;
+      const rate =
+        activeDenom > 0
+          ? Math.min(100, Math.round((activeCompleted / activeDenom) * 100))
+          : activePool.length > 0 && dayMode !== 'execution'
+          ? 100
+          : 0;
       result.push({
         date: isoStr,
         display,
         rate,
         count: completedCount,
-        total: habits.length,
+        total: activeDenom || activePool.length,
       });
     }
     return result;
-  }, [habits, timeframe, isAr]);
+  }, [habits, timeframe, isAr, dayProfileConfig]);
 
   // Task Priority Data
   const taskPriorityData = useMemo(() => {
@@ -2409,6 +2477,16 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                   ? `معدل التزام العادات خلال ${executiveTimeline.periodLabel}`
                   : `Average adherence over ${executiveTimeline.periodLabel}`}
               </p>
+              {executiveTimeline.summary.intentionalOffDaysCount > 0 && (
+                <div className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
+                  <span>🛡️</span>
+                  <span>
+                    {isAr
+                      ? `${executiveTimeline.summary.executionDaysCount} أيام تنفيذ • ${executiveTimeline.summary.intentionalOffDaysCount} أيام حياة/راحة محمية`
+                      : `${executiveTimeline.summary.executionDaysCount} execution • ${executiveTimeline.summary.intentionalOffDaysCount} protected life/rest days`}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* KPI 3: Task Velocity & Focus */}
@@ -2700,7 +2778,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                       </div>
                       <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-bold text-xs font-mono">
                         <Flame size={12} className="text-amber-600 fill-amber-500" />
-                        <span>{h.streak || 0}{isAr ? 'يوم' : 'd'}</span>
+                        <span>{calculateHabitStats(h, dayProfileConfig).currentStreak}{isAr ? 'يوم' : 'd'}</span>
                       </div>
                     </div>
                   ))}
@@ -3597,7 +3675,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                                         {h.title}
                                       </span>
                                       <span className="text-[10px] text-neutral-500 font-mono">
-                                        🔥 {h.streak || 0}d streak • {totalCompletions} reps
+                                        🔥 {calculateHabitStats(h, dayProfileConfig).currentStreak}d streak • {totalCompletions} reps
                                       </span>
                                     </div>
                                   </div>

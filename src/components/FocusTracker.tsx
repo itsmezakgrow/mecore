@@ -31,7 +31,9 @@ import {
   BellOff,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { TaskItem, HabitItem, ProjectItem, FocusSession } from '../types';
+import { TaskItem, HabitItem, ProjectItem, FocusSession, DayProfileConfig, DayModeType } from '../types';
+import { DayModeControlBar } from './DayModeControl';
+import { DAY_MODE_META, getLocalIsoDate, resolveDayModeForDate } from '../utils/dayModeHelpers';
 import {
   FocusLogModal
 } from './FocusLogModal';
@@ -87,6 +89,9 @@ interface FocusTrackerProps {
   onNavigateAnalytics?: (tab?: 'overview' | 'habits' | 'tasks' | 'goals' | 'focus') => void;
   showTopBarTimer?: boolean;
   onToggleTopBarTimer?: (show: boolean) => void;
+  dayProfileConfig?: DayProfileConfig | null;
+  onSetDateDayMode?: (dateStr: string, mode: DayModeType) => Promise<void>;
+  onSaveDayProfileConfig?: (nextConfig: DayProfileConfig) => Promise<void>;
 }
 
 export const FocusTracker: React.FC<FocusTrackerProps> = ({
@@ -111,8 +116,14 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
   onNavigateAnalytics,
   showTopBarTimer,
   onToggleTopBarTimer,
+  dayProfileConfig = null,
+  onSetDateDayMode,
+  onSaveDayProfileConfig,
 }) => {
   const isAr = lang === 'ar';
+  const todayIso = useMemo(() => getLocalIsoDate(), []);
+  const todayDayMode = useMemo(() => resolveDayModeForDate(todayIso, dayProfileConfig), [todayIso, dayProfileConfig]);
+  const isNonExecutionDay = todayDayMode.mode !== 'execution';
   const isManagedExternally = propIsActive !== undefined && propSetTimeRemaining !== undefined;
 
   const [showLogModal, setShowLogModal] = useState(false);
@@ -983,6 +994,20 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
         </div>
       </header>
 
+      {onSetDateDayMode && onSaveDayProfileConfig && (
+        <div className="mb-2">
+          <DayModeControlBar
+            dateStr={todayIso}
+            dayProfileConfig={dayProfileConfig}
+            habits={habits}
+            onSetDateMode={onSetDateDayMode}
+            onSaveConfig={onSaveDayProfileConfig}
+            compact={true}
+            lang={lang}
+          />
+        </div>
+      )}
+
       {/* ----------------------------------------------------
           MAIN EXECUTIVE WORKSPACE (2 Columns on md+, 100% Zero Scroll)
           ---------------------------------------------------- */}
@@ -1170,13 +1195,19 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
               className="bg-neutral-50 dark:bg-neutral-900/80 hover:bg-neutral-100/80 dark:hover:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800/80 p-2.5 rounded-2xl flex flex-col justify-between cursor-pointer transition-all group"
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <p className="text-[10px] text-neutral-500 dark:text-neutral-400 font-medium">
                     {isAr ? 'الهدف اليومي الدقيق' : 'Precise Daily Target'}
                   </p>
-                  <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 group-hover:underline">
-                    {isAr ? 'تعديل' : 'Edit'}
-                  </span>
+                  {isNonExecutionDay ? (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
+                      {DAY_MODE_META[todayDayMode.mode].emoji} {isAr ? 'هدف متوقف (إضافي)' : 'Paused • Bonus'}
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 group-hover:underline">
+                      {isAr ? 'تعديل' : 'Edit'}
+                    </span>
+                  )}
                 </div>
                 <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
                   <Target size={13} className="text-emerald-500" />
@@ -1186,24 +1217,31 @@ export const FocusTracker: React.FC<FocusTrackerProps> = ({
               <div className="mt-1">
                 <div className="flex items-baseline justify-between">
                   <p className="text-xs sm:text-sm font-extrabold font-mono text-neutral-900 dark:text-white">
-                    {Math.floor(totalMinutesToday / 60)}h {totalMinutesToday % 60}m <span className="text-neutral-400 font-normal">/ {targetHours}h {targetMinutes}m</span>
+                    {Math.floor(totalMinutesToday / 60)}h {totalMinutesToday % 60}m{' '}
+                    <span className="text-neutral-400 font-normal">
+                      {isNonExecutionDay
+                        ? (isAr ? '(مكسب إضافي)' : '(bonus)')
+                        : `/ ${targetHours}h ${targetMinutes}m`}
+                    </span>
                   </p>
                   <span className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                    {targetProgressPct}%
+                    {isNonExecutionDay ? '🛡️' : `${targetProgressPct}%`}
                   </span>
                 </div>
 
                 {/* Progress bar */}
                 <div className="w-full h-1.5 bg-neutral-200 dark:bg-neutral-800 rounded-full mt-1.5 overflow-hidden">
                   <div 
-                    className="h-full bg-emerald-500 rounded-full transition-all"
-                    style={{ width: `${targetProgressPct}%` }}
+                    className={`h-full rounded-full transition-all ${isNonExecutionDay ? 'bg-sky-500' : 'bg-emerald-500'}`}
+                    style={{ width: `${isNonExecutionDay ? 100 : targetProgressPct}%` }}
                   />
                 </div>
 
                 <div className="flex items-center justify-between text-[9px] text-neutral-400 font-mono mt-1">
                   <span>
-                    {minutesRemainingToday > 0 
+                    {isNonExecutionDay
+                      ? (isAr ? 'يوم راحة/شؤون — بدون ضغط' : 'Protected day mode • No pressure')
+                      : minutesRemainingToday > 0 
                       ? `${Math.floor(minutesRemainingToday / 60)}h ${minutesRemainingToday % 60}m ${isAr ? 'متبقية' : 'left'}` 
                       : (isAr ? '🎉 تم الهدف' : '🎯 Target Done')}
                   </span>

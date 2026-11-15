@@ -45,7 +45,7 @@ import {
   CornerDownRight,
   CalendarDays
 } from 'lucide-react';
-import { TaskItem, Priority, AppComment, HabitItem, NoteItem, ProjectItem, GoalItem, FocusSession, TaskSubtask } from '../types';
+import { TaskItem, Priority, AppComment, HabitItem, NoteItem, ProjectItem, GoalItem, FocusSession, TaskSubtask, DayProfileConfig, DayModeType, HabitDayModePolicy } from '../types';
 import { ConfirmModal } from './ConfirmModal';
 import { TaskDetailModal } from './TaskDetailModal';
 import { CreateTaskModal } from './CreateTaskModal';
@@ -53,6 +53,8 @@ import { TaskPomodoroModal } from './TaskPomodoroModal';
 import { BulkActionToolbar } from './BulkActionToolbar';
 import { BulkEditModal } from './BulkEditModal';
 import { QuickLevelLoggerModal } from './QuickLevelLoggerModal';
+import { DayModeControlBar } from './DayModeControl';
+import { DAY_MODE_META, getNextExecutionDateIso, isTaskActiveOnOffDay, resolveDayModeForDate } from '../utils/dayModeHelpers';
 import { soundManager } from '../utils/soundEffects';
 import confetti from 'canvas-confetti';
 import { usePageViewSettings } from '../hooks/usePageViewSettings';
@@ -78,6 +80,10 @@ interface TaskTrackerProps {
   allNotes?: NoteItem[];
   allProjects?: ProjectItem[];
   allGoals?: GoalItem[];
+  dayProfileConfig?: DayProfileConfig | null;
+  onSetDateDayMode?: (dateStr: string, mode: DayModeType) => Promise<void>;
+  onSaveDayProfileConfig?: (nextConfig: DayProfileConfig) => Promise<void>;
+  onBulkUpdateHabitPolicies?: (updates: { habitId: string; policy: HabitDayModePolicy }[]) => Promise<void>;
   lang?: 'en' | 'ar';
 }
 
@@ -125,6 +131,10 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
   allNotes = [],
   allProjects = [],
   allGoals = [],
+  dayProfileConfig = null,
+  onSetDateDayMode,
+  onSaveDayProfileConfig,
+  onBulkUpdateHabitPolicies,
   lang = 'en',
 }) => {
   const isAr = lang === 'ar';
@@ -224,6 +234,21 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
   const [subtaskDropPrompt, setSubtaskDropPrompt] = useState<{ sourceTask: TaskItem; targetTask: TaskItem } | null>(null);
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayDayMode = useMemo(() => resolveDayModeForDate(todayStr, dayProfileConfig), [todayStr, dayProfileConfig]);
+  const nextExecutionDate = useMemo(() => getNextExecutionDateIso(todayStr, dayProfileConfig), [todayStr, dayProfileConfig]);
+  const workTasksToDefer = useMemo(
+    () =>
+      tasks.filter(
+        (t) =>
+          !t.completed &&
+          t.kanbanStatus !== 'completed' &&
+          t.dueDate &&
+          t.dueDate <= todayStr &&
+          !isTaskActiveOnOffDay(t) &&
+          t.id
+      ),
+    [tasks, todayStr]
+  );
 
   // Compute Current Week Bounds (Monday to Sunday)
   const { startOfWeekStr, endOfWeekStr, startOfWeekTime, endOfWeekTime } = useMemo(() => {
@@ -495,6 +520,24 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
       });
     } catch (err) {
       console.error('Failed to rollover overdue tasks:', err);
+    }
+  };
+
+  // Non-penalizing shift of work tasks to next execution day on Rest/Errands/Travel days
+  const handleShiftWorkTasksToNextExecDay = async () => {
+    if (workTasksToDefer.length === 0) return;
+    try {
+      const ids = workTasksToDefer.map((t) => t.id!);
+      if (onBulkUpdateTasks) {
+        await onBulkUpdateTasks(ids, { dueDate: nextExecutionDate });
+      } else {
+        for (const t of workTasksToDefer) {
+          await onUpdateTask(t.id!, { dueDate: nextExecutionDate });
+        }
+      }
+      soundManager.playCheck();
+    } catch (err) {
+      console.error('Failed to shift work tasks to next execution day:', err);
     }
   };
 
@@ -844,6 +887,61 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ========================================================
+          DAY MODE BAR & NON-EXECUTION WORK DEFERRAL CARD
+          ======================================================== */}
+      {onSetDateDayMode && onSaveDayProfileConfig && (
+        <DayModeControlBar
+          dateStr={todayStr}
+          dayProfileConfig={dayProfileConfig}
+          habits={allHabits}
+          onSetDateMode={onSetDateDayMode}
+          onSaveConfig={onSaveDayProfileConfig}
+          onBulkUpdateHabitPolicies={onBulkUpdateHabitPolicies}
+          compact={true}
+          lang={lang}
+        />
+      )}
+
+      {todayDayMode.mode !== 'execution' && workTasksToDefer.length > 0 && viewMode !== 'stats' && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-sky-500/10 via-teal-500/5 to-transparent dark:from-sky-950/40 dark:via-teal-950/20 border border-sky-300/60 dark:border-sky-800/60 rounded-2xl animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-sky-600 text-white flex items-center justify-center shrink-0 shadow-xs text-lg">
+              {DAY_MODE_META[todayDayMode.mode].emoji}
+            </div>
+            <div>
+              <h2 className="text-xs sm:text-sm font-extrabold text-neutral-900 dark:text-white flex flex-wrap items-center gap-2">
+                <span>
+                  {isAr
+                    ? `وضع اليوم (${DAY_MODE_META[todayDayMode.mode].shortAr}): مهام العمل محمية`
+                    : `${DAY_MODE_META[todayDayMode.mode].labelEn}: Work Tasks Paused`}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border border-sky-300 dark:border-sky-800">
+                  {workTasksToDefer.length} {isAr ? 'مهام عمل' : 'work tasks'}
+                </span>
+              </h2>
+              <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
+                {isAr
+                  ? `يمكنك تأجيل مهام العمل تلقائياً إلى يوم التنفيذ القادم (${nextExecutionDate}) دون احتساب أي تأخير مع بقاء المهام الشخصية نشطة.`
+                  : `Reschedule work tasks cleanly to your next Execution Day (${nextExecutionDate}) with zero delay penalty while keeping personal/errand tasks active.`}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleShiftWorkTasksToNextExecDay}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-600 hover:bg-sky-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer shrink-0"
+          >
+            <CalendarDays size={14} />
+            <span>
+              {isAr
+                ? `تأجيل ليوم التنفيذ (${nextExecutionDate})`
+                : `Shift to ${nextExecutionDate} (Zero Penalty)`}
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* ========================================================
           STREAMLINED TASK CREATOR (MOBILE LAUNCHER + DESKTOP QUICK BAR)
@@ -1395,6 +1493,16 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
                             {getPriorityLabel(task.priority)}
                           </span>
 
+                          {task.doAnywayOnOffDay && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800"
+                              title={isAr ? 'مفعّلة حتى في أيام الراحة والسفر والتنظيف' : 'Active even on Rest, Errands & Travel days'}
+                            >
+                              <span>⚓</span>
+                              <span>{isAr ? 'تُنجز دائماً' : 'Do Anyway'}</span>
+                            </span>
+                          )}
+
                           {/* Focused Minutes Badge */}
                           {(task.focusedMinutes || 0) > 0 && (
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800">
@@ -1901,13 +2009,21 @@ export const TaskTracker: React.FC<TaskTrackerProps> = ({
                         )}
                       </div>
 
-                      {/* Project Badge */}
-                      {proj && (
-                        <div className="flex items-center gap-1">
-                          <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
-                            <FolderKanban size={9} />
-                            <span>{proj.title}</span>
-                          </span>
+                      {/* Project / Off-Day Badges */}
+                      {(proj || task.doAnywayOnOffDay) && (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {proj && (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                              <FolderKanban size={9} />
+                              <span>{proj.title}</span>
+                            </span>
+                          )}
+                          {task.doAnywayOnOffDay && (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800">
+                              <span>⚓</span>
+                              <span>{isAr ? 'دائماً' : 'Do Anyway'}</span>
+                            </span>
+                          )}
                         </div>
                       )}
 

@@ -1,4 +1,6 @@
-import { ReviewEntry, DailySleepLog, WorkoutSession, FocusSession, TaskItem, HabitItem } from '../types';
+import { ReviewEntry, DailySleepLog, WorkoutSession, FocusSession, TaskItem, HabitItem, DayProfileConfig } from '../types';
+import { getActiveDayProfileConfig, getLocalIsoDate } from './dayModeHelpers';
+import { isHabitDateFrozen } from './habitAnalytics';
 
 export interface WeekPeriodRange {
   start: Date;
@@ -134,6 +136,7 @@ export function aggregatePeriodTelemetry({
   focusSessions = [],
   tasks = [],
   habits = [],
+  dayProfileConfig,
 }: {
   startIso: string;
   endIso: string;
@@ -143,6 +146,7 @@ export function aggregatePeriodTelemetry({
   focusSessions?: FocusSession[];
   tasks?: TaskItem[];
   habits?: HabitItem[];
+  dayProfileConfig?: DayProfileConfig | null;
 }) {
   const startTime = new Date(`${startIso}T00:00:00`).getTime();
   const endTime = new Date(`${endIso}T23:59:59`).getTime();
@@ -261,7 +265,8 @@ export function aggregatePeriodTelemetry({
   });
   const highPriorityDone = completedTasks.filter((t) => t.priority === 'High').length;
 
-  // 6. Habit Adherence & Excuses
+  // 6. Habit Adherence & Excuses (Day-Mode Shield + Bonus Win Aware)
+  const effectiveDayProfile = dayProfileConfig ?? getActiveDayProfileConfig();
   let totalOpportunities = 0;
   let completedHabitsCount = 0;
   const excusesList: { date: string; habitTitle: string; excuse: string }[] = [];
@@ -272,11 +277,15 @@ export function aggregatePeriodTelemetry({
   const activeHabits = habits.filter((h) => !h.archived);
 
   while (curDate <= endDate) {
-    const iso = curDate.toISOString().split('T')[0];
+    const iso = getLocalIsoDate(curDate);
     activeHabits.forEach((h) => {
-      totalOpportunities++;
-      if (h.history?.[iso]) {
-        completedHabitsCount++;
+      const isDone = Boolean(h.history?.[iso]);
+      const isFrozen = isHabitDateFrozen(h, iso, curDate.getTime(), effectiveDayProfile);
+      if (!isFrozen || isDone) {
+        totalOpportunities++;
+        if (isDone) {
+          completedHabitsCount++;
+        }
       }
       if (h.freezeExcuses?.[iso]) {
         excusesList.push({
@@ -290,7 +299,7 @@ export function aggregatePeriodTelemetry({
   }
 
   const habitScore = totalOpportunities > 0
-    ? Math.round((completedHabitsCount / totalOpportunities) * 100)
+    ? Math.min(100, Math.round((completedHabitsCount / totalOpportunities) * 100))
     : 100;
 
   return {

@@ -27,8 +27,10 @@ import {
   HabitItem, 
   ReviewEntry, 
   VisualizationStory, 
-  Affirmation 
+  Affirmation,
+  DayProfileConfig,
 } from '../types';
+import { getActiveDayProfileConfig, isHabitFrozenByDayMode } from '../utils/dayModeHelpers';
 
 export interface SmartNotificationItem {
   id: string;
@@ -61,6 +63,7 @@ interface NotificationCenterDrawerProps {
   reviews?: ReviewEntry[];
   visions?: VisualizationStory[];
   affirmations?: Affirmation[];
+  dayProfileConfig?: DayProfileConfig | null;
   onNavigate: (module: ModuleType, subContext?: { tab?: string; filter?: string }) => void;
   lang?: 'en' | 'ar';
 }
@@ -73,9 +76,11 @@ export const NotificationCenterDrawer: React.FC<NotificationCenterDrawerProps> =
   reviews = [],
   visions = [],
   affirmations = [],
+  dayProfileConfig,
   onNavigate,
   lang = 'ar',
 }) => {
+  const effectiveDayProfileConfig = dayProfileConfig || getActiveDayProfileConfig();
   const isAr = lang === 'ar';
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
 
@@ -265,9 +270,14 @@ export const NotificationCenterDrawer: React.FC<NotificationCenterDrawerProps> =
       });
     }
 
-    // 5. Daily Habits Pending Check
+    // 5. Daily Habits Pending Check (Excludes habits shielded by today's Day Mode or frozen)
     const activeHabits = habits.filter((h) => !h.archived);
-    const pendingHabits = activeHabits.filter((h) => !h.history || !h.history[todayStr]);
+    const pendingHabits = activeHabits.filter(
+      (h) =>
+        (!h.history || !h.history[todayStr]) &&
+        !(h.freezes && h.freezes[todayStr]) &&
+        !isHabitFrozenByDayMode(h, todayStr, effectiveDayProfileConfig)
+    );
 
     if (pendingHabits.length > 0) {
       const habitNames = pendingHabits.slice(0, 3).map((h) => h.title).join(' • ');
@@ -351,7 +361,7 @@ export const NotificationCenterDrawer: React.FC<NotificationCenterDrawerProps> =
     }
 
     return list;
-  }, [reviews, tasks, habits, affirmations, visions, todayStr, isAr]);
+  }, [reviews, tasks, habits, affirmations, visions, todayStr, isAr, effectiveDayProfileConfig]);
 
   // Filter out dismissed items
   const activeNotifications = useMemo(() => {

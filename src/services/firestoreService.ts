@@ -15,7 +15,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { TaskItem, HabitItem, ProjectItem, NoteItem, WeeklyPlanSlot, ChecklistGroup, GoalItem, FocusSession, AppComment, WorkoutSession, SundayReset, ReviewEntry, DailyBlockItem, ModuleLifecycleEvent, MonthlyPlanMeta, WeeklyPriorityGoal, DailySleepLog, SleepScheduleConfig, AccessControlData, BodyMetricLog, BodyProfileConfig, ScheduledWorkoutItem, CognitiveReflection, VisualizationStory, Affirmation } from '../types';
+import { TaskItem, HabitItem, ProjectItem, NoteItem, WeeklyPlanSlot, ChecklistGroup, GoalItem, FocusSession, AppComment, WorkoutSession, SundayReset, ReviewEntry, DailyBlockItem, ModuleLifecycleEvent, MonthlyPlanMeta, WeeklyPriorityGoal, DailySleepLog, SleepScheduleConfig, AccessControlData, BodyMetricLog, BodyProfileConfig, ScheduledWorkoutItem, CognitiveReflection, VisualizationStory, Affirmation, DayProfileConfig } from '../types';
+import { isHabitFrozenByDayMode, getLocalIsoDate, getActiveDayProfileConfig, setActiveDayProfileConfig, DEFAULT_DAY_PROFILE_CONFIG } from '../utils/dayModeHelpers';
 
 /**
  * Deeply sanitizes updates for Firestore updateDoc operations by replacing
@@ -89,6 +90,7 @@ const SCHEDULED_WORKOUTS_COLL = 'scheduled_workouts';
 const REFLECTIONS_COLL = 'reflections';
 const VISIONS_COLL = 'visions';
 const AFFIRMATIONS_COLL = 'affirmations';
+const DAY_MODES_COLL = 'day_modes';
 
 // Safe AbortError Detection
 export function isAbortError(err: any): boolean {
@@ -196,6 +198,29 @@ export const addHabit = async (habit: Omit<HabitItem, 'id'>) => {
   return await addDoc(collection(db, HABITS_COLL), sanitizeInsertData(habit));
 };
 
+const computeHabitStreak = (
+  habit: HabitItem,
+  currentHistory: Record<string, boolean>,
+  currentFreezes: Record<string, boolean>
+): number => {
+  let streak = 0;
+  const today = new Date();
+  for (let i = 0; i < 90; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = getLocalIsoDate(d);
+    if (currentHistory[key] || currentFreezes[key]) {
+      streak++;
+    } else if (isHabitFrozenByDayMode(habit, key)) {
+      // Intentional Rest / Life & Errands / Travel day bridges streak cleanly without breaking it
+      continue;
+    } else if (i > 0) {
+      break;
+    }
+  }
+  return streak;
+};
+
 export const toggleHabitDate = async (habit: HabitItem, dateKey: string) => {
   if (!habit.id) return;
   const currentHistory = { ...(habit.history || {}) };
@@ -208,19 +233,7 @@ export const toggleHabitDate = async (habit: HabitItem, dateKey: string) => {
     delete currentFreezes[dateKey];
   }
 
-  // Calculate streak based on consecutive prior days (either checked in OR frozen)
-  let streak = 0;
-  const today = new Date();
-  for (let i = 0; i < 60; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().split('T')[0];
-    if (currentHistory[key] || currentFreezes[key]) {
-      streak++;
-    } else if (i > 0) {
-      break;
-    }
-  }
+  const streak = computeHabitStreak(habit, currentHistory, currentFreezes);
 
   const ref = doc(db, HABITS_COLL, habit.id);
   return await updateDoc(ref, {
@@ -244,19 +257,7 @@ export const toggleHabitFreeze = async (habit: HabitItem, dateKey: string) => {
     delete currentFreezes[dateKey];
   }
 
-  // Calculate streak based on consecutive prior days (either checked in OR frozen)
-  let streak = 0;
-  const today = new Date();
-  for (let i = 0; i < 60; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().split('T')[0];
-    if (currentHistory[key] || currentFreezes[key]) {
-      streak++;
-    } else if (i > 0) {
-      break;
-    }
-  }
+  const streak = computeHabitStreak(habit, currentHistory, currentFreezes);
 
   const ref = doc(db, HABITS_COLL, habit.id);
   return await updateDoc(ref, {
@@ -306,19 +307,7 @@ export const updateHabitDailyValue = async (habit: HabitItem, dateKey: string, v
     delete currentFreezes[dateKey];
   }
 
-  // Calculate streak based on consecutive prior days (either checked in OR frozen)
-  let streak = 0;
-  const today = new Date();
-  for (let i = 0; i < 60; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().split('T')[0];
-    if (currentHistory[key] || currentFreezes[key]) {
-      streak++;
-    } else if (i > 0) {
-      break;
-    }
-  }
+  const streak = computeHabitStreak(habit, currentHistory, currentFreezes);
 
   const ref = doc(db, HABITS_COLL, habit.id);
   return await updateDoc(ref, {
@@ -1798,5 +1787,39 @@ export const deleteAffirmation = async (id: string) => {
   return await deleteDoc(ref);
 };
 
+// ----------------- Day Mode & Life Maintenance Schedules -----------------
+export const subscribeToDayProfileConfig = (
+  callback: (config: DayProfileConfig) => void,
+  onError?: (err: any) => void
+) => {
+  const ref = doc(db, DAY_MODES_COLL, 'user_schedule');
+  return onSnapshot(
+    ref,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        const data = { id: docSnap.id, ...docSnap.data() } as DayProfileConfig;
+        setActiveDayProfileConfig(data);
+        callback(data);
+      } else {
+        const cached = getActiveDayProfileConfig();
+        callback(cached || DEFAULT_DAY_PROFILE_CONFIG);
+      }
+    },
+    (error) => {
+      handleSubscriptionError("day_modes", error, onError);
+      callback(getActiveDayProfileConfig() || DEFAULT_DAY_PROFILE_CONFIG);
+    }
+  );
+};
 
-
+export const saveDayProfileConfig = async (config: DayProfileConfig) => {
+  const payload: DayProfileConfig = {
+    recurringWeekdayModes: config.recurringWeekdayModes || {},
+    dateOverrides: config.dateOverrides || {},
+    defaultErrandsTemplate: config.defaultErrandsTemplate || DEFAULT_DAY_PROFILE_CONFIG.defaultErrandsTemplate,
+    updatedAt: Date.now(),
+  };
+  setActiveDayProfileConfig(payload);
+  const ref = doc(db, DAY_MODES_COLL, 'user_schedule');
+  return await setDoc(ref, sanitizeInsertData(payload));
+};

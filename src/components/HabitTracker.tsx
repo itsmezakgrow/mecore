@@ -43,9 +43,10 @@ import {
   ArrowRight,
   Folder,
   CheckSquare,
-  X
+  X,
+  ShieldCheck
 } from 'lucide-react';
-import { HabitItem, HabitRoutineTime, RewardItem, DailySleepLog, SleepScheduleConfig, WorkoutSession, GoalItem, ProjectItem } from '../types';
+import { HabitItem, HabitRoutineTime, HabitDayModePolicy, RewardItem, DailySleepLog, SleepScheduleConfig, WorkoutSession, GoalItem, ProjectItem, DayProfileConfig, DayModeType } from '../types';
 import { SleepWakeTracker } from './SleepWakeTracker';
 import { HabitDetailModal } from './HabitDetailModal';
 import { ConfirmModal } from './ConfirmModal';
@@ -58,8 +59,10 @@ import { EmojiPicker } from './EmojiPicker';
 import { BulkExcuseLoggerModal } from './BulkExcuseLoggerModal';
 import { HabitAnalyticsDashboard } from './HabitAnalyticsDashboard';
 import { PageViewSettingsModal, PageViewSettingItem } from './PageViewSettingsModal';
+import { DayModeControlBar } from './DayModeControl';
 import { usePageViewSettings } from '../hooks/usePageViewSettings';
 import { calculateHabitStats, calculateHabitScoreHistory } from '../utils/habitAnalytics';
+import { getHabitEffectiveDayStatus, isHabitFrozenByDayMode, resolveDayModeForDate, getHabitPolicyMeta, OFF_DAY_MODES, DAY_MODE_META } from '../utils/dayModeHelpers';
 import { soundManager } from '../utils/soundEffects';
 import confetti from 'canvas-confetti';
 
@@ -91,6 +94,10 @@ interface HabitTrackerProps {
   onSaveSleepLog?: (log: Omit<DailySleepLog, 'id'>) => Promise<any>;
   onSaveSleepConfig?: (config: Partial<SleepScheduleConfig>) => Promise<any>;
   onDeleteSleepLog?: (id: string) => Promise<any>;
+  dayProfileConfig?: DayProfileConfig | null;
+  onSetDateDayMode?: (dateStr: string, mode: DayModeType) => Promise<void>;
+  onSaveDayProfileConfig?: (nextConfig: DayProfileConfig) => Promise<void>;
+  onBulkUpdateHabitPolicies?: (updates: { habitId: string; policy: HabitDayModePolicy; activeOnModes?: DayModeType[] }[]) => Promise<void>;
   lang?: 'en' | 'ar';
 }
 
@@ -134,6 +141,8 @@ interface HabitCardItemProps {
   getCategoryLabel: (cat: string) => string;
   getColorClasses: (col?: string) => { active: string; text: string; badge: string };
   getArSingleLetter?: (d: number) => string;
+  dayProfileConfig?: DayProfileConfig | null;
+  onOpenPolicySettings?: (habit: HabitItem) => void;
 }
 
 const MobileHabitCardItem: React.FC<HabitCardItemProps> = ({
@@ -163,8 +172,11 @@ const MobileHabitCardItem: React.FC<HabitCardItemProps> = ({
   getCategoryLabel,
   getColorClasses,
   getArSingleLetter = getArSingleLetterHelper,
+  dayProfileConfig = null,
+  onOpenPolicySettings,
 }) => {
-  const habitStats = calculateHabitStats(habit);
+  const habitStats = calculateHabitStats(habit, dayProfileConfig);
+  const policyMeta = getHabitPolicyMeta(habit, isAr);
   const colorTheme = getColorClasses(habit.color || 'amber');
   const completedCount = currentDays.filter((d) => habit.history && habit.history[d.iso]).length;
 
@@ -251,6 +263,20 @@ const MobileHabitCardItem: React.FC<HabitCardItemProps> = ({
                 {getCategoryLabel(habit.category)}
               </span>
 
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onOpenPolicySettings) onOpenPolicySettings(habit);
+                  else onOpenDetail(habit);
+                }}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold border cursor-pointer hover:opacity-85 transition-opacity ${policyMeta.badgeClass}`}
+                title={policyMeta.tooltip}
+              >
+                <span>{policyMeta.icon}</span>
+                <span>{policyMeta.label}</span>
+              </button>
+
               {habit.routineTime && habit.routineTime !== 'anytime' && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 text-[10px] font-bold font-mono">
                   {habit.routineTime === 'morning' ? '☀️ ' + (isAr ? 'صباحي' : 'Morning') : habit.routineTime === 'afternoon' ? '🌤️ ' + (isAr ? 'بعد الظهر' : 'Afternoon') : '🌙 ' + (isAr ? 'مسائي' : 'Evening')}
@@ -327,8 +353,11 @@ const MobileHabitCardItem: React.FC<HabitCardItemProps> = ({
       {/* 7-Day Matrix Row: Zero horizontal scroll required on mobile cards */}
       <div className="grid grid-cols-7 gap-1 pt-2 border-t border-neutral-100 dark:border-neutral-800">
         {currentDays.map((day) => {
-          const isDone = Boolean(habit.history && habit.history[day.iso]);
-          const isFrozen = Boolean(habit.freezes && habit.freezes[day.iso]);
+          const effectiveStatus = getHabitEffectiveDayStatus(habit, day.iso, dayProfileConfig);
+          const isDone = effectiveStatus.isDone;
+          const isFrozen = effectiveStatus.isManualFreeze;
+          const isDayModeShielded = effectiveStatus.isDayModeShielded;
+          const isBonusWin = effectiveStatus.isBonusWin;
           const dayVal = habit.dailyValues?.[day.iso] || (isDone ? targetVal : 0);
           const dayPct = Math.min(100, Math.round((dayVal / targetVal) * 100));
           const dayOfWeek = day.date.getDay();
@@ -365,11 +394,13 @@ const MobileHabitCardItem: React.FC<HabitCardItemProps> = ({
                   disabled={isFrozen}
                   className={`w-full h-full rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer ${
                     isDone
-                      ? `${colorTheme.active} text-white shadow-xs`
+                      ? `${colorTheme.active} text-white shadow-xs ${isBonusWin ? 'ring-2 ring-amber-300' : ''}`
                       : habit.isMeasurable && dayVal > 0
                       ? 'border-2 border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300'
                       : isFrozen
                       ? 'bg-blue-500 text-white shadow-xs border border-blue-400'
+                      : isDayModeShielded
+                      ? 'bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 border border-sky-300/80 dark:border-sky-700/80'
                       : isBeforeStart
                       ? 'border border-dashed border-neutral-300 dark:border-neutral-700 bg-neutral-50/50 dark:bg-neutral-800/40 text-neutral-300'
                       : day.isToday
@@ -378,7 +409,11 @@ const MobileHabitCardItem: React.FC<HabitCardItemProps> = ({
                       ? 'border border-neutral-300 dark:border-neutral-700 text-transparent hover:border-neutral-500 dark:hover:border-neutral-400'
                       : 'border border-neutral-200 dark:border-neutral-800 bg-neutral-50/30 dark:bg-neutral-900/40 text-transparent opacity-60'
                   }`}
-                  title={`${day.dayName} (${day.iso})${habit.isMeasurable ? ` - ${dayVal}/${targetVal} ${habit.unit || 'units'} (Right-click or long press to adjust level)` : ''}`}
+                  title={
+                    isDayModeShielded && !isDone
+                      ? `${day.dayName} (${day.iso}) — ${isAr ? 'محمية بوضع اليوم (اضغط للإنجاز الإضافي)' : 'Auto-shielded by Day Mode (tap for Bonus Win)'}`
+                      : `${day.dayName} (${day.iso})${habit.isMeasurable ? ` - ${dayVal}/${targetVal} ${habit.unit || 'units'} (Right-click or long press to adjust level)` : ''}`
+                  }
                 >
                   {isDone ? (
                     <Check size={14} className="opacity-100" />
@@ -386,6 +421,8 @@ const MobileHabitCardItem: React.FC<HabitCardItemProps> = ({
                     <span className="text-[9px] font-black font-mono">{dayPct}%</span>
                   ) : isFrozen ? (
                     <Snowflake size={14} className="opacity-100 animate-pulse" />
+                  ) : isDayModeShielded ? (
+                    <ShieldCheck size={13} className="opacity-90" />
                   ) : (
                     <span className="opacity-0">✓</span>
                   )}
@@ -447,11 +484,14 @@ const DesktopHabitRowItem: React.FC<HabitCardItemProps> = ({
   isAr,
   getCategoryLabel,
   getColorClasses,
+  dayProfileConfig = null,
+  onOpenPolicySettings,
 }) => {
   const completedDaysInView = currentDays.filter(
     (d) => habit.history && habit.history[d.iso]
   ).length;
-  const habitStats = calculateHabitStats(habit);
+  const habitStats = calculateHabitStats(habit, dayProfileConfig);
+  const policyMeta = getHabitPolicyMeta(habit, isAr);
   const colorTheme = getColorClasses(habit.color || 'amber');
 
   const getFreezesUsedThisWeek = () => {
@@ -534,6 +574,20 @@ const DesktopHabitRowItem: React.FC<HabitCardItemProps> = ({
             {getCategoryLabel(habit.category)}
           </span>
 
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onOpenPolicySettings) onOpenPolicySettings(habit);
+              else onOpenDetail(habit);
+            }}
+            className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold border cursor-pointer hover:opacity-85 transition-opacity ${policyMeta.badgeClass}`}
+            title={policyMeta.tooltip}
+          >
+            <span>{policyMeta.icon}</span>
+            <span>{policyMeta.label}</span>
+          </button>
+
           {habit.routineTime && habit.routineTime !== 'anytime' && (
             <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 text-[10px] font-bold font-mono">
               {habit.routineTime === 'morning' ? '☀️ ' + (isAr ? 'صباحي' : 'Morning') : habit.routineTime === 'afternoon' ? '🌤️ ' + (isAr ? 'بعد الظهر' : 'Afternoon') : '🌙 ' + (isAr ? 'مسائي' : 'Evening')}
@@ -584,8 +638,11 @@ const DesktopHabitRowItem: React.FC<HabitCardItemProps> = ({
       </td>
 
       {currentDays.map((day) => {
-        const isDone = Boolean(habit.history && habit.history[day.iso]);
-        const isFrozen = Boolean(habit.freezes && habit.freezes[day.iso]);
+        const effectiveStatus = getHabitEffectiveDayStatus(habit, day.iso, dayProfileConfig);
+        const isDone = effectiveStatus.isDone;
+        const isFrozen = effectiveStatus.isManualFreeze;
+        const isDayModeShielded = effectiveStatus.isDayModeShielded;
+        const isBonusWin = effectiveStatus.isBonusWin;
         const dayVal = habit.dailyValues?.[day.iso] || (isDone ? targetVal : 0);
         const dayPct = Math.min(100, Math.round((dayVal / targetVal) * 100));
         const dayOfWeek = day.date.getDay();
@@ -617,11 +674,13 @@ const DesktopHabitRowItem: React.FC<HabitCardItemProps> = ({
                 disabled={isFrozen}
                 className={`w-8 h-8 rounded-xl inline-flex flex-col items-center justify-center transition-all cursor-pointer ${
                   isDone
-                    ? `${colorTheme.active} text-white shadow-xs scale-100`
+                    ? `${colorTheme.active} text-white shadow-xs scale-100 ${isBonusWin ? 'ring-2 ring-amber-300' : ''}`
                     : habit.isMeasurable && dayVal > 0
                     ? 'border-2 border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300'
                     : isFrozen
                     ? 'bg-blue-500 text-white shadow-xs scale-100 border border-blue-400'
+                    : isDayModeShielded
+                    ? 'bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 border border-sky-300/80 dark:border-sky-700/80 hover:border-emerald-400'
                     : isBeforeStart
                     ? 'border border-dashed border-neutral-300 dark:border-neutral-700 bg-neutral-50/50 dark:bg-neutral-800/40 text-neutral-300 opacity-60'
                     : day.isToday
@@ -630,7 +689,11 @@ const DesktopHabitRowItem: React.FC<HabitCardItemProps> = ({
                     ? 'border border-neutral-300 dark:border-neutral-700 hover:border-neutral-800 dark:hover:border-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-transparent'
                     : 'border border-neutral-200 dark:border-neutral-800 bg-neutral-50/30 dark:bg-neutral-900/40 text-transparent opacity-50'
                 }`}
-                title={`${habit.title} - ${day.dayName} (${day.iso})${habit.isMeasurable ? ` - ${dayVal}/${targetVal} ${habit.unit || 'units'} (Right-click or long press to adjust level)` : ''}`}
+                title={
+                  isDayModeShielded && !isDone
+                    ? `${habit.title} - ${day.dayName} (${day.iso}) — ${isAr ? 'محمية بوضع اليوم (اضغط للإنجاز الإضافي)' : 'Auto-shielded by Day Mode (click for Bonus Win)'}`
+                    : `${habit.title} - ${day.dayName} (${day.iso})${habit.isMeasurable ? ` - ${dayVal}/${targetVal} ${habit.unit || 'units'} (Right-click or long press to adjust level)` : ''}`
+                }
               >
                 {isDone ? (
                   <Check size={16} className="opacity-100" />
@@ -638,6 +701,8 @@ const DesktopHabitRowItem: React.FC<HabitCardItemProps> = ({
                   <span className="text-[9px] font-black font-mono">{dayPct}%</span>
                 ) : isFrozen ? (
                   <Snowflake size={16} className="opacity-100 animate-pulse" />
+                ) : isDayModeShielded ? (
+                  <ShieldCheck size={15} className="opacity-90" />
                 ) : (
                   <span className="opacity-0">✓</span>
                 )}
@@ -738,6 +803,10 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   onDeleteSleepLog,
   workouts = [],
   onNavigateModule,
+  dayProfileConfig = null,
+  onSetDateDayMode,
+  onSaveDayProfileConfig,
+  onBulkUpdateHabitPolicies,
   lang = 'en',
 }) => {
   const isAr = lang === 'ar';
@@ -807,6 +876,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   );
 
   const [selectedHabitForDetail, setSelectedHabitForDetail] = useState<HabitItem | null>(null);
+  const [detailInitialTab, setDetailInitialTab] = useState<'score' | 'calendar' | 'weekdays' | 'settings'>('score');
   const [habitToDelete, setHabitToDelete] = useState<HabitItem | null>(null);
 
   // Prompt modal to log workout session in Iron Engine when gym habit is checked
@@ -854,6 +924,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
   const [newTitle, setNewTitle] = useState('');
   const [newIcon, setNewIcon] = useState('🔥');
   const [newRoutineTime, setNewRoutineTime] = useState<HabitRoutineTime>('anytime');
+  const [newDayModePolicy, setNewDayModePolicy] = useState<HabitDayModePolicy>('execution_only');
+  const [newActiveOnModes, setNewActiveOnModes] = useState<DayModeType[]>(['rest', 'travel']);
   const [newQuestion, setNewQuestion] = useState('');
   const [newCategory, setNewCategory] = useState('Productivity');
   const [targetPerWeek, setTargetPerWeek] = useState(7);
@@ -952,6 +1024,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
         title: newTitle.trim(),
         icon: newIcon || '🔥',
         routineTime: newRoutineTime,
+        dayModePolicy: newDayModePolicy,
+        ...(newDayModePolicy === 'custom' ? { activeOnModes: newActiveOnModes } : {}),
         question: newQuestion.trim() || undefined,
         category: newCategory,
         targetPerWeek: calculatedTarget,
@@ -973,6 +1047,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
       setNewTitle('');
       setNewIcon('🔥');
       setNewRoutineTime('anytime');
+      setNewDayModePolicy('execution_only');
+      setNewActiveOnModes(['rest', 'travel']);
       setNewQuestion('');
       setNewGoalId('');
       setNewProjectId('');
@@ -1251,14 +1327,25 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
     return matchesSearch && matchesCategory;
   });
 
-  // Calculate overall metrics (only based on active habits)
+  // Calculate overall metrics (accounting for Today's Day Mode auto-shielding)
+  const todayDayMode = resolveDayModeForDate(todayIso, dayProfileConfig);
   const bestOverallStreak = activeHabits.reduce((max, h) => {
-    const s = calculateHabitStats(h);
+    const s = calculateHabitStats(h, dayProfileConfig);
     return Math.max(max, s.currentStreak);
   }, 0);
 
+  const requiredHabitsToday = activeHabits.filter(
+    (h) => !isHabitFrozenByDayMode(h, todayIso, dayProfileConfig)
+  );
+  const shieldedHabitsToday = activeHabits.filter(
+    (h) => isHabitFrozenByDayMode(h, todayIso, dayProfileConfig)
+  );
+  const completedRequiredTodayCount = requiredHabitsToday.filter((h) => h.history && h.history[todayIso]).length;
+  const bonusWinsTodayCount = shieldedHabitsToday.filter((h) => h.history && h.history[todayIso]).length;
   const completedTodayCount = activeHabits.filter((h) => h.history && h.history[todayIso]).length;
-  const overallTodayRate = activeHabits.length > 0 ? Math.round((completedTodayCount / activeHabits.length) * 100) : 0;
+  const overallTodayRate = requiredHabitsToday.length > 0
+    ? Math.round((completedRequiredTodayCount / requiredHabitsToday.length) * 100)
+    : 100;
 
   const categories = ['All', 'Productivity', 'Health', 'Business', 'Personal Growth', 'Mindset'];
 
@@ -1366,7 +1453,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
               </span>
               <span className="text-neutral-300 dark:text-neutral-700">•</span>
               <span className="text-amber-900 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-md font-mono text-[11px] font-bold whitespace-nowrap tabular-nums">
-                {completedTodayCount}/{activeHabits.length} {isAr ? 'أُنجز اليوم' : 'Done Today'}
+                {completedRequiredTodayCount}/{requiredHabitsToday.length} {isAr ? 'أُنجز اليوم' : 'Done Today'}
+                {bonusWinsTodayCount > 0 ? ` (+${bonusWinsTodayCount} ⚡)` : ''}
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
@@ -1542,6 +1630,19 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
           ======================================================== */}
       {activeTab === 'tracker' && (
         <div className="space-y-4 animate-fadeIn">
+          {/* DAY MODE & LIFE MAINTENANCE CONTROL BAR */}
+          {onSetDateDayMode && onSaveDayProfileConfig && (
+            <DayModeControlBar
+              dateStr={todayIso}
+              dayProfileConfig={dayProfileConfig}
+              habits={activeHabits}
+              onSetDateMode={onSetDateDayMode}
+              onSaveConfig={onSaveDayProfileConfig}
+              onBulkUpdateHabitPolicies={onBulkUpdateHabitPolicies}
+              lang={lang}
+            />
+          )}
+
           {/* TODAY SPOTLIGHT STRIP (User can show/hide from view settings) */}
           {viewMode === 'matrix' && isVisible('todaySpotlight') && (
             <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent dark:from-amber-950/40 dark:via-neutral-900/60 dark:to-neutral-900/40 p-4 rounded-3xl border-2 border-amber-300/80 dark:border-amber-700/60 shadow-xs space-y-3">
@@ -1565,10 +1666,16 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold font-mono px-2.5 py-1 rounded-xl bg-white dark:bg-neutral-800 border border-amber-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-3xs">
-                    {completedTodayCount} / {activeHabits.length} {isAr ? 'مكتمل' : 'Done'} ({overallTodayRate}%)
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold font-mono px-2.5 py-1 rounded-xl bg-white dark:bg-neutral-800 border border-amber-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-3xs tabular-nums">
+                    {completedRequiredTodayCount} / {requiredHabitsToday.length} {isAr ? 'مطلوب اليوم' : 'Required'} ({overallTodayRate}%)
                   </span>
+                  {todayDayMode.mode !== 'execution' && shieldedHabitsToday.length > 0 && (
+                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300">
+                      🛡️ {shieldedHabitsToday.length} {isAr ? 'محمية' : 'Shielded'}
+                      {bonusWinsTodayCount > 0 ? ` • +${bonusWinsTodayCount} ⚡` : ''}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -1719,7 +1826,10 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                   {activeHabits
                     .filter((h) => selectedRoutineFilter === 'all' || (h.routineTime || 'anytime') === selectedRoutineFilter || (selectedRoutineFilter === 'morning' && !h.routineTime))
                     .map((habit) => {
-                    const isDone = Boolean(habit.history && habit.history[todayIso]);
+                    const effectiveToday = getHabitEffectiveDayStatus(habit, todayIso, dayProfileConfig);
+                    const isDone = effectiveToday.isDone;
+                    const isShielded = effectiveToday.isDayModeShielded;
+                    const isBonusWin = effectiveToday.isBonusWin;
                     const target = habit.targetValue || 10;
                     const val = habit.dailyValues?.[todayIso] || (isDone ? target : 0);
                     const pct = Math.min(100, Math.round((val / target) * 100));
@@ -1730,6 +1840,8 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                         className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
                           isDone
                             ? 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 shadow-3xs'
+                            : isShielded
+                            ? 'bg-sky-50/50 dark:bg-sky-950/20 border-sky-200/80 dark:border-sky-800/60 opacity-90'
                             : 'bg-white dark:bg-neutral-800/80 border-neutral-200 dark:border-neutral-700'
                         }`}
                       >
@@ -1737,24 +1849,35 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                           <button
                             type="button"
                             onClick={() => handleToggle(habit, todayIso)}
+                            title={isShielded && !isDone ? (isAr ? 'محمية اليوم — اضغط لتسجيلها كإنجاز إضافي' : 'Shielded today — tap to log as Bonus Win') : undefined}
                             className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all shrink-0 cursor-pointer ${
                               isDone
                                 ? 'bg-amber-500 text-white shadow-xs'
+                                : isShielded
+                                ? 'bg-sky-100 dark:bg-sky-900/60 text-sky-600 dark:text-sky-300 border border-sky-300 dark:border-sky-700 hover:border-amber-500'
                                 : 'border-2 border-neutral-300 dark:border-neutral-600 hover:border-amber-500'
                             }`}
                           >
-                            {isDone && <Check size={14} />}
+                            {isDone ? <Check size={14} /> : isShielded ? <ShieldCheck size={13} /> : null}
                           </button>
                           <div className="min-w-0 flex-1">
                             <span className={`text-xs font-bold block truncate flex items-center gap-1 ${isDone ? 'line-through text-neutral-500 dark:text-neutral-400' : 'text-neutral-900 dark:text-white'}`}>
                               <span>{habit.icon || '🔥'}</span>
                               <span>{habit.title}</span>
                             </span>
-                            {habit.isMeasurable && (
+                            {isBonusWin ? (
+                              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                ⚡ {isAr ? 'إنجاز إضافي' : 'Bonus Win'}
+                              </span>
+                            ) : isShielded ? (
+                              <span className="text-[10px] font-semibold text-sky-600 dark:text-sky-400">
+                                🛡️ {isAr ? 'محمية اليوم' : 'Auto-Shielded'}
+                              </span>
+                            ) : habit.isMeasurable ? (
                               <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400">
                                 {val}/{target} {habit.unit} ({pct}%)
                               </span>
-                            )}
+                            ) : null}
                           </div>
                         </div>
 
@@ -1771,7 +1894,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                             </button>
                           )}
                           <span className="text-[10px] font-bold font-mono text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 rounded-md">
-                            🔥 {habit.streak || 0}
+                            🔥 {calculateHabitStats(habit, dayProfileConfig).currentStreak}
                           </span>
                         </div>
                       </div>
@@ -1932,7 +2055,14 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                         isSelected={Boolean(habit.id && selectedHabitIds.includes(habit.id))}
                         isSelectMode={isSelectMode || selectedHabitIds.length > 0}
                         onToggleSelect={handleToggleSelectHabit}
-                        onOpenDetail={setSelectedHabitForDetail}
+                        onOpenDetail={(h) => {
+                          setDetailInitialTab('score');
+                          setSelectedHabitForDetail(h);
+                        }}
+                        onOpenPolicySettings={(h) => {
+                          setDetailInitialTab('settings');
+                          setSelectedHabitForDetail(h);
+                        }}
                         onToggleDate={handleToggle}
                         onOpenLevelLogger={(h, dKey) => setLevelLoggingHabit({ habit: h, dateKey: dKey })}
                         onDelete={setHabitToDelete}
@@ -1950,6 +2080,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                         getCategoryLabel={getCategoryLabel}
                         getColorClasses={getColorClasses}
                         getArSingleLetter={getArSingleLetter}
+                        dayProfileConfig={dayProfileConfig}
                       />
                     ))}
                   </tbody>
@@ -1970,7 +2101,14 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                   isSelected={Boolean(habit.id && selectedHabitIds.includes(habit.id))}
                   isSelectMode={isSelectMode || selectedHabitIds.length > 0}
                   onToggleSelect={handleToggleSelectHabit}
-                  onOpenDetail={setSelectedHabitForDetail}
+                  onOpenDetail={(h) => {
+                    setDetailInitialTab('score');
+                    setSelectedHabitForDetail(h);
+                  }}
+                  onOpenPolicySettings={(h) => {
+                    setDetailInitialTab('settings');
+                    setSelectedHabitForDetail(h);
+                  }}
                   onToggleDate={handleToggle}
                   onOpenLevelLogger={(h, dKey) => setLevelLoggingHabit({ habit: h, dateKey: dKey })}
                   onDelete={setHabitToDelete}
@@ -1988,6 +2126,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                   getCategoryLabel={getCategoryLabel}
                   getColorClasses={getColorClasses}
                   getArSingleLetter={getArSingleLetter}
+                  dayProfileConfig={dayProfileConfig}
                 />
               ))}
             </div>
@@ -2023,8 +2162,12 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
           goals={goals}
           allLoggedExcuses={allLoggedExcuses}
           todayIso={todayIso}
+          dayProfileConfig={dayProfileConfig}
           isAr={isAr}
-          onOpenDetail={(habit) => setSelectedHabitForDetail(habit)}
+          onOpenDetail={(habit) => {
+            setDetailInitialTab('score');
+            setSelectedHabitForDetail(habit);
+          }}
           onOpenBulkExcuse={() => setShowBulkExcuseModal(true)}
           onBackToMatrix={() => {
             setActiveTab('tracker');
@@ -2076,7 +2219,7 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                       const isArchived = habit.archived === true;
                       const isSnoozed = habit.snoozeUntil && habit.snoozeUntil > Date.now();
                       const totalCompletedCount = habit.history ? Object.keys(habit.history).length : 0;
-                      const stats = calculateHabitStats(habit);
+                      const stats = calculateHabitStats(habit, dayProfileConfig);
 
                       return (
                         <tr key={habit.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors">
@@ -2318,6 +2461,62 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
                 </div>
               </div>
 
+              {/* Day-Mode Shielding Policy */}
+              <div className="p-3 bg-neutral-50 dark:bg-neutral-800/80 rounded-xl border border-neutral-200 dark:border-neutral-700 space-y-2">
+                <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-200">
+                  {isAr ? 'سلوك العادة في أيام التنظيف / الراحة / السفر' : 'Day-Mode Policy (Do Anyway / Off-Day Rules)'}
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { id: 'execution_only' as HabitDayModePolicy, labelEn: '🛡️ Execution Only', labelAr: '🛡️ التنفيذ فقط' },
+                    { id: 'always_active' as HabitDayModePolicy, labelEn: '⚓ Always On (Do Anyway)', labelAr: '⚓ ثابتة دائماً' },
+                    { id: 'portable' as HabitDayModePolicy, labelEn: '🎒 Portable', labelAr: '🎒 محمولة' },
+                    { id: 'custom' as HabitDayModePolicy, labelEn: '🎯 Custom Off-Days', labelAr: '🎯 أيام مخصصة' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setNewDayModePolicy(opt.id)}
+                      className={`px-2 py-2 rounded-lg text-[11px] font-bold border text-center transition-all cursor-pointer ${
+                        newDayModePolicy === opt.id
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                          : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
+                      }`}
+                    >
+                      {isAr ? opt.labelAr : opt.labelEn}
+                    </button>
+                  ))}
+                </div>
+                {newDayModePolicy === 'custom' && (
+                  <div className="pt-1.5 flex flex-wrap gap-1.5">
+                    {OFF_DAY_MODES.map((m) => {
+                      const meta = DAY_MODE_META[m];
+                      const active = newActiveOnModes.includes(m);
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() =>
+                            setNewActiveOnModes((prev) =>
+                              prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]
+                            )
+                          }
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer transition-all ${
+                            active
+                              ? 'bg-violet-600 text-white border-violet-600'
+                              : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
+                          }`}
+                        >
+                          <span>{meta.emoji}</span>
+                          <span>{isAr ? meta.shortAr : meta.shortEn}</span>
+                          {active && <Check size={11} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {/* Target Frequency Setting */}
               <div className="p-3.5 bg-neutral-50 dark:bg-neutral-800/80 rounded-xl border border-neutral-200 dark:border-neutral-700 space-y-2.5">
                 <div className="flex items-center justify-between">
@@ -2494,7 +2693,12 @@ export const HabitTracker: React.FC<HabitTrackerProps> = ({
           isOpen={Boolean(selectedHabitForDetail)}
           goals={goals}
           projects={projects}
-          onClose={() => setSelectedHabitForDetail(null)}
+          dayProfileConfig={dayProfileConfig}
+          initialTab={detailInitialTab}
+          onClose={() => {
+            setSelectedHabitForDetail(null);
+            setDetailInitialTab('score');
+          }}
           onToggleDate={onToggleHabit}
           onUpdateHabit={onUpdateHabit}
           onDeleteHabit={onDeleteHabit}

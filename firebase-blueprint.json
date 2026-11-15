@@ -14,7 +14,8 @@
         "category": { "type": "string", "description": "Task category tag", "maxLength": 50 },
         "createdAt": { "type": "number", "description": "Timestamp created" },
         "completedAt": { "type": "number", "description": "Timestamp completed" },
-        "focusedMinutes": { "type": "number", "description": "Accumulated focused minutes" }
+        "focusedMinutes": { "type": "number", "description": "Accumulated focused minutes" },
+        "doAnywayOnOffDay": { "type": "boolean", "description": "Keep task active on Rest, Life & Errands, and Travel days" }
       },
       "required": ["title", "completed", "priority", "createdAt"]
     },
@@ -44,6 +45,8 @@
         "targetPerWeek": { "type": "number", "description": "Target days per week" },
         "history": { "type": "object", "description": "Map of YYYY-MM-DD -> boolean" },
         "freezes": { "type": "object", "description": "Map of YYYY-MM-DD -> boolean for streak freeze/pass days" },
+        "dayModePolicy": { "type": "string", "enum": ["execution_only", "always_active", "portable", "custom"], "description": "Off-day shielding rule" },
+        "activeOnModes": { "type": "array", "description": "Specific off-day modes where habit stays required when dayModePolicy is custom" },
         "streak": { "type": "number", "description": "Current consecutive streak in days" },
         "createdAt": { "type": "number", "description": "Timestamp created" }
       },
@@ -345,6 +348,17 @@
         "createdAt": { "type": "number" }
       },
       "required": ["statement", "createdAt"]
+    },
+    "DayProfileConfig": {
+      "title": "DayProfileConfig",
+      "description": "Day modes, recurring weekly schedules (Execution, Life & Errands, Rest, Travel), and personal maintenance checklists.",
+      "type": "object",
+      "properties": {
+        "recurringWeekdayModes": { "type": "object", "description": "Map of weekday index (0-6) to DayModeType" },
+        "dateOverrides": { "type": "object", "description": "Map of YYYY-MM-DD to DayProfileEntry" },
+        "defaultErrandsTemplate": { "type": "array", "description": "Default Life & Errands checklist items" },
+        "updatedAt": { "type": "number" }
+      }
     }
   },
   "firestore": {
@@ -435,6 +449,10 @@
     "/affirmations/{affirmationId}": {
       "schema": "Affirmation",
       "description": "Positive counter-affirmations deck for daily reprogram popup"
+    },
+    "/day_modes/{docId}": {
+      "schema": "DayProfileConfig",
+      "description": "Day mode schedule rules, per-date overrides, and Life Ops checklists"
     }
   }
 }

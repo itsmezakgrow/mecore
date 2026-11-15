@@ -1,4 +1,6 @@
-import { TaskItem, HabitItem, DailyBlockItem, ProjectItem, GoalItem, ReviewEntry } from '../types';
+import { TaskItem, HabitItem, DailyBlockItem, ProjectItem, GoalItem, ReviewEntry, DayProfileConfig } from '../types';
+import { getActiveDayProfileConfig, getLocalIsoDate, resolveDayModeForDate } from './dayModeHelpers';
+import { isHabitDateFrozen } from './habitAnalytics';
 
 export interface TelemetrySummary {
   tasks: {
@@ -42,9 +44,11 @@ export function compileExecutiveTelemetry(data: {
   projects?: ProjectItem[];
   goals?: GoalItem[];
   reviews?: ReviewEntry[];
+  dayProfileConfig?: DayProfileConfig | null;
 }): { summary: TelemetrySummary; formattedPromptContext: string } {
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
+  const todayStr = getLocalIsoDate(now);
+  const effectiveDayProfile = data.dayProfileConfig ?? getActiveDayProfileConfig();
 
   // 1. TASKS AUDIT
   const allTasks = (data.tasks || []).filter(t => !t.archived);
@@ -60,11 +64,13 @@ export function compileExecutiveTelemetry(data: {
   // Overdue tasks
   const overdueTasks = pendingTasks.filter(t => t.dueDate && t.dueDate < todayStr);
 
-  // 2. HABITS AUDIT
-  const allHabits = data.habits || [];
+  // 2. HABITS AUDIT (Respects Day-Mode shields & Bonus Wins)
+  const allHabits = (data.habits || []).filter(h => !h.archived);
   let habitsDoneToday = 0;
+  let requiredTodayCount = 0;
+  let requiredDoneTodayCount = 0;
   let totalSevenDayChecks = 0;
-  let totalSevenDayPossible = allHabits.length * 7;
+  let totalSevenDayPossible = 0;
   let totalFreezesUsed = 0;
 
   // Generate last 7 days strings
@@ -72,30 +78,40 @@ export function compileExecutiveTelemetry(data: {
   for (let i = 0; i < 7; i++) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    last7Days.push(d.toISOString().split('T')[0]);
+    last7Days.push(getLocalIsoDate(d));
   }
 
   allHabits.forEach(h => {
-    if (h.history && h.history[todayStr]) {
+    const isDoneToday = Boolean(h.history && h.history[todayStr]);
+    const isFrozenToday = isHabitDateFrozen(h, todayStr, undefined, effectiveDayProfile);
+    if (isDoneToday) {
       habitsDoneToday++;
+    }
+    if (!isFrozenToday || isDoneToday) {
+      requiredTodayCount++;
+      if (isDoneToday) requiredDoneTodayCount++;
     }
     if (h.freezes && Object.keys(h.freezes).length > 0) {
       totalFreezesUsed += Object.values(h.freezes).filter(Boolean).length;
     }
     last7Days.forEach(day => {
-      if (h.history && h.history[day]) {
-        totalSevenDayChecks++;
+      const isDone = Boolean(h.history && h.history[day]);
+      const isFrozen = isHabitDateFrozen(h, day, undefined, effectiveDayProfile);
+      if (!isFrozen || isDone) {
+        totalSevenDayPossible++;
+        if (isDone) totalSevenDayChecks++;
       }
     });
   });
 
-  const sevenDayRate = totalSevenDayPossible > 0 
-    ? Math.round((totalSevenDayChecks / totalSevenDayPossible) * 100) 
-    : 0;
+  const todayMode = resolveDayModeForDate(todayStr, effectiveDayProfile).mode;
+  const sevenDayRate = totalSevenDayPossible > 0
+    ? Math.min(100, Math.round((totalSevenDayChecks / totalSevenDayPossible) * 100))
+    : (allHabits.length > 0 ? 100 : 0);
 
-  const todayHabitRate = allHabits.length > 0 
-    ? Math.round((habitsDoneToday / allHabits.length) * 100) 
-    : 0;
+  const todayHabitRate = requiredTodayCount > 0
+    ? Math.min(100, Math.round((requiredDoneTodayCount / requiredTodayCount) * 100))
+    : (allHabits.length > 0 && todayMode !== 'execution' ? 100 : 0);
 
   // 3. DAILY BLOCKS AUDIT (TODAY)
   const allBlocks = data.dailyBlocks || [];

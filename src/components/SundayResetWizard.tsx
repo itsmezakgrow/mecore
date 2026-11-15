@@ -17,13 +17,16 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { HabitItem, TaskItem, WeeklyPlanSlot, NoteItem, SundayReset } from '../types';
+import { HabitItem, TaskItem, WeeklyPlanSlot, NoteItem, SundayReset, DayProfileConfig } from '../types';
+import { getActiveDayProfileConfig, getLocalIsoDate } from '../utils/dayModeHelpers';
+import { calculateHabitStats, isHabitDateFrozen } from '../utils/habitAnalytics';
 
 interface SundayResetWizardProps {
   habits: HabitItem[];
   tasks: TaskItem[];
   plans: WeeklyPlanSlot[];
   notes: NoteItem[];
+  dayProfileConfig?: DayProfileConfig | null;
   onUpdateHabit: (id: string, updates: Partial<HabitItem>) => Promise<void>;
   onUpdateTask: (id: string, updates: Partial<TaskItem>) => Promise<void>;
   onAddPlan: (slot: Omit<WeeklyPlanSlot, 'id'>) => Promise<any>;
@@ -140,6 +143,7 @@ export const SundayResetWizard: React.FC<SundayResetWizardProps> = ({
   tasks,
   plans,
   notes,
+  dayProfileConfig,
   onUpdateHabit,
   onUpdateTask,
   onAddPlan,
@@ -149,6 +153,7 @@ export const SundayResetWizard: React.FC<SundayResetWizardProps> = ({
   onNavigateModule,
   lang,
 }) => {
+  const effectiveDayProfileConfig = dayProfileConfig || getActiveDayProfileConfig();
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [weeklyFocus, setWeeklyFocus] = useState<string>('');
   const [weeklyGoal, setWeeklyGoal] = useState<string>('');
@@ -165,28 +170,39 @@ export const SundayResetWizard: React.FC<SundayResetWizardProps> = ({
   const t = wizardTranslations[lang];
   const isRtl = lang === 'ar';
 
-  // --- Step 1 Math: Habit consistency score ---
-  const todayStr = new Date().toISOString().split('T')[0];
+  // --- Step 1 Math: Habit consistency score (Day-Mode Shield & Bonus Win Aware) ---
   const past7Days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    return d.toISOString().split('T')[0];
+    return getLocalIsoDate(d);
   }).reverse();
 
   let checkinsCount = 0;
   let freezesCount = 0;
-  let activeHabits = habits.filter(h => !h.archived);
-  let totalOpportunities = activeHabits.length * 7;
+  let shieldedCount = 0;
+  const activeHabits = habits.filter(h => !h.archived);
+  let totalOpportunities = 0;
 
   activeHabits.forEach(h => {
     past7Days.forEach(day => {
-      if (h.history && h.history[day]) checkinsCount++;
-      if (h.freezes && h.freezes[day]) freezesCount++;
+      const isDone = Boolean(h.history && h.history[day]);
+      const isManualFreeze = Boolean(h.freezes && h.freezes[day]);
+      const isFrozen = isHabitDateFrozen(h, day, undefined, effectiveDayProfileConfig);
+
+      if (isManualFreeze) freezesCount++;
+      if (isFrozen && !isDone) shieldedCount++;
+
+      if (!isFrozen || isDone) {
+        totalOpportunities++;
+        if (isDone) checkinsCount++;
+      }
     });
   });
 
   const habitScore = totalOpportunities > 0 
-    ? Math.round(((checkinsCount + freezesCount) / totalOpportunities) * 100) 
+    ? Math.min(100, Math.round((checkinsCount / totalOpportunities) * 100)) 
+    : shieldedCount > 0
+    ? 100
     : 100;
 
   // --- Step 2 Data: Filter unread notes ---
@@ -472,8 +488,10 @@ export const SundayResetWizard: React.FC<SundayResetWizardProps> = ({
                 {/* Habits list & streak protection audit */}
                 <div className="md:col-span-7 space-y-3 max-h-72 overflow-y-auto pr-1">
                   {activeHabits.map(habit => {
-                    // Check if freeze was applied in past 7 days
-                    const freezesInPastWeek = past7Days.filter(day => habit.freezes && habit.freezes[day]);
+                    const habitStats = calculateHabitStats(habit, effectiveDayProfileConfig);
+                    const protectedDaysInPastWeek = past7Days.filter(
+                      day => !(habit.history && habit.history[day]) && isHabitDateFrozen(habit, day, undefined, effectiveDayProfileConfig)
+                    );
                     return (
                       <div key={habit.id} className="p-3 bg-[#FBFBFA] dark:bg-[#1E2025] rounded-xl border border-[#EAE9E6] dark:border-[#2A2C33] flex items-center justify-between">
                         <div>
@@ -481,14 +499,14 @@ export const SundayResetWizard: React.FC<SundayResetWizardProps> = ({
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: habit.color === 'emerald' ? '#34D399' : habit.color === 'amber' ? '#F59E0B' : habit.color === 'indigo' ? '#6366F1' : habit.color === 'rose' ? '#EF4444' : '#10B981' }} />
                             {habit.title}
                           </div>
-                          {freezesInPastWeek.length > 0 ? (
+                          {protectedDaysInPastWeek.length > 0 ? (
                             <span className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 dark:text-indigo-400 px-1.5 py-0.5 rounded mt-1.5">
                               <ShieldAlert size={10} />
-                              {t.freezeBadge} ({freezesInPastWeek.length})
+                              {t.freezeBadge} ({protectedDaysInPastWeek.length})
                             </span>
                           ) : (
                             <span className="text-[9px] text-neutral-400 mt-1 block">
-                              Streak: {habit.streak} days
+                              Streak: {habitStats.currentStreak} days
                             </span>
                           )}
                         </div>
@@ -496,19 +514,22 @@ export const SundayResetWizard: React.FC<SundayResetWizardProps> = ({
                         {/* Sparkline for last 7 days */}
                         <div className="flex gap-0.5">
                           {past7Days.map(day => {
-                            const isChecked = habit.history && habit.history[day];
-                            const isFrozen = habit.freezes && habit.freezes[day];
+                            const isChecked = Boolean(habit.history && habit.history[day]);
+                            const isFrozen = isHabitDateFrozen(habit, day, undefined, effectiveDayProfileConfig);
+                            const isBonus = isChecked && isFrozen;
                             return (
                               <div
                                 key={day}
                                 className={`w-3.5 h-3.5 rounded-sm ${
-                                  isChecked 
+                                  isBonus
+                                    ? 'bg-amber-400 border border-amber-500'
+                                    : isChecked 
                                     ? 'bg-[#34D399]' 
                                     : isFrozen 
                                     ? 'bg-indigo-400 border border-indigo-500' 
                                     : 'bg-neutral-100 dark:bg-neutral-800'
                                 }`}
-                                title={`${day}: ${isChecked ? 'Check-in' : isFrozen ? 'Streak Freeze (Saved!)' : 'No activity'}`}
+                                title={`${day}: ${isBonus ? 'Bonus Win ✨' : isChecked ? 'Check-in' : isFrozen ? 'Shielded / Streak Freeze (Saved!)' : 'No activity'}`}
                               />
                             );
                           })}

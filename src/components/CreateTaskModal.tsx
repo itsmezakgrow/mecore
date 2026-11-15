@@ -74,6 +74,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const [unit, setUnit] = useState<string>('units');
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [doAnywayOnOffDay, setDoAnywayOnOffDay] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -90,6 +91,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       setIsMeasurable(false);
       setSubtasks([]);
       setNewSubtaskTitle('');
+      setDoAnywayOnOffDay(false);
       setErrorMsg(null);
       setTimeout(() => {
         if (titleInputRef.current) {
@@ -165,6 +167,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         targetValue: isMeasurable ? targetValue : undefined,
         currentValue: 0,
         unit: isMeasurable ? (unit.trim() || 'units') : undefined,
+        doAnywayOnOffDay: doAnywayOnOffDay || undefined,
         kanbanStatus: 'todo',
       });
 
@@ -174,6 +177,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         setTitle('');
         setDescription('');
         setIsMeasurable(false);
+        setDoAnywayOnOffDay(false);
         setSubtasks([]);
         setNewSubtaskTitle('');
         if (titleInputRef.current) titleInputRef.current.focus();
@@ -431,6 +435,25 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
               </select>
             </div>
           </div>
+
+          {/* Do Anyway on Off-Days Toggle */}
+          <label className="flex items-start gap-2.5 p-3 bg-[#FAF9F6] dark:bg-[#202228] border border-[#EAE9E6] dark:border-[#2A2C33] rounded-2xl cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={doAnywayOnOffDay}
+              onChange={(e) => setDoAnywayOnOffDay(e.target.checked)}
+              className="mt-0.5 w-4 h-4 text-emerald-600 rounded-md focus:ring-emerald-500 border-neutral-300 dark:border-neutral-700 cursor-pointer"
+            />
+            <div className="min-w-0">
+              <span className="text-xs font-bold text-[#2F3437] dark:text-white flex items-center gap-1.5">
+                <span>⚓</span>
+                <span>{isAr ? 'إبقاء المهمة نشطة حتى في أيام الراحة / التنظيف / السفر' : 'Do Anyway on Rest / Off-Days'}</span>
+              </span>
+              <span className="text-[10px] text-neutral-500 dark:text-neutral-400 block mt-0.5">
+                {isAr ? 'لن يقترح التطبيق تأجيل هذه المهمة في أيام الراحة أو شؤون البيت.' : 'Keeps this task active on Rest, Life & Errands, and Travel days without deferral prompts.'}
+              </span>
+            </div>
+          </label>
 
           {/* 5. Measurable Goal Toggle (Optional) */}
           <div className="p-3 bg-[#FAF9F6] dark:bg-[#202228] border border-[#EAE9E6] dark:border-[#2A2C33] rounded-2xl space-y-2">

@@ -64,10 +64,20 @@ import {
   DailySleepLog,
   SleepScheduleConfig,
   ReviewEntry,
-  WorkoutSession
+  WorkoutSession,
+  DayProfileConfig,
+  DayModeType,
+  HabitDayModePolicy,
 } from '../types';
 import { translations } from '../utils/translations';
 import { RewardStoreModal } from './RewardStoreModal';
+import { DayModeControlBar } from './DayModeControl';
+import {
+  DAY_MODE_META,
+  getErrandsProgressForDate,
+  isHabitFrozenByDayMode,
+  resolveDayModeForDate,
+} from '../utils/dayModeHelpers';
 import { usePageViewSettings } from '../hooks/usePageViewSettings';
 import { PageViewSettingsModal, PageViewSettingItem } from './PageViewSettingsModal';
 
@@ -95,6 +105,10 @@ interface DashboardOverviewProps {
   onApplyTaskSkip?: (taskId: string, skipReason: TaskSkipReason, newDueDate: string) => Promise<void>;
   onApplyFreezeExcuse?: (habit: HabitItem, dateKey: string, excuse: string) => Promise<void>;
   onRemoveFreeze?: (habit: HabitItem, dateKey: string) => Promise<void>;
+  dayProfileConfig?: DayProfileConfig | null;
+  onSetDateDayMode?: (dateStr: string, mode: DayModeType) => Promise<void>;
+  onSaveDayProfileConfig?: (nextConfig: DayProfileConfig) => Promise<void>;
+  onBulkUpdateHabitPolicies?: (updates: { habitId: string; policy: HabitDayModePolicy }[]) => Promise<void>;
   lang?: 'en' | 'ar';
 }
 
@@ -123,6 +137,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   reviews = [],
   setActiveModule,
   onClaimReward,
+  dayProfileConfig = null,
+  onSetDateDayMode,
+  onSaveDayProfileConfig,
+  onBulkUpdateHabitPolicies,
   lang = 'en',
 }) => {
   const isAr = lang === 'ar';
@@ -368,19 +386,25 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   }, [tasks, now]);
 
   // -------------------------------------------------------------------------
-  // Habit Discipline Analytics
+  // Habit Discipline Analytics (Day-Mode Shield Aware)
   // -------------------------------------------------------------------------
+  const todayDayMode = useMemo(
+    () => resolveDayModeForDate(todayStr, dayProfileConfig),
+    [todayStr, dayProfileConfig]
+  );
+
   const habitStats = useMemo(() => {
     const activeHabits = habits.filter((h) => !h.archived);
     if (activeHabits.length === 0) {
-      return { todayRate: 0, weekRate: 0, activeStreak: 0, totalCount: 0 };
+      return { todayDone: 0, todayRequired: 0, todayRate: 100, weekRate: 0, activeStreak: 0, totalCount: 0 };
     }
 
-    // Today's completion
-    const todayDone = activeHabits.filter((h) => h.history && h.history[todayStr] === true).length;
-    const todayRate = Math.round((todayDone / activeHabits.length) * 100);
+    // Today's completion excluding auto-shielded habits unless completed as bonus
+    const requiredToday = activeHabits.filter((h) => !isHabitFrozenByDayMode(h, todayStr, dayProfileConfig));
+    const todayDone = requiredToday.filter((h) => h.history && h.history[todayStr] === true).length;
+    const todayRate = requiredToday.length > 0 ? Math.round((todayDone / requiredToday.length) * 100) : 100;
 
-    // 7-day average consistency
+    // 7-day average consistency (excluding auto-shielded & manual freeze days from denominator unless checked)
     const days: string[] = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
@@ -390,27 +414,33 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       days.push(`${y}-${m}-${da}`);
     }
 
-    let totalPossible = activeHabits.length * 7;
+    let totalPossible = 0;
     let totalCompleted = 0;
     days.forEach((dayKey) => {
       activeHabits.forEach((h) => {
-        if (h.history && h.history[dayKey]) {
+        const isDone = Boolean(h.history && h.history[dayKey]);
+        const isFrozenOrShielded = Boolean(h.freezes?.[dayKey]) || isHabitFrozenByDayMode(h, dayKey, dayProfileConfig);
+        if (isDone) {
           totalCompleted++;
+          totalPossible++;
+        } else if (!isFrozenOrShielded) {
+          totalPossible++;
         }
       });
     });
 
-    const weekRate = totalPossible > 0 ? Math.round((totalCompleted / totalPossible) * 100) : 0;
+    const weekRate = totalPossible > 0 ? Math.round((totalCompleted / totalPossible) * 100) : 100;
     const maxStreak = activeHabits.reduce((acc, h) => Math.max(acc, h.streak || 0), 0);
 
     return {
       todayDone,
+      todayRequired: requiredToday.length,
       todayRate,
       weekRate,
       activeStreak: maxStreak,
       totalCount: activeHabits.length
     };
-  }, [habits, now, todayStr]);
+  }, [habits, now, todayStr, dayProfileConfig]);
 
   // -------------------------------------------------------------------------
   // Projects Intelligence & Target vs Actual Allocation
@@ -601,36 +631,51 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           currentValue = habits.filter((h) => h.history && h.history[thisKey]).length;
           previousValue = habits.filter((h) => h.history && h.history[lastKey]).length;
         } else {
-          // 'all' composite execution score (0 - 100)
-          const habitScore = habits.length > 0 ? (habits.filter((h) => h.history && h.history[thisKey]).length / habits.length) * 40 : 25;
-          const prevHabitScore = habits.length > 0 ? (habits.filter((h) => h.history && h.history[lastKey]).length / habits.length) * 40 : 20;
+          // 'all' composite execution score (0 - 100) respecting Day Modes (Errands / Rest / Travel)
+          const computeDayComposite = (dKey: string, dObj: Date, fallbackHabitBase: number) => {
+            const dStart = new Date(dObj.getFullYear(), dObj.getMonth(), dObj.getDate()).getTime();
+            const dEnd = dStart + 86400000;
+            const resolvedMode = resolveDayModeForDate(dKey, dayProfileConfig).mode;
 
-          const thisDayStart = new Date(thisDay.getFullYear(), thisDay.getMonth(), thisDay.getDate()).getTime();
-          const thisDayEnd = thisDayStart + 86400000;
-          const tasksDone = tasks.filter(
-            (t) => t.completed && (t.completedAt || t.createdAt) >= thisDayStart && (t.completedAt || t.createdAt) < thisDayEnd
-          ).length;
-          const taskScore = Math.min(30, tasksDone * 10);
+            const reqHabits = habits.filter((h) => !isHabitFrozenByDayMode(h, dKey, dayProfileConfig));
+            const habitRatio =
+              reqHabits.length > 0
+                ? Math.min(1, reqHabits.filter((h) => h.history && h.history[dKey]).length / reqHabits.length)
+                : habits.length > 0
+                ? 1
+                : fallbackHabitBase / 40;
+            const habitScore = habitRatio * 40;
 
-          const lastDayStart = new Date(lastDay.getFullYear(), lastDay.getMonth(), lastDay.getDate()).getTime();
-          const lastDayEnd = lastDayStart + 86400000;
-          const prevTasksDone = tasks.filter(
-            (t) => t.completed && (t.completedAt || t.createdAt) >= lastDayStart && (t.completedAt || t.createdAt) < lastDayEnd
-          ).length;
-          const prevTaskScore = Math.min(30, prevTasksDone * 10);
+            const tasksDone = tasks.filter(
+              (t) => t.completed && (t.completedAt || t.createdAt) >= dStart && (t.completedAt || t.createdAt) < dEnd
+            ).length;
+            const focusMins = focusSessions
+              .filter((s) => s.createdAt >= dStart && s.createdAt < dEnd)
+              .reduce((acc, s) => acc + (s.duration || 0), 0);
 
-          const focusMins = focusSessions
-            .filter((s) => s.createdAt >= thisDayStart && s.createdAt < thisDayEnd)
-            .reduce((acc, s) => acc + (s.duration || 0), 0);
-          const focusScore = Math.min(30, (focusMins / 120) * 30);
+            if (resolvedMode === 'life_errands' && dKey <= todayStr) {
+              const errands = getErrandsProgressForDate(dKey, dayProfileConfig);
+              const errandsPts =
+                errands.total > 0
+                  ? (errands.rate / 100) * 45
+                  : Math.min(45, 25 + tasksDone * 10);
+              const bonusPts = Math.min(15, tasksDone * 5 + (focusMins / 60) * 10);
+              return Math.min(100, Math.round(habitScore * 0.9 + errandsPts + bonusPts));
+            }
 
-          const prevFocusMins = focusSessions
-            .filter((s) => s.createdAt >= lastDayStart && s.createdAt < lastDayEnd)
-            .reduce((acc, s) => acc + (s.duration || 0), 0);
-          const prevFocusScore = Math.min(30, (prevFocusMins / 120) * 30);
+            if ((resolvedMode === 'rest' || resolvedMode === 'travel') && dKey <= todayStr) {
+              const recoveryBase = 45; // Intentional Rest/Travel is never a zero/down day
+              const bonusPts = Math.min(15, tasksDone * 8 + (focusMins / 60) * 10);
+              return Math.min(100, Math.round(recoveryBase + habitScore + bonusPts));
+            }
 
-          currentValue = Math.round(habitScore + taskScore + focusScore);
-          previousValue = Math.round(prevHabitScore + prevTaskScore + prevFocusScore);
+            const taskScore = Math.min(30, tasksDone * 10);
+            const focusScore = Math.min(30, (focusMins / 120) * 30);
+            return Math.round(habitScore + taskScore + focusScore);
+          };
+
+          currentValue = computeDayComposite(thisKey, thisDay, 25);
+          previousValue = computeDayComposite(lastKey, lastDay, 20);
         }
 
         return {
@@ -699,7 +744,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         previous: Math.round(20 + Math.sin(i) * 15 + 10),
       };
     });
-  }, [timeHorizon, metricDomain, now, isAr, focusSessions, tasks, habits]);
+  }, [timeHorizon, metricDomain, now, isAr, focusSessions, tasks, habits, dayProfileConfig, todayStr]);
 
   // Overall comparison delta
   const overallPeriodDelta = useMemo(() => {
@@ -798,6 +843,21 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           )}
         </div>
       </div>
+
+      {/* ---------------------------------------------------------------------
+          ACTIVE DAY MODE & LIFE MAINTENANCE PROTOCOL BAR
+          --------------------------------------------------------------------- */}
+      {onSetDateDayMode && onSaveDayProfileConfig && (
+        <DayModeControlBar
+          dateStr={todayStr}
+          dayProfileConfig={dayProfileConfig}
+          habits={habits}
+          onSetDateMode={onSetDateDayMode}
+          onSaveConfig={onSaveDayProfileConfig}
+          onBulkUpdateHabitPolicies={onBulkUpdateHabitPolicies}
+          lang={lang}
+        />
+      )}
 
       {/* ---------------------------------------------------------------------
           DAILY STATE AUDIT PENDING CALLOUT BANNER
@@ -1130,13 +1190,18 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             <ArrowUpRight size={14} className="group-hover:text-amber-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
           </div>
 
-          <div className="mt-2 flex items-baseline gap-2">
+          <div className="mt-2 flex items-baseline gap-2 flex-wrap">
             <span className="text-2xl sm:text-3xl font-black font-mono text-neutral-900 dark:text-white">
               {habitStats.weekRate}%
             </span>
             <span className="text-xs font-bold text-neutral-500">
               {isAr ? 'اتساق' : 'consistency'}
             </span>
+            {todayDayMode.mode !== 'execution' && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
+                {DAY_MODE_META[todayDayMode.mode].emoji} {isAr ? 'محمي' : 'Shielded'}
+              </span>
+            )}
           </div>
 
           <div className="mt-2.5 pt-2 border-t border-neutral-100 dark:border-neutral-800/80 flex items-center justify-between text-[11px] font-mono">

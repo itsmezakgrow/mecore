@@ -81,6 +81,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [targetValue, setTargetValue] = useState(task.targetValue || 10);
   const [currentValue, setCurrentValue] = useState(task.currentValue || 0);
   const [unit, setUnit] = useState(task.unit || 'pages');
+  const [doAnywayOnOffDay, setDoAnywayOnOffDay] = useState(Boolean(task.doAnywayOnOffDay));
   
   // Comment state
   const [commentText, setCommentText] = useState('');
@@ -137,7 +138,8 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         isMeasurable,
         targetValue: isMeasurable ? targetValue : undefined,
         currentValue: isMeasurable ? currentValue : undefined,
-        unit: isMeasurable ? unit : undefined
+        unit: isMeasurable ? unit : undefined,
+        doAnywayOnOffDay: doAnywayOnOffDay || false
       });
       onClose();
     } catch (e) {
@@ -411,6 +413,25 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   </select>
                 </div>
               </div>
+
+              {/* Do Anyway on Off-Days Toggle */}
+              <label className="flex items-start gap-2.5 p-3.5 rounded-2xl border border-[#EAE9E6] dark:border-[#2A2C33] bg-[#FAF9F7] dark:bg-[#151619] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={doAnywayOnOffDay}
+                  onChange={(e) => setDoAnywayOnOffDay(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <div>
+                  <span className="font-bold text-xs text-[#2F3437] dark:text-white flex items-center gap-1.5">
+                    <span>⚓</span>
+                    <span>{isAr ? 'إبقاء المهمة نشطة حتى في أيام الراحة / التنظيف / السفر' : 'Keep Active on Rest / Errands / Travel Days'}</span>
+                  </span>
+                  <span className="text-[11px] text-[#787774] dark:text-neutral-400 block mt-0.5">
+                    {isAr ? 'مهام العمل تُقترح للتأجيل في أيام الراحة، أما المحددة هنا فتبقى نشطة دائماً.' : 'Excluded from non-execution day deferral prompts so you can always get it done.'}
+                  </span>
+                </div>
+              </label>
 
               {/* Measurable Progress Section */}
               <div className="bg-[#FAF9F7] dark:bg-[#151619] p-4 rounded-2xl border border-[#EAE9E6] dark:border-[#2A2C33] space-y-3">

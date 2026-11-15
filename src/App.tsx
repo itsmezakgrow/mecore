@@ -110,8 +110,19 @@ import {
   CognitiveReflection,
   VisualizationStory,
   Affirmation,
-  ChatSessionSource
+  ChatSessionSource,
+  DayProfileConfig,
+  DayModeType,
+  HabitDayModePolicy
 } from './types';
+import {
+  getStoredDayProfileConfig,
+  setActiveDayProfileConfig,
+  createStarterErrandsFromTemplate,
+  DEFAULT_ERRANDS_TEMPLATE,
+  DAY_MODE_META,
+  isHabitFrozenByDayMode
+} from './utils/dayModeHelpers';
 import {
   subscribeToTasks,
   addTask,
@@ -198,6 +209,8 @@ import {
   subscribeToAffirmations,
   addAffirmation,
   deleteAffirmation,
+  subscribeToDayProfileConfig,
+  saveDayProfileConfig,
   DEFAULT_OWNER_EMAIL,
   DEFAULT_ALLOWED_EMAILS,
   isAbortError
@@ -494,6 +507,7 @@ export default function App() {
   const [reflections, setReflections] = useState<CognitiveReflection[]>([]);
   const [visions, setVisions] = useState<VisualizationStory[]>([]);
   const [affirmations, setAffirmations] = useState<Affirmation[]>([]);
+  const [dayProfileConfig, setDayProfileConfig] = useState<DayProfileConfig>(() => getStoredDayProfileConfig());
   const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
   const [reviewModalTab, setReviewModalTab] = useState<'weekly' | 'monthly' | 'archive'>('weekly');
 
@@ -549,9 +563,11 @@ export default function App() {
       const tasksDueToday = tasks.filter(t => !t.completed && !t.archived && t.dueDate === todayDateKey);
       if (tasksDueToday.length > 0 && !dismissed.includes('tasks-today')) count++;
 
-      // 5. Habits pending today
+      // 5. Habits pending today (respects Day-Mode auto-shielding)
       const activeHabits = habits.filter(h => !h.archived);
-      const pendingHabits = activeHabits.filter(h => !h.history || !h.history[todayDateKey]);
+      const pendingHabits = activeHabits.filter(
+        h => (!h.history || !h.history[todayDateKey]) && !isHabitFrozenByDayMode(h, todayDateKey, dayProfileConfig)
+      );
       if (pendingHabits.length > 0 && !dismissed.includes('habits-today')) count++;
 
       // 6. Affirmations
@@ -561,7 +577,7 @@ export default function App() {
       if (visions.length > 0 && !dismissed.includes('vision-story')) count++;
     } catch {}
     return count;
-  }, [reviews, tasks, habits, affirmations, visions, todayDateKey]);
+  }, [reviews, tasks, habits, affirmations, visions, todayDateKey, dayProfileConfig]);
 
   const handleSaveSleepLog = async (logData: Omit<DailySleepLog, 'id'>) => {
     await logDailySleep(logData);
@@ -1561,6 +1577,13 @@ export default function App() {
       () => {}
     );
 
+    const unsubDayProfile = subscribeToDayProfileConfig(
+      (data) => {
+        setDayProfileConfig(data);
+      },
+      () => {}
+    );
+
     // Timeout safety fallback so UI loads quickly
     const timer = setTimeout(() => {
       setIsLoading(false);
@@ -1574,7 +1597,7 @@ export default function App() {
         unsubComments, unsubWorkouts, unsubReviews, unsubSundayResets,
         unsubDailyBlocks, unsubModuleLifecycle, unsubWeeklyGoals,
         unsubSleepLogs, unsubSleepConfig,
-        unsubReflections, unsubVisions, unsubAffirmations
+        unsubReflections, unsubVisions, unsubAffirmations, unsubDayProfile
       ];
       unsubs.forEach((unsub) => {
         try {
@@ -1896,6 +1919,73 @@ export default function App() {
         await toggleHabitDate(habit, dateKey);
       }
     }
+  };
+
+  // Day Mode & Life Maintenance Profile Handlers
+  const handleSaveDayProfileConfig = async (nextConfig: DayProfileConfig) => {
+    const normalized: DayProfileConfig = {
+      recurringWeekdayModes: nextConfig.recurringWeekdayModes || {},
+      dateOverrides: nextConfig.dateOverrides || {},
+      defaultErrandsTemplate: nextConfig.defaultErrandsTemplate || DEFAULT_ERRANDS_TEMPLATE,
+      updatedAt: Date.now(),
+    };
+    setDayProfileConfig(normalized);
+    setActiveDayProfileConfig(normalized);
+    try {
+      await saveDayProfileConfig(normalized);
+    } catch (err) {
+      console.error('Failed to save day profile config:', err);
+    }
+  };
+
+  const handleSetDateDayMode = async (dateStr: string, mode: DayModeType) => {
+    const existingOverrides = { ...(dayProfileConfig?.dateOverrides || {}) };
+    const existingEntry = existingOverrides[dateStr];
+    const shouldSeedErrands =
+      mode === 'life_errands' &&
+      (!existingEntry?.errandsChecklist || existingEntry.errandsChecklist.length === 0);
+
+    existingOverrides[dateStr] = {
+      ...(existingEntry || {}),
+      mode,
+      errandsChecklist: shouldSeedErrands
+        ? createStarterErrandsFromTemplate(dayProfileConfig, lang === 'ar')
+        : existingEntry?.errandsChecklist || [],
+      updatedAt: Date.now(),
+    };
+
+    const nextConfig: DayProfileConfig = {
+      recurringWeekdayModes: dayProfileConfig?.recurringWeekdayModes || {},
+      dateOverrides: existingOverrides,
+      defaultErrandsTemplate: dayProfileConfig?.defaultErrandsTemplate || DEFAULT_ERRANDS_TEMPLATE,
+      updatedAt: Date.now(),
+    };
+
+    await handleSaveDayProfileConfig(nextConfig);
+    const meta = DAY_MODE_META[mode];
+    addToast(
+      lang === 'ar'
+        ? `${meta.emoji} تم ضبط اليوم كـ "${meta.labelAr}"`
+        : `${meta.emoji} Day Mode set to "${meta.labelEn}"`,
+      'info'
+    );
+  };
+
+  const handleBulkUpdateHabitPolicies = async (
+    updates: { habitId: string; policy: HabitDayModePolicy; activeOnModes?: DayModeType[] }[]
+  ) => {
+    for (const item of updates) {
+      await handleUpdateHabit(item.habitId, {
+        dayModePolicy: item.policy,
+        activeOnModes: item.policy === 'custom' ? (item.activeOnModes || []) : undefined,
+      });
+    }
+    addToast(
+      lang === 'ar'
+        ? `تم تحديث سياسة ${updates.length} عادات بنجاح`
+        : `Updated Day-Mode policies for ${updates.length} habits`,
+      'success'
+    );
   };
 
   // Task Skip / Rollover with reason
@@ -2824,6 +2914,10 @@ export default function App() {
                   sleepConfig={sleepConfig}
                   reviews={reviews}
                   workouts={workouts}
+                  dayProfileConfig={dayProfileConfig}
+                  onSetDateDayMode={handleSetDateDayMode}
+                  onSaveDayProfileConfig={handleSaveDayProfileConfig}
+                  onBulkUpdateHabitPolicies={handleBulkUpdateHabitPolicies}
                   lang={lang}
                 />
               )}
@@ -2870,6 +2964,7 @@ export default function App() {
                   onOpenReviewModal={handleOpenReviewModal}
                   onNavigateModule={(mod) => changeModule(mod)}
                   initialTab={analyticsTab as any}
+                  dayProfileConfig={dayProfileConfig}
                   lang={lang}
                 />
               )}
@@ -2919,6 +3014,10 @@ export default function App() {
                   onSaveSleepLog={handleSaveSleepLog}
                   onSaveSleepConfig={handleSaveSleepConfig}
                   onDeleteSleepLog={handleDeleteSleepLog}
+                  dayProfileConfig={dayProfileConfig}
+                  onSetDateDayMode={handleSetDateDayMode}
+                  onSaveDayProfileConfig={handleSaveDayProfileConfig}
+                  onBulkUpdateHabitPolicies={handleBulkUpdateHabitPolicies}
                   lang={lang}
                 />
               )}
@@ -2970,6 +3069,10 @@ export default function App() {
                   allNotes={notes}
                   allProjects={projects}
                   allGoals={goals}
+                  dayProfileConfig={dayProfileConfig}
+                  onSetDateDayMode={handleSetDateDayMode}
+                  onSaveDayProfileConfig={handleSaveDayProfileConfig}
+                  onBulkUpdateHabitPolicies={handleBulkUpdateHabitPolicies}
                   lang={lang}
                   onScheduleTask={(task) => {
                     setPreSelectedTaskId(task.id || null);
@@ -3186,6 +3289,9 @@ export default function App() {
                   onAddTask={handleAddTask}
                   showTopBarTimer={showTopBarTimer}
                   onToggleTopBarTimer={handleToggleTopBarTimer}
+                  dayProfileConfig={dayProfileConfig}
+                  onSetDateDayMode={handleSetDateDayMode}
+                  onSaveDayProfileConfig={handleSaveDayProfileConfig}
                   onNavigateAnalytics={(tab) => {
                     setAnalyticsTab(tab || 'focus');
                     setActiveModule('analytics');
@@ -3209,6 +3315,7 @@ export default function App() {
                   tasks={tasks}
                   plans={plans}
                   notes={notes}
+                  dayProfileConfig={dayProfileConfig}
                   onUpdateHabit={handleUpdateHabit}
                   onUpdateTask={handleUpdateTask}
                   onAddPlan={handleAddPlannerSlot}
@@ -3309,6 +3416,7 @@ export default function App() {
         reviews={reviews}
         visions={visions}
         affirmations={affirmations}
+        dayProfileConfig={dayProfileConfig}
         onNavigate={handleNotificationNavigate}
         lang={lang}
       />

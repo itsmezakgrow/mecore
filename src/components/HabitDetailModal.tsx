@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Flame,
@@ -27,11 +27,13 @@ import {
   Bar,
   Cell,
 } from 'recharts';
-import { HabitItem, HabitRoutineTime, GoalItem, ProjectItem } from '../types';
+import { HabitItem, HabitRoutineTime, HabitDayModePolicy, DayModeType, DayProfileConfig, GoalItem, ProjectItem } from '../types';
+import { DAY_MODE_META, OFF_DAY_MODES, getHabitDayModePolicy, getHabitPolicyMeta } from '../utils/dayModeHelpers';
 import {
   calculateHabitScoreHistory,
   calculateDayOfWeekStats,
   calculateHabitStats,
+  isHabitDateFrozen,
 } from '../utils/habitAnalytics';
 import { EmojiPicker } from './EmojiPicker';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
@@ -41,6 +43,8 @@ interface HabitDetailModalProps {
   isOpen: boolean;
   goals?: GoalItem[];
   projects?: ProjectItem[];
+  dayProfileConfig?: DayProfileConfig | null;
+  initialTab?: 'score' | 'calendar' | 'weekdays' | 'settings';
   onClose: () => void;
   onToggleDate: (habit: HabitItem, dateKey: string) => Promise<any>;
   onUpdateHabit: (id: string, updates: Partial<HabitItem>) => Promise<any>;
@@ -53,6 +57,8 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   isOpen,
   goals = [],
   projects = [],
+  dayProfileConfig = null,
+  initialTab = 'score',
   onClose,
   onToggleDate,
   onUpdateHabit,
@@ -62,7 +68,7 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   useBodyScrollLock(isOpen);
 
   const isAr = lang === 'ar';
-  const [activeTab, setActiveTab] = useState<'score' | 'calendar' | 'weekdays' | 'settings'>('score');
+  const [activeTab, setActiveTab] = useState<'score' | 'calendar' | 'weekdays' | 'settings'>(initialTab || 'score');
   const [timeRange, setTimeRange] = useState<30 | 60 | 90>(30);
   const [calendarMonthOffset, setCalendarMonthOffset] = useState<number>(0);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>(
@@ -76,6 +82,10 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
   const [editTitle, setEditTitle] = useState(habit.title);
   const [editIcon, setEditIcon] = useState(habit.icon || '🔥');
   const [editRoutineTime, setEditRoutineTime] = useState<HabitRoutineTime>(habit.routineTime || 'anytime');
+  const [editDayModePolicy, setEditDayModePolicy] = useState<HabitDayModePolicy>(() => getHabitDayModePolicy(habit));
+  const [editActiveOnModes, setEditActiveOnModes] = useState<DayModeType[]>(() =>
+    habit.activeOnModes && habit.activeOnModes.length > 0 ? habit.activeOnModes : ['rest', 'travel']
+  );
   const [editCategory, setEditCategory] = useState(habit.category);
   const [editTarget, setEditTarget] = useState(habit.targetPerWeek || 7);
   const [editQuestion, setEditQuestion] = useState(habit.question || '');
@@ -102,11 +112,22 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
 
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab || 'score');
+      setEditDayModePolicy(getHabitDayModePolicy(habit));
+      setEditActiveOnModes(
+        habit.activeOnModes && habit.activeOnModes.length > 0 ? habit.activeOnModes : ['rest', 'travel']
+      );
+    }
+  }, [isOpen, habit.id, initialTab]);
+
   if (!isOpen) return null;
 
-  const scoreHistory = calculateHabitScoreHistory(habit, timeRange);
+  const scoreHistory = calculateHabitScoreHistory(habit, timeRange, dayProfileConfig);
   const weekdayStats = calculateDayOfWeekStats(habit);
-  const stats = calculateHabitStats(habit);
+  const stats = calculateHabitStats(habit, dayProfileConfig);
+  const policyMeta = getHabitPolicyMeta(habit, isAr);
   const history = habit.history || {};
   const notes = habit.notes || {};
   const dailyMoods = habit.dailyMoods || {};
@@ -231,6 +252,8 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
         title: editTitle.trim(),
         icon: editIcon,
         routineTime: editRoutineTime,
+        dayModePolicy: editDayModePolicy,
+        activeOnModes: editDayModePolicy === 'custom' ? editActiveOnModes : undefined,
         category: editCategory,
         targetPerWeek: frequencyMode === 'weekly' ? editTarget : selectedDays.length,
         frequencyType: frequencyMode,
@@ -359,6 +382,23 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                   </span>
                 ) : null;
               })()}
+              <button
+                type="button"
+                onClick={() => setActiveTab('settings')}
+                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 cursor-pointer transition-transform hover:scale-105 ${policyMeta.badgeClass}`}
+                title={policyMeta.tooltip}
+              >
+                <span>{policyMeta.icon}</span>
+                <span>{policyMeta.label}</span>
+              </button>
+              {stats.bonusWins30 > 0 && (
+                <span
+                  className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 flex items-center gap-1"
+                  title={isAr ? 'إنجازات إضافية في أيام الراحة/السفر/الشؤون خلال آخر 30 يوماً' : 'Bonus wins completed on shielded days (last 30d)'}
+                >
+                  <span>✨ {stats.bonusWins30} {isAr ? 'إنجاز إضافي' : 'Bonus'}</span>
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <span className="text-2xl">{habit.icon || '🔥'}</span>
@@ -544,12 +584,19 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                       content={({ active, payload }) => {
                         if (active && payload && payload.length) {
                           const data = payload[0].payload;
+                          const isFrozenDay = isHabitDateFrozen(habit, data.date, undefined, dayProfileConfig);
                           return (
                             <div className="bg-[#2F3437] text-white px-3 py-2 rounded-xl text-xs shadow-lg space-y-1">
                               <p className="font-semibold">{data.dayLabel} ({data.date})</p>
                               <p className="text-amber-300 font-mono">Score: {data.score}%</p>
                               <p className="text-[11px] text-neutral-300">
-                                {data.completed ? '✓ Completed on this date' : '✗ Missed'}
+                                {data.completed && isFrozenDay
+                                  ? (isAr ? '✨ مكتملة (مكسب إضافي في يوم محمي)' : '✨ Completed (Bonus Win on shielded day)')
+                                  : data.completed
+                                  ? (isAr ? '✓ تم الإنجاز' : '✓ Completed on this date')
+                                  : isFrozenDay
+                                  ? (isAr ? '🛡️ يوم محمي / مجمد (بدون خصم)' : '🛡️ Shielded / Protected (Zero penalty)')
+                                  : (isAr ? '✗ غير مكتملة' : '✗ Missed')}
                               </p>
                             </div>
                           );
@@ -639,6 +686,9 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                     }
 
                     const isDone = Boolean(history[d.iso]);
+                    const isManualFreeze = Boolean(habit.freezes?.[d.iso]);
+                    const isShielded = isHabitDateFrozen(habit, d.iso, undefined, dayProfileConfig);
+                    const isBonusWin = isDone && isShielded;
                     const hasNote = Boolean(notes[d.iso]);
                     const isSelected = selectedCalendarDate === d.iso;
 
@@ -649,13 +699,28 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                           setSelectedCalendarDate(d.iso);
                           setNoteInput(notes[d.iso] || '');
                         }}
+                        title={
+                          isBonusWin
+                            ? (isAr ? '✨ إنجاز إضافي في يوم محمي' : '✨ Bonus Win on shielded day')
+                            : !isDone && isManualFreeze
+                            ? (isAr ? '❄️ يوم مجمد' : '❄️ Freeze applied')
+                            : !isDone && isShielded
+                            ? (isAr ? '🛡️ محمية بوضع اليوم (اضغط للإنجاز الإضافي)' : '🛡️ Shielded by Day Mode (tap for Bonus Win)')
+                            : undefined
+                        }
                         className={`h-10 sm:h-12 rounded-xl border flex flex-col items-center justify-between p-1 cursor-pointer transition-all ${
                           isSelected
                             ? 'ring-2 ring-amber-500 dark:ring-amber-400 ring-offset-1 border-amber-500 dark:border-amber-400'
+                            : isBonusWin
+                            ? 'border-amber-400 dark:border-amber-500'
+                            : !isDone && isShielded
+                            ? 'border-sky-200 dark:border-sky-800/70'
                             : 'border-[#EAE9E6] dark:border-[#2A2C33] hover:border-neutral-400 dark:hover:border-neutral-600'
                         } ${
                           isDone
-                            ? `${colorTheme.bg} border-${habit.color || 'amber'}-300 font-semibold`
+                            ? `${colorTheme.bg} font-semibold`
+                            : isShielded
+                            ? 'bg-sky-50/70 dark:bg-sky-950/30'
                             : 'bg-white dark:bg-[#1E2025]'
                         }`}
                       >
@@ -667,9 +732,12 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                           >
                             {d.dayNumber}
                           </span>
-                          {hasNote && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" title="Has daily note" />
-                          )}
+                          <div className="flex items-center gap-0.5">
+                            {isBonusWin && <span className="text-[9px] leading-none">✨</span>}
+                            {hasNote && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" title="Has daily note" />
+                            )}
+                          </div>
                         </div>
 
                         <button
@@ -678,10 +746,24 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                             onToggleDate(habit, d.iso);
                           }}
                           className={`w-5 h-5 rounded-md flex items-center justify-center transition-transform active:scale-90 cursor-pointer ${
-                            isDone ? `${colorTheme.badge} text-white` : 'border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                            isDone
+                              ? `${colorTheme.badge} text-white ${isBonusWin ? 'ring-1 ring-amber-300' : ''}`
+                              : isManualFreeze
+                              ? 'bg-blue-500 text-white text-[9px]'
+                              : isShielded
+                              ? 'bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-[9px]'
+                              : 'border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800'
                           }`}
                         >
-                          <Check size={12} className={isDone ? 'opacity-100' : 'opacity-0'} />
+                          {isDone ? (
+                            <Check size={12} />
+                          ) : isManualFreeze ? (
+                            <span>❄️</span>
+                          ) : isShielded ? (
+                            <span>🛡️</span>
+                          ) : (
+                            <Check size={12} className="opacity-0" />
+                          )}
                         </button>
                       </div>
                     );
@@ -975,6 +1057,111 @@ export const HabitDetailModal: React.FC<HabitDetailModalProps> = ({
                     </p>
                   </div>
                 </div>
+              </div>
+
+              {/* Day-Mode Policy (Off / Errands / Rest / Travel days behavior) */}
+              <div className="p-4 bg-neutral-50 dark:bg-[#1E2025] rounded-2xl border border-[#EAE9E6] dark:border-[#2A2C33] space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#2F3437] dark:text-white">
+                    {isAr ? 'سلوك العادة في أيام التنظيف / الراحة / السفر' : 'Day-Mode Policy (Do Anyway / Off-Day Rules)'}
+                  </label>
+                  <p className="text-[11px] text-[#787774] dark:text-neutral-400">
+                    {isAr
+                      ? 'حدد هل يجب إنجاز العادة دائماً مهما كان اليوم، أو في أوضاع معينة، أم تُحمى تلقائياً في أيام الراحة والتنظيف.'
+                      : 'Choose if this habit must be done anyway every day, on specific off-day modes, or auto-shielded cleanly.'}
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    {
+                      id: 'execution_only' as HabitDayModePolicy,
+                      icon: '🛡️',
+                      titleEn: 'Execution Days Only',
+                      titleAr: 'أيام التنفيذ فقط',
+                      subEn: 'Auto-shielded on Errands/Rest/Travel (doing it counts as Bonus Win)',
+                      subAr: 'تُحمى في أيام البيت والراحة والسفر (والإنجاز يُحسب كمكسب إضافي)',
+                    },
+                    {
+                      id: 'always_active' as HabitDayModePolicy,
+                      icon: '⚓',
+                      titleEn: 'Always On (Do Anyway)',
+                      titleAr: 'ثابتة دائماً (أنجزها على أي حال)',
+                      subEn: 'Required every day even on Rest, Errands & Travel',
+                      subAr: 'مطلوبة كل يوم مهما كان الوضع حتى بالراحة والسفر',
+                    },
+                    {
+                      id: 'portable' as HabitDayModePolicy,
+                      icon: '🎒',
+                      titleEn: 'Portable Routine',
+                      titleAr: 'محمولة (السفر والشؤون)',
+                      subEn: 'Active on Errands & Travel; auto-shielded on Rest',
+                      subAr: 'نشطة في التبضيع والسفر ومحمية يوم الراحة',
+                    },
+                    {
+                      id: 'custom' as HabitDayModePolicy,
+                      icon: '🎯',
+                      titleEn: 'Custom Off-Day Modes',
+                      titleAr: 'تخصيص أيام التفعيل',
+                      subEn: 'Pick exact off-day modes where you still do this habit',
+                      subAr: 'اختر بدقة أوضاع الأيام التي تستمر فيها هذه العادة',
+                    },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setEditDayModePolicy(opt.id)}
+                      className={`p-2.5 rounded-xl border text-left rtl:text-right transition-all cursor-pointer ${
+                        editDayModePolicy === opt.id
+                          ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-500 text-emerald-900 dark:text-emerald-200 ring-1 ring-emerald-500/40'
+                          : 'bg-white dark:bg-[#18191D] border-[#D3D1CB] dark:border-neutral-700 text-neutral-700 dark:text-neutral-300'
+                      }`}
+                    >
+                      <div className="text-xs font-extrabold flex items-center gap-1.5">
+                        <span>{opt.icon}</span>
+                        <span>{isAr ? opt.titleAr : opt.titleEn}</span>
+                      </div>
+                      <div className="text-[10px] opacity-80 mt-0.5">
+                        {isAr ? opt.subAr : opt.subEn}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {editDayModePolicy === 'custom' && (
+                  <div className="p-3 rounded-xl bg-white dark:bg-[#18191D] border border-violet-200 dark:border-violet-800/60 space-y-2">
+                    <span className="block text-[11px] font-bold text-violet-800 dark:text-violet-300">
+                      {isAr
+                        ? 'فعّل هذه العادة أيضاً في الأوضاع المختارة (تُحسب في النسبة اليومية):'
+                        : 'Still keep this habit active on (counts in daily adherence):'}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {OFF_DAY_MODES.map((m) => {
+                        const meta = DAY_MODE_META[m];
+                        const checked = editActiveOnModes.includes(m);
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() =>
+                              setEditActiveOnModes((prev) =>
+                                prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]
+                              )
+                            }
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                              checked
+                                ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
+                                : 'bg-neutral-50 dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
+                            }`}
+                          >
+                            <span>{meta.emoji}</span>
+                            <span>{isAr ? meta.shortAr : meta.shortEn}</span>
+                            {checked && <Check size={12} />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Target Frequency & Specific Days Configuration */}
